@@ -1,0 +1,9 @@
+{
+  "name": "AmazonOps Command Center",
+  "version": "1.0.0",
+  "status": "Stable",
+  "description": "Amazon seller operating system v1.0 featuring precision profit simulation (0.01 accuracy) and AI-driven insights.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

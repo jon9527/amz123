@@ -13,6 +13,91 @@ interface PromotionOrderBreakdownProps {
     setSimCvr: (val: number) => void;
 }
 
+// Internal Stepper Component (Similar to AdsAnalysis but lightweight)
+const Stepper = ({
+    value,
+    onChange,
+    step = 1,
+    min = 0,
+    suffix = ''
+}: {
+    value: number;
+    onChange: (v: number) => void;
+    step?: number;
+    min?: number;
+    suffix?: string;
+}) => {
+    const [strVal, setStrVal] = React.useState(value.toString());
+    const inputRef = React.useRef<HTMLInputElement>(null);
+
+    React.useEffect(() => {
+        const isFocused = document.activeElement === inputRef.current;
+        if (isFocused) return;
+
+        if (parseFloat(strVal) !== value) {
+            setStrVal(value.toString());
+        }
+    }, [value]);
+
+    const commit = (s: string) => {
+        let n = parseFloat(s);
+        if (isNaN(n)) n = min;
+        if (n < min) n = min;
+        onChange(n);
+        setStrVal(n.toString());
+    };
+
+    const update = (delta: number) => {
+        const current = parseFloat(strVal) || 0;
+        // Handle float precision issues
+        const next = Math.round((current + delta) * 100) / 100;
+        const final = Math.max(min, next);
+        onChange(final);
+        setStrVal(final.toString());
+    };
+
+    return (
+        <div className="relative group w-full h-10 bg-zinc-900 border border-zinc-700 hover:border-zinc-600 rounded-lg flex items-center justify-center transition-all focus-within:border-blue-500/50 focus-within:ring-2 focus-within:ring-blue-500/20">
+            <input
+                ref={inputRef}
+                type="text"
+                value={strVal}
+                onChange={e => {
+                    const val = e.target.value;
+                    setStrVal(val);
+                    // Real-time update if valid number (Fix "slow reaction")
+                    const num = parseFloat(val);
+                    if (!isNaN(num)) {
+                        onChange(num);
+                    }
+                }}
+                onBlur={() => {
+                    // Commit formatting on blur
+                    const n = parseFloat(strVal);
+                    if (!isNaN(n)) {
+                        setStrVal(n.toString());
+                    } else {
+                        // Revert to prop if invalid/empty
+                        setStrVal(value.toString());
+                    }
+                }}
+                onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                        const n = parseFloat(strVal);
+                        if (!isNaN(n)) setStrVal(n.toString());
+                        (e.target as HTMLInputElement).blur();
+                    }
+                }}
+                className="bg-transparent border-none outline-none text-center w-full h-full p-0 font-bold text-white text-sm"
+            />
+            <div className="absolute right-1 top-0 bottom-0 flex flex-col justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                <button onClick={() => update(step)} className="h-1/2 px-1 text-zinc-500 hover:text-white flex items-center leading-none"><span className="material-symbols-outlined text-[14px]">expand_less</span></button>
+                <button onClick={() => update(-step)} className="h-1/2 px-1 text-zinc-500 hover:text-white flex items-center leading-none"><span className="material-symbols-outlined text-[14px]">expand_more</span></button>
+            </div>
+        </div>
+    );
+};
+
 const PromotionOrderBreakdown: React.FC<PromotionOrderBreakdownProps> = ({
     price,
     targetVolume,
@@ -21,81 +106,6 @@ const PromotionOrderBreakdown: React.FC<PromotionOrderBreakdownProps> = ({
     simCtr, setSimCtr,
     simCvr, setSimCvr
 }) => {
-
-    // Internal Stepper Component (Similar to AdsAnalysis but lightweight)
-    const Stepper = ({
-        value,
-        onChange,
-        step = 1,
-        min = 0,
-        suffix = ''
-    }: {
-        value: number;
-        onChange: (v: number) => void;
-        step?: number;
-        min?: number;
-        suffix?: string;
-    }) => {
-        const [strVal, setStrVal] = React.useState(value.toString());
-
-        React.useEffect(() => {
-            if (parseFloat(strVal) !== value) {
-                setStrVal(value.toString());
-            }
-        }, [value]);
-
-        const commit = (s: string) => {
-            let n = parseFloat(s);
-            if (isNaN(n)) n = min;
-            if (n < min) n = min;
-            onChange(n);
-            setStrVal(n.toString());
-        };
-
-        const update = (delta: number) => {
-            const current = parseFloat(strVal) || 0;
-            // Handle float precision issues
-            const next = Math.round((current + delta) * 100) / 100;
-            const final = Math.max(min, next);
-            onChange(final);
-            setStrVal(final.toString());
-        };
-
-        return (
-            <div className="relative group w-full h-10 bg-zinc-900 border border-zinc-700 hover:border-zinc-600 rounded-lg flex items-center justify-center transition-all focus-within:border-blue-500/50 focus-within:ring-2 focus-within:ring-blue-500/20">
-                <input
-                    type="text"
-                    value={strVal}
-                    onChange={e => {
-                        const val = e.target.value;
-                        setStrVal(val);
-                        // Real-time update if valid number (Fix "slow reaction")
-                        const num = parseFloat(val);
-                        if (!isNaN(num)) {
-                            onChange(num);
-                        }
-                    }}
-                    onBlur={() => {
-                        // Commit formatting on blur
-                        const n = parseFloat(strVal);
-                        if (!isNaN(n)) setStrVal(n.toString());
-                    }}
-                    onKeyDown={e => {
-                        if (e.key === 'Enter') {
-                            const n = parseFloat(strVal);
-                            if (!isNaN(n)) setStrVal(n.toString());
-                            (e.target as HTMLInputElement).blur();
-                        }
-                    }}
-                    className="bg-transparent border-none outline-none text-center w-full h-full p-0 font-bold text-white text-sm"
-                />
-                <div className="absolute right-1 top-0 bottom-0 flex flex-col justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                    <button onClick={() => update(step)} className="h-1/2 px-1 text-zinc-500 hover:text-white flex items-center leading-none"><span className="material-symbols-outlined text-[14px]">expand_less</span></button>
-                    <button onClick={() => update(-step)} className="h-1/2 px-1 text-zinc-500 hover:text-white flex items-center leading-none"><span className="material-symbols-outlined text-[14px]">expand_more</span></button>
-                </div>
-            </div>
-        );
-    };
 
     // Header Style Helper
     const CardHeader = ({ title, icon }: { title: string, icon: string }) => (

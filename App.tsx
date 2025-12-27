@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import Layout from './components/Layout';
 import { AppView } from './types';
@@ -7,6 +6,7 @@ import ProfitCalculator from './pages/ProfitCalculator';
 import AdsAnalysis from './pages/AdsAnalysis';
 import PromotionAnalysis from './pages/PromotionAnalysis';
 import ProductProfitList from './pages/ProductProfitList';
+import PromotionDeduction from './pages/PromotionDeduction';
 import { NAVIGATION_ITEMS } from './constants';
 
 const App: React.FC = () => {
@@ -24,6 +24,8 @@ const App: React.FC = () => {
         return <PromotionAnalysis />;
       case AppView.SIMULATION:
         return <ProductProfitList />;
+      case AppView.DEDUCTION:
+        return <PromotionDeduction />;
       default:
         const label = NAVIGATION_ITEMS.find(n => n.view === currentView)?.label || currentView;
         return (

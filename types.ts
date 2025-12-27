@@ -7,7 +7,8 @@ export enum AppView {
   SIMULATION = 'SIMULATION',
   INVENTORY = 'INVENTORY',
   TRAFFIC = 'TRAFFIC',
-  TOOLBOX = 'TOOLBOX'
+  TOOLBOX = 'TOOLBOX',
+  DEDUCTION = 'DEDUCTION'
 }
 
 export interface ProductData {

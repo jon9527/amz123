@@ -35,8 +35,12 @@ const Stepper = ({
     min?: number;
 }) => {
     const [strVal, setStrVal] = useState(value.toString());
+    const inputRef = React.useRef<HTMLInputElement>(null);
 
     useEffect(() => {
+        const isFocused = document.activeElement === inputRef.current;
+        if (isFocused) return;
+
         if (parseFloat(strVal) !== value) {
             setStrVal(value.toString());
         }
@@ -66,10 +70,18 @@ const Stepper = ({
                 <div className="flex items-center gap-1 text-white font-mono text-xl font-bold">
                     {prefix && <span className="text-zinc-600 text-sm mb-1">{prefix}</span>}
                     <input
+                        ref={inputRef}
                         type="text"
                         value={strVal}
                         onChange={e => setStrVal(e.target.value)}
-                        onBlur={() => commit(strVal)}
+                        onBlur={() => {
+                            const n = parseFloat(strVal);
+                            if (!isNaN(n)) {
+                                commit(strVal); // commit handles setStrVal
+                            } else {
+                                setStrVal(value.toString()); // Revert
+                            }
+                        }}
                         onKeyDown={e => { if (e.key === 'Enter') commit(strVal); }}
                         className="bg-transparent border-none outline-none text-center w-24 p-0 placeholder-zinc-700 font-bold"
                     />

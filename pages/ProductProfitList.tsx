@@ -159,8 +159,8 @@ const ProductProfitList: React.FC = () => {
       {/* 顶部工具栏 */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h2 className="text-3xl font-black text-white tracking-tight">产品利润模型</h2>
-          <p className="text-zinc-500 text-sm mt-1 uppercase tracking-widest font-bold">Product Profit Model Library</p>
+          <h2 className="text-3xl font-black text-white tracking-tight">利润模型</h2>
+          <p className="text-zinc-500 text-sm mt-1 uppercase tracking-widest font-bold">Profit Model Management</p>
         </div>
 
         <div className="flex items-center gap-3 w-full md:w-auto">

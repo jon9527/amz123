@@ -319,8 +319,8 @@ const PromotionAnalysis: React.FC = () => {
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div className="flex flex-col gap-1">
-                    <h2 className="text-3xl font-black tracking-tight text-white">推广测算</h2>
-                    <p className="text-zinc-500 text-sm">Promotion Budgeting & Profitability Simulation</p>
+                    <h2 className="text-3xl font-black tracking-tight text-white">盈亏沙盘</h2>
+                    <p className="text-zinc-500 text-sm">Profit Analysis Sandbox & Budget Simulation</p>
                 </div>
 
                 {/* Data Source Selector */}

@@ -1,0 +1,1489 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Amazon 资金沙盘 v31.0 (UI像素级修复版)</title>
+	<script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2.1.0/dist/chartjs-plugin-annotation.min.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+	<style>
+		/* 1. LAYOUT: NARROW SIDEBAR */
+		:root { --primary: #2c3e50; --bg: #f4f7f6; --border: #e0e0e0; --sidebar-w: 400px; }
+		* { box-sizing: border-box; }
+		        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); margin: 0; height: 100vh; display: flex; overflow: hidden; color: #333; }
+		.app-container { display: flex; width: 100%; height: 100%; }
+		
+		/* Sidebar */
+		.sidebar { width: var(--sidebar-w); background: #fff; border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; z-index: 30; box-shadow: 2px 0 10px rgba(0,0,0,0.05); transition: width 0.3s ease; overflow: hidden; position: relative; }
+		        .sidebar.collapsed { width: 0; border: none; }
+		.sidebar-header { height: 50px; padding: 0 15px; border-bottom: 1px solid var(--border); background: #fff; display:flex; justify-content:space-between; align-items:center; white-space: nowrap; min-width: var(--sidebar-w); flex-shrink: 0; }
+		.app-title { font-size: 15px; font-weight: 900; color: var(--primary); display: flex; align-items: center; gap: 10px;}
+		
+		        /* FIXED ICONS (SVG) */
+		        .icon-btn { cursor: pointer; display: flex; align-items: center; justify-content: center; color: #666; transition: all 0.2s; padding: 4px; border-radius: 4px; }
+		        .icon-btn:hover { background-color: #f0f0f0; color: #2c3e50; }
+		        .icon-svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; } /* Corrected stroke for sidebar icon */
+		        
+		/* Tabs */
+		.tab-nav { display: flex; background: #f1f3f5; padding: 0; border-bottom: 1px solid var(--border); min-width: var(--sidebar-w); flex-shrink: 0; }
+		.tab-btn { flex: 1; padding: 12px 0; border: none; background: transparent; cursor: pointer; font-size: 11px; font-weight: bold; color: #666; border-bottom: 3px solid transparent; transition: 0.2s; white-space: nowrap; }
+		.tab-btn:hover { background: rgba(0,0,0,0.03); }
+		.tab-btn.active { background: #fff; color: #2980b9; border-bottom-color: #3498db; }
+		.tab-content { flex: 1; overflow-y: auto; padding: 15px; display: none; background: #fff; min-width: var(--sidebar-w); }
+		.tab-content.active { display: block; animation: fadeIn 0.2s; }
+		
+		.section-title { font-size: 12px; font-weight: 800; color: #2c3e50; margin: 15px 0 10px 0; padding-bottom: 5px; border-bottom: 2px solid #f0f0f0; display: flex; justify-content: space-between; align-items: center; }
+		.section-title:first-child { margin-top: 0; }
+		
+		        /* MODE SWITCHER */
+		        .mode-switch-container { display: flex; align-items: center; justify-content: center; background: #eef2f5; padding: 8px; border-radius: 6px; margin-bottom: 15px; border: 1px solid #dee2e6; }
+		        .mode-label { font-size: 11px; font-weight: bold; color: #7f8c8d; margin: 0 8px; transition: color 0.3s;}
+		        .mode-label.active { color: #2c3e50; font-weight: 900; }
+		        .switch { position: relative; display: inline-block; width: 36px; height: 18px; }
+		        .switch input { opacity: 0; width: 0; height: 0; }
+		        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #bdc3c7; transition: .4s; border-radius: 20px; }
+		        .slider:before { position: absolute; content: ""; height: 12px; width: 12px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+		        input:checked + .slider { background-color: #3498db; }
+		        input:checked + .slider:before { transform: translateX(18px); }
+		
+		/* Equalizer */
+		.eq-container { display: flex; justify-content: space-between; background: #2c3e50; padding: 12px 5px; border-radius: 6px; margin-bottom: 15px; box-shadow: inset 0 2px 5px rgba(0,0,0,0.2); position: relative; overflow: hidden; }
+		.eq-band { display: flex; flex-direction: column; align-items: center; width: 100%; opacity: 0.3; transition: opacity 0.3s ease, transform 0.3s ease; position: relative; z-index: 1; }
+		        .eq-band.active { opacity: 1; transform: scale(1.05); }
+		        .eq-band.active .eq-label { color: #fff; text-shadow: 0 0 5px rgba(52, 152, 219, 0.8); }
+		        .eq-band.active .eq-slider { accent-color: #3498db; }
+		.eq-val { font-size: 9px; color: #f1c40f; font-family: monospace; margin-bottom: 4px; font-weight: bold; }
+		.eq-label { font-size: 9px; color: #7f8c8d; margin-top: 4px; font-weight: bold; transition: color 0.3s; }
+		.eq-slider { writing-mode: bt-lr; -webkit-appearance: slider-vertical; width: 6px; height: 60px; padding: 0 5px; cursor: pointer; }
+		
+		/* Grids */
+		.spec-grid-v2 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-bottom: 12px; }
+		.spec-card { background: #f8f9fa; border: 1px solid #eee; border-radius: 6px; padding: 8px 2px; display: flex; flex-direction: column; align-items: center; }
+		        .spec-label { font-size: 10px; color: #7f8c8d; margin-bottom: 4px; font-weight: bold; }
+		        .spec-input { width: 90%; text-align: center; border: 1px solid #ddd; border-radius: 4px; padding: 4px; font-weight: 800; font-family: monospace; font-size: 13px; color: #2c3e50; }
+		        .spec-sub { font-size: 9px; color: #aaa; margin-top: 3px; font-family: monospace; }
+		        .weight-summary { background: #eafaf1; border: 1px solid #d5f5e3; color: #27ae60; font-size: 11px; padding: 8px; border-radius: 4px; text-align: center; margin-bottom: 15px; font-family: monospace; font-weight: bold; }
+		        
+		        /* Optimized Grid for Narrower Sidebar */
+		        .grid-wrapper { overflow-x: auto; padding-bottom: 5px; border: 1px solid #e0e0e0; border-radius: 6px; }
+		        .unified-grid { display: grid; grid-template-columns: 60px repeat(6, 1fr); gap: 1px; background: #e0e0e0; margin-bottom: 0; min-width: 360px; }
+		        .ug-cell { background: #fff; padding: 6px 1px; display: flex; align-items: center; justify-content: center; flex-direction: column; min-height: 40px; text-align: center; }
+		        .ug-header { background: #f1f3f5; font-weight: 800; font-size: 10px; color: #555; padding: 6px 0; }
+		        .ug-row-label { background: #f8f9fa; font-size: 10px; font-weight: bold; color: #2c3e50; text-align: center; padding: 0 2px; line-height: 1.1; }
+		        
+		        /* FIX: INPUT WIDTH & PADDING */
+		        .ug-inp { 
+		            width: 98%; /* Maximize space */
+		            border: 1px solid #eee; 
+		            text-align: center; 
+		            font-size: 11px; 
+		            padding: 3px 0; /* Remove horizontal padding */
+		            border-radius: 4px; 
+		            font-weight: 800; 
+		            color:#333; 
+		            font-family: monospace; 
+		            letter-spacing: -0.5px; 
+		        }
+		        
+		        .ug-read-val { font-size: 11px; font-weight: 800; font-family: monospace; color: #2c3e50; }
+		        .ug-coef-val { font-size: 9px; color: #f39c12; font-family: monospace; font-weight: bold; }
+		        .ug-val-usd { font-size: 10px; font-weight: 800; color: #2980b9; font-family: monospace; line-height: 1.2; }
+		        .ug-val-rmb { font-size: 9px; font-weight: normal; color: #95a5a6; font-family: monospace; line-height: 1.1; }
+		        .ug-val-neg { color: #e74c3c !important; }
+		
+		        .boss-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 15px; }
+		        .boss-card { background: #fff; border: 1px solid #eee; border-radius: 8px; padding: 10px; display: flex; flex-direction: column; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.02); }
+		        .boss-icon { font-size: 18px; margin-bottom: 4px; }
+		        .boss-label { font-size: 10px; color: #999; font-weight: bold; text-transform: uppercase; }
+		        .boss-val { font-size: 16px; font-weight: 800; color: #2c3e50; margin-top: 2px; font-family: monospace; }
+		        .boss-sub { font-size: 9px; color: #27ae60; margin-top: 2px; font-weight: bold; }
+		        .boss-card.highlight { border-color: #f1c40f; background: #fef9e7; }
+		
+		.log-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 10px; }
+		.log-card { border: 1px solid #eee; border-radius: 6px; padding: 10px 2px; text-align: center; background: #f8f9fa; }
+		.log-inp { width: 100%; border: 1px solid transparent; background: transparent; text-align: center; font-weight: bold; font-size: 13px; border-bottom: 1px dashed #ccc; color: #333; padding: 2px 0; }
+		        .unit-tag { font-size: 10px; color: #aaa; margin-left: 2px; }
+		
+		.batch-list { display: flex; flex-direction: column; gap: 10px; padding-bottom: 20px;}
+		.batch-card { background: #fff; border: 1px solid #eee; border-radius: 6px; border-left: 4px solid #ddd; transition: 0.2s; box-shadow: 0 2px 5px rgba(0,0,0,0.03); overflow: hidden; flex-shrink: 0; position: relative;}
+		.batch-card.type-sea { border-left-color: #f1c40f; } .batch-card.type-air { border-left-color: #3498db; } .batch-card.type-exp { border-left-color: #e74c3c; }
+		.bc-header { padding: 10px; background: #fff; display: flex; justify-content: space-between; align-items: center; cursor: pointer; border-bottom: 1px solid transparent; transition: background 0.2s; }
+		.bc-header:hover { background: #fdfdfd; }
+		.bc-title { font-size: 12px; font-weight: bold; color: #333; }
+		.bc-summary { font-size: 10px; color: #999; margin-right: auto; margin-left: 10px; font-family: monospace; }
+		.bc-actions { display: flex; align-items: center; gap: 8px; }
+		.bc-body { padding: 12px; background: #fff; border-top: 1px solid #f0f0f0; display:block;}
+		        .batch-card.collapsed .bc-body { display: none; }
+		        .batch-card.collapsed .bc-header { background: #fafafa; }
+		        
+		        /* Updated Solid Triangle Icon */
+		        .toggle-icon { display: flex; align-items: center; justify-content: center; transition: transform 0.2s ease; color: #aaa; width: 20px; height: 20px; }
+		        .batch-card.collapsed .toggle-icon { transform: rotate(-90deg); }
+		
+		.bc-row { display: flex; justify-content: space-between; align-items: center; font-size: 11px; margin-bottom: 10px; }
+		.bc-inp { width: 50px; padding: 4px; border: 1px solid #eee; border-radius: 3px; text-align: center; }
+		.btn-del { color: #ccc; cursor: pointer; font-weight: bold; font-size: 16px; padding: 0 6px; }
+		.btn-del:hover { color: #e74c3c; }
+		
+		        /* Add Button - Rigid Box */
+		        .btn-add-batch { 
+		            background: #2c3e50; color: #fff; 
+		            width: 24px; height: 24px; 
+		            border: none; border-radius: 4px; 
+		            font-size: 18px; font-weight: bold;
+		            cursor: pointer; 
+		            display: flex; align-items: center; justify-content: center; 
+		            line-height: 1;
+		            flex-shrink: 0; 
+		        }
+		        .btn-add-batch:hover { background: #34495e; }
+		
+		.btn-gen { width: 100%; padding: 10px; background: #2c3e50; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 5px; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 5px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+		        .btn-reset { width: 100%; padding: 10px; background: #27ae60; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 10px; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 5px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+		        .btn-archive { font-size:11px; padding:4px 8px; cursor:pointer; background:#f8f9fa; border:1px solid #ddd; border-radius:4px; display:flex; align-items:center; gap:4px; }
+		
+		.opp-alert { font-size: 11px; background: #fff5f5; border: 1px solid #ffcccc; color: #c0392b; padding: 8px; margin-top: 8px; border-radius: 4px; display: none; }
+		.opp-alert.visible { display: block; animation: fadeIn 0.3s; }
+		.opp-header { font-weight: 800; display: flex; align-items: center; gap: 5px; margin-bottom: 3px; }
+		.opp-detail { font-family: monospace; color: #555; display: flex; justify-content: space-between; }
+		
+		.slider-container { display: flex; flex-direction: column; gap: 5px; margin-top: 5px; background: #f8f9fa; padding: 8px; border-radius: 4px; }
+		.slider-top { display: flex; align-items: center; gap: 8px; }
+		.slider-range { flex: 1; cursor: grab; height: 4px; }
+		.date-display { font-size: 11px; color: #2980b9; font-weight: bold; font-family: monospace; display: flex; justify-content: space-between; margin-top: 2px; }
+		.input-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 12px; }
+		.input-mini { width: 70px; padding: 4px; border: 1px solid #ced4da; border-radius: 4px; text-align: center; font-family: monospace; font-weight: bold; }
+		        .divider { height: 1px; background: #eee; margin: 15px 0; }
+		
+		/* Main View */
+		.main-view { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: #fff; position: relative; }
+		.kpi-bar { height: 50px; border-bottom: 1px solid #eee; display: flex; align-items: center; padding: 0 20px; gap: 25px; background: #fff; flex-shrink: 0; z-index: 10; box-shadow: 0 2px 5px rgba(0,0,0,0.02); }
+		        .sidebar-toggle-main { display: none; cursor:pointer; font-size:18px; color:#555; margin-right:15px; }
+		        .sidebar.collapsed + .main-view .sidebar-toggle-main { display: block; }
+		.kpi-item { display: flex; flex-direction: column; }
+		.kpi-label { font-size: 10px; color: #999; font-weight: bold; text-transform: uppercase; margin-bottom: 2px;}
+		.kpi-val { font-size: 18px; font-weight: 800; font-family: monospace; letter-spacing: -0.5px; }
+		.col-red { color: #e74c3c; } .col-green { color: #27ae60; } .col-blue { color: #2980b9; } .col-purple { color: #8e44ad; }
+		
+		.charts-container { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+		.chart-section-top { height: 50%; position: relative; overflow: hidden; border-bottom: 1px solid #eee; background: #fff; flex-shrink: 0; }
+		        .chart-section-bottom { height: 50%; position: relative; overflow-x: auto; overflow-y: hidden; background: #fff; flex-shrink: 0; }
+		        .chart-section-bottom::-webkit-scrollbar { height: 12px; }
+		        .chart-section-bottom::-webkit-scrollbar-track { background: #f1f1f1; }
+		        .chart-section-bottom::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 6px; }
+		        .chart-section-bottom::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
+		
+		.gantt-sizer, .cash-sizer { position: relative; height: 100%; min-width: 100%; } 
+		
+		.toggle-btn { background: #fff; border: 1px solid #ddd; padding: 4px 12px; border-radius: 20px; cursor: pointer; font-size: 11px; color: #666; font-weight: bold; display: flex; align-items: center; gap: 4px; transition:0.2s; margin-left: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);}
+		.toggle-btn:hover { background: #f8f9fa; }
+		.toggle-btn.active { background: #e3f2fd; color: #1565c0; border-color: #bbdefb; }
+		.toggle-btn.active-prof { background: #fef9e7; color: #f1c40f; border-color: #f9e79f; }
+		
+		#crosshair-line { position: absolute; top: 0; bottom: 0; width: 2px; background-color: #e74c3c; z-index: 2000; display: none; pointer-events: none; border-left: 1px dashed #fff; box-shadow: 0 0 4px rgba(0,0,0,0.3); }
+		#crosshair-label { position: absolute; top: 10px; left: 6px; background: #e74c3c; color: #fff; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 800; white-space: nowrap; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+		
+		        /* MODAL STYLES */
+		        .modal-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; display:none; align-items:center; justify-content:center; }
+		        .modal { background:#fff; width:350px; border-radius:8px; box-shadow:0 10px 25px rgba(0,0,0,0.2); overflow:hidden; }
+		        .modal-header { padding:15px; background:#f8f9fa; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center; font-weight:bold; }
+		        .modal-body { padding:15px; }
+		        .modal-footer { padding:10px 15px; background:#f8f9fa; border-top:1px solid #eee; text-align:right; }
+		        .profile-list { max-height:150px; overflow-y:auto; border:1px solid #eee; border-radius:4px; margin-bottom:10px; }
+		        .profile-item { padding:8px 10px; border-bottom:1px solid #f0f0f0; cursor:pointer; display:flex; justify-content:space-between; align-items:center; font-size:13px; }
+		        .profile-item:hover { background:#f0f8ff; }
+		        .profile-item:last-child { border-bottom:none; }
+		        .profile-item.selected { background:#e3f2fd; color:#1565c0; font-weight:bold; }
+		        .btn-sm { padding:4px 8px; border-radius:4px; border:1px solid #ddd; background:#fff; cursor:pointer; font-size:11px; }
+		        .btn-primary { background:#3498db; color:#fff; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; }
+		        
+		        /* Compound Calculator Styles */
+		        .compound-box { background:#fff; border:1px solid #e0e0e0; border-radius:6px; padding:10px; font-size:12px; }
+		        .comp-row { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+		        .comp-row label { color:#7f8c8d; font-weight:bold; }
+		        .comp-val-a { color:#2980b9; font-weight:bold; font-family:monospace; }
+		        .comp-val-b { color:#27ae60; font-weight:bold; font-family:monospace; }
+		        .comp-val-diff { color:#e74c3c; font-weight:bold; font-family:monospace; }
+		        .comp-input { width:60px; padding:2px; text-align:center; border:1px solid #ddd; border-radius:3px; font-family:monospace; }
+		        .scenario-box { background:#f9f9f9; padding:8px; border-radius:4px; margin-top:8px; border-left:3px solid #ccc; }
+		        .scenario-box.a { border-left-color:#2980b9; }
+		        .scenario-box.b { border-left-color:#27ae60; }
+		        .sc-title { font-weight:bold; margin-bottom:4px; display:block; }
+	</style>
+</head>
+<body>
+	<div class="app-container">
+		<aside class="sidebar" id="sidebar">
+			<div class="sidebar-header">
+				<div class="app-title">
+					<span class="icon-btn" onclick="toggleSidebar()" title="收起面板">
+						<svg class="icon-svg" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+							<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+							<line x1="9" y1="3" x2="9" y2="21"></line>
+						</svg>
+					</span>
+					<span style="margin-left:8px;">📦 资金沙盘 v31.0</span>
+				</div>
+				<button class="btn-archive" onclick="openModal()">🗄️ 档案/导出</button>
+			</div>
+			<div class="tab-nav">
+				<button class="tab-btn active" onclick="switchTab('tab-log', this)">📦 规格/物流</button>
+				<button class="tab-btn" onclick="switchTab('tab-fin', this)">💰 变价/回款</button>
+				<button class="tab-btn" onclick="switchTab('tab-sim', this)">📝 补货推演</button>
+				<button class="tab-btn" onclick="switchTab('tab-boss', this)">📊 财务驾驶舱</button>
+			</div>
+			<div id="tab-log" class="tab-content active">
+				<h3 class="section-title">单品包装规格 (cm/kg)</h3>
+				<div class="spec-grid-v2">
+					<div class="spec-card"><span class="spec-label">长 (L)</span><input type="number" id="box_l" class="spec-input" value="60" onchange="reqUpdate()"><span class="spec-sub" id="disp_l_in">-- in</span></div>
+					<div class="spec-card"><span class="spec-label">宽 (W)</span><input type="number" id="box_w" class="spec-input" value="40" onchange="reqUpdate()"><span class="spec-sub" id="disp_w_in">-- in</span></div>
+					<div class="spec-card"><span class="spec-label">高 (H)</span><input type="number" id="box_h" class="spec-input" value="40" onchange="reqUpdate()"><span class="spec-sub" id="disp_h_in">-- in</span></div>
+					<div class="spec-card"><span class="spec-label">单箱重量</span>
+						<div style="display:flex; align-items:center; width:90%; justify-content:center; gap:2px;">
+							<input type="number" id="box_wgt" class="spec-input" style="width:70%;" value="15" onchange="reqUpdate()">
+							<span style="font-size:10px; color:#999; font-weight:bold;">kg</span>
+						</div>
+						<span class="spec-sub" id="disp_wgt_lb">-- lb</span>
+					</div>
+				</div>
+				<div id="weight_summary" class="weight-summary">计算中...</div>
+				<div class="input-row"><span>装箱数 (Pcs/箱)</span><input type="number" id="pcs_per_box" class="input-mini" value="20" onchange="reqUpdate()"></div>
+				<h3 class="section-title" style="margin-top:15px;">头程运费报价</h3>
+				<div class="log-grid">
+					<div class="log-card"><span class="log-title">🚢 海运</span>
+						<div style="display:flex;align-items:center;justify-content:center;"><input type="number" id="sea_price_cbm" class="log-inp" value="800" onchange="reqUpdate()" style="width:40px"><span class="unit-tag">/方</span></div>
+						<div style="margin-top:4px;"><input type="number" id="sea_days" class="log-inp" value="35" onchange="reqUpdate()" style="width:30px">天</div>
+						<div id="res_sea_unit" style="margin-top:8px;">--</div>
+					</div>
+					<div class="log-card"><span class="log-title">✈️ 空派</span>
+						<div style="display:flex;align-items:center;justify-content:center;"><input type="number" id="air_price_kg" class="log-inp" value="35" onchange="reqUpdate()" style="width:40px"><span class="unit-tag">/kg</span></div>
+						<div style="margin-top:4px;"><input type="number" id="air_days" class="log-inp" value="15" onchange="reqUpdate()" style="width:30px">天</div>
+						<div id="res_air_unit" style="margin-top:8px;">--</div>
+					</div>
+					<div class="log-card"><span class="log-title">🚀 快递</span>
+						<div style="display:flex;align-items:center;justify-content:center;"><input type="number" id="exp_price_kg" class="log-inp" value="45" onchange="reqUpdate()" style="width:40px"><span class="unit-tag">/kg</span></div>
+						<div style="margin-top:4px;"><input type="number" id="exp_days" class="log-inp" value="7" onchange="reqUpdate()" style="width:30px">天</div>
+						<div id="res_exp_unit" style="margin-top:8px;">--</div>
+					</div>
+				</div>
+			</div>
+			<div id="tab-fin" class="tab-content">
+				<div class="input-row" style="margin-bottom:15px;">
+					<span style="font-weight:bold; color:#2c3e50;">📅 推演起始日期</span>
+					<input type="date" id="sim_start" class="input-mini" style="width:110px;" onchange="reqUpdate(); renderBatchList();">
+				</div>
+				<h3 class="section-title">📊 季节性销量均衡器 (自动高亮)</h3>
+				<div class="eq-container" id="eq_container"></div>
+				<h3 class="section-title">月度变价运营表 (6个月)</h3>
+				<div class="grid-wrapper">
+					<div class="unified-grid">
+						<div class="ug-cell ug-header">月份</div>
+						<div class="ug-cell ug-header">M1</div>
+						<div class="ug-cell ug-header">M2</div>
+						<div class="ug-cell ug-header">M3</div>
+						<div class="ug-cell ug-header">M4</div>
+						<div class="ug-cell ug-header">M5</div>
+						<div class="ug-cell ug-header">M6</div>
+						<div class="ug-cell ug-row-label">基础日销<br><span style="font-weight:normal;color:#999;font-size:9px">(基准值)</span></div>
+						<div class="ug-cell"><input type="number" id="base_s_m1" class="ug-inp" value="15" onchange="reqUpdate()"></div>
+						<div class="ug-cell"><input type="number" id="base_s_m2" class="ug-inp" value="30" onchange="reqUpdate()"></div>
+						<div class="ug-cell"><input type="number" id="base_s_m3" class="ug-inp" value="50" onchange="reqUpdate()"></div>
+						<div class="ug-cell"><input type="number" id="base_s_m4" class="ug-inp" value="80" onchange="reqUpdate()"></div>
+						<div class="ug-cell"><input type="number" id="base_s_m5" class="ug-inp" value="100" onchange="reqUpdate()"></div>
+						<div class="ug-cell"><input type="number" id="base_s_m6" class="ug-inp" value="120" onchange="reqUpdate()"></div>
+						<div class="ug-cell ug-row-label" style="background:#fffcf5">加权系数<br><span style="font-weight:normal;color:#999;font-size:9px">(自动计算)</span></div>
+						<div class="ug-cell"><span id="coef_m1" class="ug-coef-val">1.00</span></div>
+						<div class="ug-cell"><span id="coef_m2" class="ug-coef-val">1.00</span></div>
+						<div class="ug-cell"><span id="coef_m3" class="ug-coef-val">1.00</span></div>
+						<div class="ug-cell"><span id="coef_m4" class="ug-coef-val">1.00</span></div>
+						<div class="ug-cell"><span id="coef_m5" class="ug-coef-val">1.00</span></div>
+						<div class="ug-cell"><span id="coef_m6" class="ug-coef-val">1.00</span></div>
+						<div class="ug-cell ug-row-label" style="color:#e67e22;background:#fffcf5">预估实销<br><span style="font-weight:normal;color:#999;font-size:9px">(基础x系数)</span></div>
+						<div class="ug-cell"><span id="real_s_m1" class="ug-read-val">15</span></div>
+						<div class="ug-cell"><span id="real_s_m2" class="ug-read-val">30</span></div>
+						<div class="ug-cell"><span id="real_s_m3" class="ug-read-val">50</span></div>
+						<div class="ug-cell"><span id="real_s_m4" class="ug-read-val">80</span></div>
+						<div class="ug-cell"><span id="real_s_m5" class="ug-read-val">100</span></div>
+						<div class="ug-cell"><span id="real_s_m6" class="ug-read-val">120</span></div>
+						<div class="ug-cell ug-row-label" style="color:#27ae60;">售价($)</div>
+						<div class="ug-cell"><input type="number" id="price_m1" class="ug-inp" value="19.99" onchange="reqUpdate()"></div>
+						<div class="ug-cell"><input type="number" id="price_m2" class="ug-inp" value="24.99" onchange="reqUpdate()"></div>
+						<div class="ug-cell"><input type="number" id="price_m3" class="ug-inp" value="29.99" onchange="reqUpdate()"></div>
+						<div class="ug-cell"><input type="number" id="price_m4" class="ug-inp" value="29.99" onchange="reqUpdate()"></div>
+						<div class="ug-cell"><input type="number" id="price_m5" class="ug-inp" value="29.99" onchange="reqUpdate()"></div>
+						<div class="ug-cell"><input type="number" id="price_m6" class="ug-inp" value="29.99" onchange="reqUpdate()"></div>
+						<div class="ug-cell ug-row-label">毛利%</div>
+						<div class="ug-cell"><input type="number" id="prof_m1" class="ug-inp" value="-10" style="color:#e74c3c" onchange="reqUpdate()"></div>
+						<div class="ug-cell"><input type="number" id="prof_m2" class="ug-inp" value="10" onchange="reqUpdate()"></div>
+						<div class="ug-cell"><input type="number" id="prof_m3" class="ug-inp" value="20" onchange="reqUpdate()"></div>
+						<div class="ug-cell"><input type="number" id="prof_m4" class="ug-inp" value="20" onchange="reqUpdate()"></div>
+						<div class="ug-cell"><input type="number" id="prof_m5" class="ug-inp" value="25" onchange="reqUpdate()"></div>
+						<div class="ug-cell"><input type="number" id="prof_m6" class="ug-inp" value="25" onchange="reqUpdate()"></div>
+						<div class="ug-cell ug-row-label" style="color:#2980b9;">预估回款</div>
+						<div class="ug-cell" id="recall_m1">--</div>
+						<div class="ug-cell" id="recall_m2">--</div>
+						<div class="ug-cell" id="recall_m3">--</div>
+						<div class="ug-cell" id="recall_m4">--</div>
+						<div class="ug-cell" id="recall_m5">--</div>
+						<div class="ug-cell" id="recall_m6">--</div>
+					</div>
+				</div>
+				<div class="divider"></div>
+				<h3 class="section-title">固定成本</h3>
+				<div class="input-row"><span>采购单价 (¥)</span><input type="number" id="unit_cost" class="input-mini" value="20" onchange="reqUpdate()"></div>
+				<div class="input-row"><span>美元汇率</span><input type="number" id="exch_rate" class="input-mini" value="7.2" onchange="reqUpdate()"></div>
+				<div class="divider"></div>
+				<h3 class="section-title">采购账期</h3>
+				<div class="input-row"><span>定金比例 (%)</span><input type="number" id="ratio_deposit" class="input-mini" value="30" onchange="reqUpdate()"></div>
+				<div class="input-row"><span>尾款比例 (%)</span><input type="number" id="ratio_balance" class="input-mini" value="70" onchange="reqUpdate()"></div>
+			</div>
+			<div id="tab-sim" class="tab-content">
+				<div style="background:#f0f8ff; padding:10px; border-radius:5px; border:1px solid #d6eaf8; margin-bottom:15px; display:flex; justify-content:space-between; align-items:center;">
+					<span style="font-weight:bold; color:#2980b9;">🏭 生产周期 (天)</span>
+					<input type="number" id="prod_days" class="input-mini" value="15" onchange="reqUpdate(); renderBatchList();" style="width:60px;">
+				</div>
+				<div class="mode-switch-container">
+					<span class="mode-label active" id="lbl_reg">🔒 常规序列模式</span>
+					<label class="switch">
+						<input type="checkbox" id="sim_mode" onchange="toggleSimMode()">
+						<span class="slider round"></span>
+					</label>
+					<span class="mode-label" id="lbl_free">⚡ 自由急补模式</span>
+				</div>
+				<div class="list-header-row">
+					<h3 class="section-title" style="margin:0; border:none;">补货批次列表</h3>
+					<button class="btn-add-batch" onclick="addBatch()">+</button>
+				</div>
+				<div id="batch_list" class="batch-list"></div>
+				<button class="btn-reset" onclick="autoAlignBatches()">🔄 一键海运重置 (完美接力)</button>
+				<button class="btn-gen" onclick="autoGenerate()">⚡️ 根据销量重置计划 </button>
+			</div>
+			<div id="tab-boss" class="tab-content">
+				<h3 class="section-title">📊 财务核心指标</h3>
+				<div class="boss-grid">
+					<div class="boss-card highlight">
+						<div class="boss-icon">💰</div>
+						<div class="boss-label">资金最大占用</div>
+						<div class="boss-val" style="color:#e74c3c" id="boss_exposure">¥0</div>
+						<div class="boss-sub">需准备本金</div>
+					</div>
+					<div class="boss-card">
+						<div class="boss-icon">🚀</div>
+						<div class="boss-label">资金利润率 (ROI)</div>
+						<div class="boss-val" style="color:#27ae60" id="boss_roi">0%</div>
+						<div class="boss-sub">总利润 / 占用</div>
+					</div>
+					<div class="boss-card">
+						<div class="boss-icon">🔄</div>
+						<div class="boss-label">资金周转率</div>
+						<div class="boss-val" style="color:#2980b9" id="boss_turnover">0.0</div>
+						<div class="boss-sub">销售额 / 占用</div>
+					</div>
+					<div class="boss-card">
+						<div class="boss-icon">📈</div>
+						<div class="boss-label">综合净利率</div>
+						<div class="boss-val" id="boss_margin">0%</div>
+						<div class="boss-sub">总利润 / 销售额</div>
+					</div>
+				</div>
+				<div class="divider"></div>
+				<h3 class="section-title">⏳ 关键时间点</h3>
+				<div class="boss-grid">
+					<div class="boss-card">
+						<div class="boss-icon">🪙</div>
+						<div class="boss-label">回本日期 (Cash > 0)</div>
+						<div class="boss-val" id="boss_cash_be">--</div>
+					</div>
+					<div class="boss-card">
+						<div class="boss-icon">🎉</div>
+						<div class="boss-label">盈利起始日 (Profit > 0)</div>
+						<div class="boss-val" id="boss_prof_be">--</div>
+					</div>
+				</div>
+				<div class="divider"></div>
+				<h3 class="section-title">🚀 资金复利效应计算器</h3>
+				<div class="compound-box">
+					<div class="comp-row">
+						<label>投入本金 (¥)</label>
+						<input type="number" id="cc_capital" class="comp-input" value="100000" style="width:80px;" onchange="calcCompound()">
+					</div>
+					<div class="comp-row">
+						<label>单次利润率 (%)</label>
+						<input type="number" id="cc_margin" class="comp-input" value="10" onchange="calcCompound()">
+					</div>
+					<div class="scenario-box a">
+						<span class="sc-title" style="color:#2980b9">方案 A (现状)</span>
+						<div class="comp-row">
+							<span>周转天数: <input type="number" id="cc_days_a" class="comp-input" value="45" onchange="calcCompound()"></span>
+							<span>→ <span id="cc_turns_a">8.0</span>轮/年</span>
+						</div>
+						<div style="text-align:right;"> 1年后本利和: <span id="cc_res_a" class="comp-val-a">¥214,359</span>
+						</div>
+					</div>
+					<div class="scenario-box b">
+						<span class="sc-title" style="color:#27ae60">方案 B (优化)</span>
+						<div class="comp-row">
+							<span>周转天数: <input type="number" id="cc_days_b" class="comp-input" value="30" onchange="calcCompound()"></span>
+							<span>→ <span id="cc_turns_b">12.0</span>轮/年</span>
+						</div>
+						<div style="text-align:right;"> 1年后本利和: <span id="cc_res_b" class="comp-val-b">¥313,843</span>
+						</div>
+					</div>
+					<div style="text-align:center; margin-top:10px; padding-top:10px; border-top:1px dashed #ddd;">
+						<span style="font-weight:bold; color:#555;">💰 利润提升: </span>
+						<span id="cc_diff" class="comp-val-diff">+¥99,484</span>
+					</div>
+				</div>
+			</div>
+		</aside>
+		<main class="main-view">
+			<div class="kpi-bar">
+				<div class="sidebar-toggle-main" onclick="toggleSidebar()" title="展开面板">▶</div>
+				<div class="kpi-item"><span class="kpi-label">资金最大占用</span><span class="kpi-val col-red" id="kpi_exposure">¥0</span></div>
+				<div class="kpi-item"><span class="kpi-label">累计净利润</span><span class="kpi-val col-green" id="kpi_profit">¥0</span></div>
+				<div class="kpi-item"><span class="kpi-label">回本日期</span><span class="kpi-val col-blue" id="kpi_date">--</span></div>
+				<div style="flex:1"></div>
+				<div class="toggle-btn active" id="btnToggleInv" onclick="toggleDataset('inv')"><span id="eyeIcon">👁️</span> 库存</div>
+				<div class="toggle-btn active-prof" id="btnToggleProf" onclick="toggleDataset('prof')"><span>📈</span> 累计利润</div>
+			</div>
+			<div class="charts-container" id="chartsContainer">
+				<div class="chart-section-top" id="topSection">
+					<div class="gantt-sizer" id="ganttSizer">
+						<div id="crosshair-line">
+							<div id="crosshair-label">开售日</div>
+						</div>
+						<canvas id="ganttChart"></canvas>
+					</div>
+				</div>
+				<div class="chart-section-bottom" id="bottomSection">
+					<div class="cash-sizer" id="cashSizer">
+						<canvas id="cashChart"></canvas>
+					</div>
+				</div>
+			</div>
+		</main>
+	</div>
+	<div class="modal-overlay" id="archiveModal">
+		<div class="modal">
+			<div class="modal-header">
+				<span>🗄️ 档案与数据管理</span>
+				<span style="cursor:pointer" onclick="closeModal()">×</span>
+			</div>
+			<div class="modal-body">
+				<div style="margin-bottom:10px; font-size:12px; font-weight:bold; color:#555;">📁 切换存档 (本地)</div>
+				<div class="profile-list" id="profileList"></div>
+				<div style="display:flex; gap:5px; margin-bottom:15px;">
+					<input type="text" id="newProfileName" placeholder="输入新方案名称..." style="flex:1; padding:6px; border:1px solid #ddd; border-radius:4px; font-size:12px;">
+					<button class="btn-primary" onclick="saveNewProfile()">保存</button>
+				</div>
+				<div style="margin-bottom:10px; font-size:12px; font-weight:bold; color:#555; border-top:1px solid #eee; padding-top:10px;">💾 备份与恢复 (文件)</div>
+				<div style="display:flex; gap:10px; justify-content:space-between;">
+					<button class="btn-sm" onclick="exportJSON()">⬇️ 导出配置(.json)</button>
+					<label class="btn-sm" style="display:flex; align-items:center; cursor:pointer;"> ⬆️ 导入配置 <input type="file" id="fileInput" accept=".json" style="display:none" onchange="importJSON(this)">
+					</label>
+				</div>
+			</div>
+		</div>
+	</div>
+	<script>
+		// --- PLUGIN REGISTRATION (CRITICAL) ---
+		// Registering plugins globally to ensure they are available
+		try {
+		    Chart.register(ChartDataLabels);
+		    console.log("ChartDataLabels registered successfully");
+		} catch(e) { console.error("Failed to register ChartDataLabels", e); }
+		
+		const syncGuideLinePlugin = {
+		    id: 'syncGuideLine',
+		    afterRender: (chart) => {
+		        if (chart.canvas.id === 'ganttChart') {
+		            const line = document.getElementById('crosshair-line');
+		            const label = document.getElementById('crosshair-label');
+		            if (window.activeBatchId !== null && chart.data.datasets[3]) { 
+		                const salesDataset = chart.data.datasets[3]; 
+		                const batchData = salesDataset.data[window.activeBatchId];
+		                if (batchData && batchData.x) {
+		                    const salesStartVal = batchData.x[0];
+		                    const xPixel = chart.scales.x.getPixelForValue(salesStartVal);
+		                    line.style.display = 'block';
+		                    line.style.left = xPixel + 'px';
+		                    label.innerText = `🚀 开售: ${getFormattedDate(salesStartVal)}`;
+		                } else { line.style.display = 'none'; }
+		            } else { line.style.display = 'none'; }
+		        }
+		    }
+		};
+		Chart.register(syncGuideLinePlugin);
+		
+		const rowBackgroundPlugin = {
+		    id: 'rowBackground',
+		    beforeDraw: (chart) => {
+		        if (chart.config.type !== 'bar') return;
+		        const ctx = chart.ctx; const xAxis = chart.scales.x; const meta = chart.getDatasetMeta(0);
+		        if(meta.data.length > 0) {
+		            const barHeight = 40; 
+		            meta.data.forEach((bar, index) => {
+		                if(index % 2 === 0) {
+		                    ctx.fillStyle = 'rgba(240, 242, 245, 0.5)';
+		                    ctx.fillRect(xAxis.left, bar.y - barHeight/2 - 5, xAxis.width, barHeight + 10);
+		                }
+		            });
+		        }
+		    }
+		};
+		Chart.register(rowBackgroundPlugin);
+		
+		// --- PERFORMANCE & STATE ---
+		let isChartDirty = false;
+		let isTicking = false;
+		let isFreeMode = false; 
+		let currentProfileId = 'default';
+		
+		function reqUpdate() {
+		    isChartDirty = true;
+		    if (!isTicking) { window.requestAnimationFrame(renderLoop); }
+		    isTicking = true;
+		}
+		function renderLoop() {
+		    if (isChartDirty) { updateChart(); isChartDirty = false; }
+		    isTicking = false;
+		}
+		function toggleSidebar() {
+		    const sb = document.getElementById('sidebar');
+		    sb.classList.toggle('collapsed');
+		    setTimeout(reqUpdate, 350); 
+		}
+		
+				function switchTab(tabId, btn) {
+				    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+				    document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+				    document.getElementById(tabId).classList.add('active');
+				    btn.classList.add('active');
+		    if(tabId === 'tab-boss') calcCompound();
+				}
+		
+		function toggleSimMode() {
+		    const cb = document.getElementById('sim_mode');
+		    isFreeMode = cb.checked;
+		    document.getElementById('lbl_reg').classList.toggle('active', !isFreeMode);
+		    document.getElementById('lbl_free').classList.toggle('active', isFreeMode);
+		    if (!isFreeMode) {
+		        let currentOffset = 0;
+		        batches.forEach((b, i) => {
+		            if (b.offset < currentOffset) b.offset = currentOffset;
+		            const slider = document.getElementById(`slider_${b.id}`);
+		            const inp = document.getElementById(`inp_off_${b.id}`);
+		            if(slider) slider.value = b.offset;
+		            if(inp) inp.value = b.offset;
+		            currentOffset = b.offset;
+		        });
+		    }
+		    reqUpdate();
+		}
+		
+		function autoAlignBatches() {
+		    document.getElementById('sim_mode').checked = false;
+		    toggleSimMode(); 
+		    calcWeightedSeasonality(document.getElementById('sim_start').value);
+		    const prod = safeParse('prod_days');
+		    const seaDays = safeParse('sea_days');
+		    const demandMap = [];
+		    for(let i=0; i<800; i++) {
+		        let mIdx = Math.floor(i/30);
+		        if(mIdx > 5) mIdx = 5;
+		        demandMap.push(calculatedActualSales[mIdx]);
+		    }
+		    let currentSaleStart = -1;
+		    batches.forEach((b, i) => {
+		        b.type = 'sea';
+		        const leadTime = prod + seaDays;
+		        if (i === 0) {
+		            b.offset = 0; 
+		            currentSaleStart = leadTime; 
+		        } else {
+		            let calcOffset = currentSaleStart - leadTime;
+		            if (calcOffset < batches[i-1].offset) calcOffset = batches[i-1].offset;
+		            if (calcOffset < 0) calcOffset = 0;
+		            b.offset = Math.round(calcOffset);
+		            currentSaleStart = Math.max(currentSaleStart, b.offset + leadTime);
+		        }
+		        let qty = b.qty;
+		        let day = currentSaleStart;
+		        while(qty > 0 && day < 800) {
+		            let d = demandMap[day] || 0;
+		            let take = Math.min(qty, d);
+		            qty -= take;
+		            day++;
+		        }
+		        currentSaleStart = day; 
+		        const s = document.getElementById(`slider_${b.id}`);
+		        const inp = document.getElementById(`inp_off_${b.id}`);
+		        const sel = document.querySelector(`#b_card_${b.id} select`);
+		        if(s) s.value = b.offset;
+		        if(inp) inp.value = b.offset;
+		        if(sel) sel.value = 'sea';
+		    });
+		    renderBatchList(); 
+		    reqUpdate();
+		}
+		
+		// --- COMPOUND CALCULATOR ---
+		function calcCompound() {
+		    const P = parseFloat(document.getElementById('cc_capital').value) || 0;
+		    const r = (parseFloat(document.getElementById('cc_margin').value) || 0) / 100;
+		    const da = parseFloat(document.getElementById('cc_days_a').value) || 1;
+		    const db = parseFloat(document.getElementById('cc_days_b').value) || 1;
+		    const ta = 360 / da;
+		    const tb = 360 / db;
+		    document.getElementById('cc_turns_a').innerText = ta.toFixed(1);
+		    document.getElementById('cc_turns_b').innerText = tb.toFixed(1);
+		    const ra = P * Math.pow(1+r, ta);
+		    const rb = P * Math.pow(1+r, tb);
+		    document.getElementById('cc_res_a').innerText = '¥' + Math.round(ra).toLocaleString();
+		    document.getElementById('cc_res_b').innerText = '¥' + Math.round(rb).toLocaleString();
+		    const diff = rb - ra;
+		    const sign = diff >= 0 ? '+' : '';
+		    document.getElementById('cc_diff').innerText = sign + '¥' + Math.round(diff).toLocaleString();
+		    document.getElementById('cc_diff').style.color = diff >= 0 ? '#27ae60' : '#e74c3c';
+		}
+				
+		// --- UTILS ---
+		function getBatchLabel(index, name, qty) { return `#${index+1} ${name} (${qty})`; }
+				function getBaseDate() { return new Date(document.getElementById('sim_start').value); }
+				function getFormattedDate(offset) { const d = getBaseDate(); d.setDate(d.getDate() + parseInt(offset)); return `${d.getMonth()+1}/${d.getDate()}`; }
+				function fmtDateAxis(val, startStr) { const start = new Date(startStr); const d = new Date(start); d.setDate(start.getDate() + Math.round(val)); return `${d.getMonth()+1}/${d.getDate()}`; }
+				function safeParse(id) { const el = document.getElementById(id); if(!el) return 0; const val = parseFloat(el.value); return isNaN(val) ? 0 : val; }
+		
+		// --- EQUALIZER LOGIC ---
+		let seasonality = new Array(12).fill(1.0);
+		function initEqualizer() {
+		    const container = document.getElementById('eq_container');
+		    container.innerHTML = '';
+		    const months = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+		    for(let i=0; i<12; i++) {
+		        const div = document.createElement('div');
+		        div.className = 'eq-band';
+		        div.id = `eq_band_${i}`; 
+		        div.innerHTML = `
+		            <div class="eq-val" id="eq_val_${i}">1.0</div>
+		            <input type="range" class="eq-slider" min="0.1" max="3.0" step="0.1" value="1.0" 
+		                orient="vertical" oninput="updateEq(${i}, this.value)">
+		            <div class="eq-label">${months[i]}</div>
+		        `;
+		        container.appendChild(div);
+		    }
+		}
+		function updateEq(monthIdx, value) {
+		    seasonality[monthIdx] = parseFloat(value);
+		    document.getElementById(`eq_val_${monthIdx}`).innerText = seasonality[monthIdx].toFixed(1);
+		    reqUpdate();
+		}
+		function updateEqualizerHighlights(startStr) {
+		    const startDate = new Date(startStr);
+		    document.querySelectorAll('.eq-band').forEach(el => el.classList.remove('active'));
+		    for(let i=0; i<6; i++) {
+		        let d = new Date(startDate);
+		        d.setMonth(d.getMonth() + i);
+		        const monthIdx = d.getMonth(); 
+		        const el = document.getElementById(`eq_band_${monthIdx}`);
+		        if(el) el.classList.add('active');
+		    }
+		}
+		
+		// --- DATA & ARCHIVE MANAGEMENT ---
+		let batches = [];
+				let calculatedActualSales = new Array(6).fill(0);
+				let chartGantt = null, chartCash = null;
+				let visibleDatasets = { inv: true, prof: true };
+				let simulationResult = null; 
+				window.activeBatchId = null; 
+				let logisticsCosts = { sea: 0, air: 0, exp: 0 }; 
+		
+		// Modal Logic
+		const modal = document.getElementById('archiveModal');
+		function openModal() { renderProfileList(); modal.style.display = 'flex'; }
+		function closeModal() { modal.style.display = 'none'; }
+		function getProfiles() {
+		    try { return JSON.parse(localStorage.getItem('amazon_sb_profiles')) || { 'default': '默认方案' }; }
+		    catch { return { 'default': '默认方案' }; }
+		}
+		function saveProfiles(p) { localStorage.setItem('amazon_sb_profiles', JSON.stringify(p)); }
+		function renderProfileList() {
+		    const list = document.getElementById('profileList');
+		    const profiles = getProfiles();
+		    list.innerHTML = '';
+		    for (let id in profiles) {
+		        const div = document.createElement('div');
+		        div.className = `profile-item ${id === currentProfileId ? 'selected' : ''}`;
+		        div.innerHTML = `<span>${profiles[id]}</span>${id !== 'default' ? `<span onclick="deleteProfile('${id}', event)" style="color:#e74c3c">×</span>` : ''}`;
+		        div.onclick = (e) => { if(e.target.tagName !== 'SPAN' || e.target.innerText !== '×') loadProfile(id); };
+		        list.appendChild(div);
+		    }
+		}
+		function saveNewProfile() {
+		    const name = document.getElementById('newProfileName').value.trim();
+		    if(!name) return alert('请输入名称');
+		    const id = 'p_' + Date.now();
+		    const profiles = getProfiles();
+		    profiles[id] = name;
+		    saveProfiles(profiles);
+		    currentProfileId = id;
+		    saveData(); 
+		    document.getElementById('newProfileName').value = '';
+		    renderProfileList();
+		}
+		function loadProfile(id) {
+		    currentProfileId = id;
+		    loadData();
+		    renderProfileList();
+		    reqUpdate();
+		    renderBatchList();
+		}
+		function deleteProfile(id, e) {
+		    e.stopPropagation();
+		    if(!confirm('确定删除?')) return;
+		    const profiles = getProfiles();
+		    delete profiles[id];
+		    saveProfiles(profiles);
+		    localStorage.removeItem('amazon_sandbox_v240_' + id);
+		    if(currentProfileId === id) loadProfile('default');
+		    else renderProfileList();
+		}
+		function exportJSON() {
+		    const state = gatherState();
+		    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state));
+		    const downloadAnchorNode = document.createElement('a');
+		    downloadAnchorNode.setAttribute("href", dataStr);
+		    downloadAnchorNode.setAttribute("download", "amazon_sandbox_backup.json");
+		    document.body.appendChild(downloadAnchorNode);
+		    downloadAnchorNode.click();
+		    downloadAnchorNode.remove();
+		}
+		function importJSON(input) {
+		    const file = input.files[0];
+		    if(!file) return;
+		    const reader = new FileReader();
+		    reader.onload = (e) => {
+		        try {
+		            const state = JSON.parse(e.target.result);
+		            applyState(state);
+		            reqUpdate();
+		            renderBatchList();
+		            alert('导入成功！');
+		        } catch(err) { alert('文件格式错误'); }
+		    };
+		    reader.readAsText(file);
+		    input.value = '';
+		}
+		function gatherState() {
+					const inputs = {};
+					document.querySelectorAll('input, select').forEach(el => {
+		        if(el.id && !el.id.startsWith('slider_') && !el.className.includes('eq-slider') && el.id !== 'newProfileName' && el.type !== 'file') inputs[el.id] = el.value;
+		    });
+		    inputs['sim_mode'] = document.getElementById('sim_mode').checked;
+					return { inputs, batches, seasonality };
+		}
+		function applyState(state) {
+		    if(state.inputs) { 
+		        for(let k in state.inputs) { 
+		            const el = document.getElementById(k); 
+		            if(el) {
+		                if(el.type === 'checkbox') el.checked = state.inputs[k];
+		                else el.value = state.inputs[k]; 
+		            }
+		        } 
+		        if(state.inputs['sim_mode']) {
+		            isFreeMode = true;
+		            document.getElementById('lbl_reg').classList.remove('active');
+		            document.getElementById('lbl_free').classList.add('active');
+		        } else {
+		            isFreeMode = false;
+		            document.getElementById('lbl_reg').classList.add('active');
+		            document.getElementById('lbl_free').classList.remove('active');
+		        }
+		    }
+		    if(state.batches) batches = state.batches;
+		    if(state.seasonality && state.seasonality.length === 12) {
+		        seasonality = state.seasonality;
+		        const sliders = document.querySelectorAll('.eq-slider');
+		        sliders.forEach((s, i) => {
+		            s.value = seasonality[i];
+		            document.getElementById(`eq_val_${i}`).innerText = seasonality[i].toFixed(1);
+		        });
+		    }
+		}
+				function saveData() {
+		    const state = gatherState();
+		    const key = 'amazon_sandbox_v240_' + currentProfileId;
+					localStorage.setItem(key, JSON.stringify(state));
+		    localStorage.setItem('amazon_sb_last_profile', currentProfileId);
+				}
+				function loadData() {
+		    if (!window.loadedOnce) {
+		        const lastId = localStorage.getItem('amazon_sb_last_profile');
+		        if (lastId && getProfiles()[lastId]) currentProfileId = lastId;
+		        window.loadedOnce = true;
+		    }
+		    const key = 'amazon_sandbox_v240_' + currentProfileId;
+					const raw = localStorage.getItem(key);
+					if(!raw) return;
+					try {
+						const state = JSON.parse(raw);
+		        applyState(state);
+					} catch(e) { console.error(e); }
+				}
+		
+		// --- INIT ---
+				window.onload = function() {
+					initEqualizer();
+		    calcCompound(); 
+		    
+		    // --- SCROLL SYNC RESTORED ---
+		    const topSection = document.getElementById('topSection');
+		    const bottomSection = document.getElementById('bottomSection');
+		    let isSyncingTop = false; 
+		    let isSyncingBottom = false;
+		
+		    topSection.addEventListener('scroll', () => {
+		        if (!isSyncingTop) {
+		            isSyncingBottom = true;
+		            bottomSection.scrollLeft = topSection.scrollLeft;
+		            isSyncingBottom = false;
+		        }
+		    });
+		
+		    bottomSection.addEventListener('scroll', () => {
+		        if (!isSyncingBottom) {
+		            isSyncingTop = true;
+		            topSection.scrollLeft = bottomSection.scrollLeft;
+		            isSyncingTop = false;
+		        }
+		    });
+		
+				    try { document.getElementById('sim_start').valueAsDate = new Date(); } catch(e){}
+				    loadData(); 
+				    if(batches.length === 0) autoGenerate();
+				    else reqUpdate();
+				};
+		
+		function calcWeightedSeasonality(startStr) {
+		    updateEqualizerHighlights(startStr);
+		    const startDate = new Date(startStr);
+		    for(let m=0; m<6; m++) {
+		        let sumCoeff = 0;
+		        for(let d=0; d<30; d++) {
+		            let currentDate = new Date(startDate);
+		            currentDate.setDate(startDate.getDate() + (m * 30) + d);
+		            sumCoeff += seasonality[currentDate.getMonth()];
+		        }
+		        const avgCoeff = sumCoeff / 30;
+		        const elCoef = document.getElementById(`coef_m${m+1}`);
+		        if(elCoef) elCoef.innerText = avgCoeff.toFixed(2);
+		        
+		        const base = safeParse(`base_s_m${m+1}`);
+		        const actual = Math.round(base * avgCoeff);
+		        calculatedActualSales[m] = actual;
+		        
+		        const elReal = document.getElementById(`real_s_m${m+1}`);
+		        if(elReal) elReal.innerText = actual;
+		    }
+		}
+				
+				function calcLogistics() {
+					const L = safeParse('box_l'); const W = safeParse('box_w'); const H = safeParse('box_h');
+					const Wgt = safeParse('box_wgt'); const Pcs = safeParse('pcs_per_box'); const rate = safeParse('exch_rate') || 7.2;
+				    const cmToInch = 0.3937; const kgToLb = 2.2046;
+				    document.getElementById('disp_l_in').innerText = (L * cmToInch).toFixed(1) + ' in';
+				    document.getElementById('disp_w_in').innerText = (W * cmToInch).toFixed(1) + ' in';
+				    document.getElementById('disp_h_in').innerText = (H * cmToInch).toFixed(1) + ' in';
+				    document.getElementById('disp_wgt_lb').innerText = (Wgt * kgToLb).toFixed(1) + ' lb';
+					if (Pcs === 0) return;
+		
+				    const volWgtAir = (L * W * H) / 6000; const volWgtExp = (L * W * H) / 8000;
+				    document.getElementById('weight_summary').innerHTML = `<span style="color:#555">实重: <b>${Wgt}</b>kg</span> | <span style="${volWgtAir>Wgt?'color:#e67e22;font-weight:bold':''}">材积(空): ${volWgtAir.toFixed(1)}kg</span> | <span style="${volWgtExp>Wgt?'color:#e67e22;font-weight:bold':''}">材积(快): ${volWgtExp.toFixed(1)}kg</span>`;
+		
+					const cbm = (L * W * H) / 1000000;
+					const chgWgtAir = Math.max(Wgt, volWgtAir); const chgWgtExp = Math.max(Wgt, volWgtExp);
+					logisticsCosts.sea = (cbm * safeParse('sea_price_cbm')) / Pcs;
+					logisticsCosts.air = (chgWgtAir * safeParse('air_price_kg')) / Pcs;
+					logisticsCosts.exp = (chgWgtExp * safeParse('exp_price_kg')) / Pcs;
+					
+				    const renderCost = (rmb) => {
+				        const usd = rmb / rate;
+				        return `<div style="font-size:12px; font-weight:800; color:#e67e22">$${usd.toFixed(2)}<span style="font-size:10px;color:#999;font-weight:normal;">/个</span></div><div style="font-size:10px; color:#999; margin-top:2px;">¥${rmb.toFixed(2)}</div>`;
+				    };
+					document.getElementById('res_sea_unit').innerHTML = renderCost(logisticsCosts.sea);
+					document.getElementById('res_air_unit').innerHTML = renderCost(logisticsCosts.air);
+					document.getElementById('res_exp_unit').innerHTML = renderCost(logisticsCosts.exp);
+				}
+		
+				function calcFinancialStats() {
+					const rate = safeParse('exch_rate'); const cost = safeParse('unit_cost');
+				    for(let i=1; i<=6; i++) {
+				        const margin = safeParse(`prof_m${i}`); const price = safeParse(`price_m${i}`); 
+				        let freight = logisticsCosts.sea;
+				        if(batches && batches.length > i-1) freight = logisticsCosts[batches[i-1].type] || 0;
+				        const profitUSD = price * (margin / 100);
+				        const profitRMB = profitUSD * rate;
+				        const recallRMB = cost + freight + profitRMB;
+				        const recallUSD = recallRMB / rate;
+				        const el = document.getElementById(`recall_m${i}`);
+				        if(el) {
+				            const isBleeding = profitUSD < 0;
+				            el.innerHTML = `<div class="${isBleeding?"ug-val-usd ug-val-neg":"ug-val-usd"}">$${recallUSD.toFixed(2)}</div><div class="ug-val-rmb">¥${recallRMB.toFixed(1)}</div>`;
+				        }
+				    }
+				}
+		
+				function autoGenerate() {
+					calcWeightedSeasonality(document.getElementById('sim_start').value);
+				    const sales = calculatedActualSales; 
+				    batches = [];
+				    for(let i=0; i<6; i++) {
+				        let qty = sales[i] * 30; 
+				        batches.push({ id: i, name: `M${i+1}补货`, type: 'sea', qty: qty, offset: i * 30 });
+				    }
+				    switchTab('tab-sim', document.querySelectorAll('.tab-btn')[2]);
+				    renderBatchList(); reqUpdate();
+				}
+		
+		function toggleDataset(key) {
+		    visibleDatasets[key] = !visibleDatasets[key];
+		    const btn = key === 'inv' ? document.getElementById('btnToggleInv') : document.getElementById('btnToggleProf');
+		    btn.classList.toggle(key==='inv'?'active':'active-prof', visibleDatasets[key]);
+		    reqUpdate();
+		}
+		
+		// --- SIMULATION ENGINE (FIFO + RICH DATA CALC) ---
+				function calcSimulation(batchList, p) {
+				    const maxSimDays = 500;
+				    let dailyChange = new Array(maxSimDays).fill(0);
+					let dailyProfitChange = new Array(maxSimDays).fill(0); 
+				    let dailyInv = new Array(maxSimDays).fill(0);
+		    let dailyMissed = new Array(maxSimDays).fill(false);
+				    let cashPoints = [], profitPoints = [], ganttProd=[], ganttShip=[], ganttHold=[], ganttSell=[], ganttStockout=[];
+				    let annotations = {};
+				    let totalRevenue = 0, totalNetProfit = 0;
+				    let batchRevenueMap = new Array(batchList.length).fill(0);
+		    
+		    let arrivalEvents = {}; 
+		
+				    batchList.forEach((b, i) => {
+				        const l = p.log[b.type]; 
+				        const t0 = parseInt(b.offset); // Order
+				        const t1 = t0 + p.prod;        // Ship
+				        const t2 = t1 + l.d;           // Arrive
+				        
+		        // Cost Calcs
+				        const batchCost = b.qty * p.costUnit;
+				        const batchFreight = b.qty * l.p;
+				        
+				        const rowLabel = getBatchLabel(i, b.name, b.qty);
+				        
+		        // Add Rich Data to Prod/Ship bars
+		        ganttProd.push({ 
+		            x: [t0, t1], y: rowLabel, batchIdx: i,
+		            cost: batchCost 
+		        });
+				        ganttShip.push({ 
+		            x: [t1, t2], y: rowLabel, batchIdx: i,
+		            freight: batchFreight
+		        });
+				        
+				        if(t0 < maxSimDays) dailyChange[t0] -= (batchCost * p.ratioDep);
+				        if(t1 < maxSimDays) dailyChange[t1] -= (batchCost * p.ratioBal);
+				        const freightDay = Math.floor(t2);
+				        if(freightDay < maxSimDays) dailyChange[freightDay] -= batchFreight;
+				        
+				        annotations[`b_dep_${i}`] = createBadge(t0, '#e74c3c', [`#${i+1}定`, getFormattedDate(t0)], 90);
+				        annotations[`b_bal_${i}`] = createBadge(t1, '#c0392b', [`#${i+1}尾`, getFormattedDate(t1)], 75);
+				        annotations[`b_fre_${i}`] = createBadge(freightDay, '#f1c40f', [`#${i+1}运`, getFormattedDate(freightDay)], 60);
+		
+		        if(!arrivalEvents[freightDay]) arrivalEvents[freightDay] = [];
+		        arrivalEvents[freightDay].push({ 
+		            qty: b.qty, unitCost: p.costUnit, unitFreight: l.p, batchIdx: i, 
+		            yLabel: rowLabel, arrivalTime: freightDay 
+		        });
+				    });
+		
+		    let inventoryQueue = []; 
+				    let currentInv = 0;
+				    let firstSaleDay = null; 
+		    let salesPeriods = new Array(batchList.length).fill(null).map(()=>({start:null, end:null, arrival:null}));
+		
+				    for(let d=0; d<maxSimDays; d++) {
+		        if(arrivalEvents[d]) {
+		            arrivalEvents[d].forEach(batch => {
+		                inventoryQueue.push(batch);
+		                currentInv += batch.qty;
+		                salesPeriods[batch.batchIdx].arrival = d; 
+		            });
+		            inventoryQueue.sort((a, b) => a.arrivalTime - b.arrivalTime || a.batchIdx - b.batchIdx);
+		        }
+		
+				        let mIdx = 0;
+				        if (firstSaleDay !== null) {
+				            mIdx = Math.floor((d - firstSaleDay) / 30);
+				            if(mIdx > 5) mIdx = 5;
+				        }
+				        let demand = p.monthlySales[mIdx]; 
+		        let remainingDemand = demand; 
+		
+				        if(currentInv > 0 && demand > 0) {
+				            if (firstSaleDay === null) firstSaleDay = d;
+				            
+				            while(demand > 0 && inventoryQueue.length > 0) {
+				                let batchObj = inventoryQueue[0]; 
+		                if (salesPeriods[batchObj.batchIdx].start === null) { salesPeriods[batchObj.batchIdx].start = d; }
+		                salesPeriods[batchObj.batchIdx].end = d + 1;
+		
+				                let take = Math.min(demand, batchObj.qty);
+		                remainingDemand -= take;
+		
+				                const marginPercent = p.monthlyMargins[mIdx];
+				                const price = p.monthlyPrices[mIdx];
+				                const unitProfitUSD = price * (marginPercent / 100);
+				                const unitProfitRMB = unitProfitUSD * p.rate;
+				                const unitRecallRMB = batchObj.unitCost + batchObj.unitFreight + unitProfitRMB;
+				                
+				                const revenue = take * unitRecallRMB;
+				                const profit = take * unitProfitRMB;
+				                
+				                batchRevenueMap[batchObj.batchIdx] += revenue;
+				                let payDay = d + 14;
+				                if(payDay < maxSimDays) dailyChange[payDay] += revenue;
+				                
+				                totalRevenue += revenue;
+				                totalNetProfit += profit;
+				                dailyProfitChange[d] += profit;
+				                
+				                batchObj.qty -= take;
+				                currentInv -= take;
+				                demand -= take;
+				                
+				                if(batchObj.qty <= 0) inventoryQueue.shift(); 
+				            }
+				        }
+		        if (firstSaleDay !== null && d >= firstSaleDay) {
+		            if(remainingDemand > 0.01) dailyMissed[d] = true;
+		        }
+				        dailyInv[d] = currentInv;
+				    }
+		
+		    salesPeriods.forEach((period, i) => {
+		        const b = batchList[i];
+		        const label = getBatchLabel(i, b.name, b.qty);
+		        if(period.start !== null) {
+		            // Add Rich Revenue Data to Sales Bar
+		            ganttSell.push({ 
+		                x: [period.start, period.end], y: label, batchIdx: i,
+		                revenue: batchRevenueMap[i]
+		            });
+		            
+		            if (period.arrival !== null && period.start > period.arrival) {
+		                 ganttHold.push({ x: [period.arrival, period.start], y: label, batchIdx: i, duration: period.start - period.arrival });
+		            }
+		        }
+		    });
+		
+		    let stockoutStart = -1;
+		    if(firstSaleDay !== null) {
+		        for(let d = firstSaleDay; d < 360; d++) {
+		            if(dailyMissed[d]) { 
+		                if(stockoutStart === -1) stockoutStart = d;
+		            } else {
+		                if(stockoutStart !== -1) {
+		                    if(d - stockoutStart > 0.5) { 
+		                        let prevBatchIdx = 0;
+		                        for(let k=0; k<salesPeriods.length; k++) { if(salesPeriods[k].end === stockoutStart) prevBatchIdx = k; }
+		                        ganttStockout.push({ x: [stockoutStart, d], y: getBatchLabel(prevBatchIdx, batchList[prevBatchIdx].name, batchList[prevBatchIdx].qty), gapDays: d - stockoutStart });
+		                    }
+		                    stockoutStart = -1;
+		                }
+		            }
+		        }
+		    }
+				    
+				    batchList.forEach((b, i) => {
+				        const l = p.log[b.type];
+				        const arrivalDay = Math.floor(parseInt(b.offset) + p.prod + l.d);
+				        const badgeDay = arrivalDay + 14; 
+				        const rev = batchRevenueMap[i];
+				        const totalCost = b.qty * (p.costUnit + l.p);
+				        let color = '#2ecc71'; 
+				        let text = [`B${i+1}回`, `¥${(rev/1000).toFixed(1)}k`];
+				        if (rev < 0) { color = '#c0392b'; text = [`B${i+1}亏`, `¥${(rev/1000).toFixed(1)}k`]; } 
+		        else if (rev < totalCost) { color = '#e67e22'; text = [`B${i+1}回`, `¥${(rev/1000).toFixed(1)}k`]; }
+				        annotations[`b_ret_total_${i}`] = createBadge(badgeDay, color, text, 25);
+				    });
+		
+				    let runningCash = 0, runningProfit = 0, minCash = 0, beIdx = null, bePoint = null, profBeIdx = null, profBePoint = null;
+				    let invPoints = [];
+				    for(let d=0; d<dailyChange.length; d++) {
+				        let prevCash = runningCash; let prevProf = runningProfit;
+				        runningCash += dailyChange[d]; runningProfit += dailyProfitChange[d]; 
+				        if(runningCash < minCash) minCash = runningCash;
+				        if(beIdx === null && prevCash < 0 && runningCash >= 0 && d > 10) { beIdx = d; bePoint = { x: d, y: runningCash }; }
+		        if(profBeIdx === null && prevProf < 0 && runningProfit >= 0 && d > 10) { profBeIdx = d; profBePoint = { x: d, y: runningProfit }; }
+						if(d <= 360) {
+				            cashPoints.push({ x: d, y: runningCash });
+							profitPoints.push({ x: d, y: runningProfit });
+				            invPoints.push({ x: d, y: dailyInv[d] || 0 }); 
+				        }
+				    }
+				    let beDateStr = beIdx !== null ? getFormattedDate(beIdx) : "未回本";
+		    let profBeDateStr = profBeIdx !== null ? getFormattedDate(profBeIdx) : "未盈利";
+				    return { 
+				        xMin: 0, xMax: 360, cashPoints, invPoints, profitPoints, ganttProd, ganttShip, ganttHold, ganttSell, ganttStockout, annotations, 
+				        minCash, finalCash: runningCash, totalNetProfit, breakevenDate: beDateStr, profBeDateStr, bePoint, profBePoint, totalRevenue 
+				    };
+				}
+				
+				function updateChart() {
+				    try {
+						const startStr = document.getElementById('sim_start').value;
+						calcWeightedSeasonality(startStr);
+						calcLogistics(); 
+				calcFinancialStats();
+						saveData(); 
+				        const p = getParams();
+				        simulationResult = calcSimulation(batches, p);
+				        
+				        document.getElementById('kpi_exposure').innerText = '¥' + Math.abs(simulationResult.minCash).toLocaleString();
+								document.getElementById('kpi_profit').innerText = '¥' + Math.round(simulationResult.totalNetProfit).toLocaleString();
+				        document.getElementById('kpi_date').innerText = simulationResult.breakevenDate || "未回本";
+				        
+				        document.getElementById('boss_exposure').innerText = '¥' + Math.abs(simulationResult.minCash).toLocaleString();
+				        document.getElementById('boss_cash_be').innerText = simulationResult.breakevenDate;
+				        document.getElementById('boss_prof_be').innerText = simulationResult.profBeDateStr;
+				        const roi = Math.abs(simulationResult.totalNetProfit / simulationResult.minCash) * 100;
+				        document.getElementById('boss_roi').innerText = isFinite(roi) ? roi.toFixed(1) + '%' : '0%';
+				        const turnover = Math.abs(simulationResult.totalRevenue / simulationResult.minCash);
+				        document.getElementById('boss_turnover').innerText = isFinite(turnover) ? turnover.toFixed(2) : '0.0';
+				        const netMargin = (simulationResult.totalNetProfit / simulationResult.totalRevenue) * 100;
+				        document.getElementById('boss_margin').innerText = isFinite(netMargin) ? netMargin.toFixed(1) + '%' : '0%';
+				    
+				        const pxPerWeek = 60; 
+				        const viewportW = document.getElementById('bottomSection').clientWidth || 800; 
+				        const timelineW = (simulationResult.xMax / 7) * pxPerWeek + 100;
+				        const finalWidth = Math.ceil(Math.max(viewportW, timelineW) / 100) * 100;
+				        
+				        const gs = document.getElementById('ganttSizer');
+				        const cs = document.getElementById('cashSizer');
+				        if (gs.clientWidth !== finalWidth) { gs.style.width = finalWidth + 'px'; cs.style.width = finalWidth + 'px'; }
+				        
+				        const rowHeight = 45; 
+				        const ganttH = Math.max(document.getElementById('topSection').clientHeight, batches.length * rowHeight + 30);
+				        document.getElementById('ganttSizer').style.height = ganttH + 'px';
+				        drawCharts(simulationResult, p.startDateStr);
+						analyzeOpportunity();
+				    } catch(e) { console.error(e); }
+				}
+				
+				function analyzeOpportunity() {
+					if(!simulationResult) return;
+					const p = getParams();
+					batches.forEach(b => {
+						const el = document.getElementById(`alert_b${b.id}`);
+						if(el) { el.style.display = 'none'; el.className = 'opp-alert'; }
+					});
+					simulationResult.ganttStockout.forEach(stockout => {
+		        let batchIdx = -1;
+		        batches.forEach((b, i) => { if(stockout.y.includes(`#${i+1}`)) batchIdx = i; });
+						const culpritBatchIdx = batchIdx + 1;
+						if(culpritBatchIdx >= batches.length) return;
+						const batch = batches[culpritBatchIdx];
+						const el = document.getElementById(`alert_b${batch.id}`);
+						if(!el) return;
+						
+				        const mIdx = Math.floor(stockout.x[0] / 30);
+				        const margin = p.monthlyMargins[Math.min(mIdx, 5)];
+				        const price = p.monthlyPrices[Math.min(mIdx, 5)];
+				        const unitProfitRMB = (price * (margin/100)) * p.rate;
+				        
+						let lostProfitTotal = 0;
+						let currentDay = stockout.x[0]; 
+						const endDay = stockout.x[1];   
+						while(currentDay < endDay) {
+							let m = Math.floor(currentDay / 30);
+							if(m > 5) m = 5;
+							const dailySales = p.monthlySales[m];
+							lostProfitTotal += (dailySales * unitProfitRMB);
+							currentDay++;
+						}
+						let upgradeCost = 0;
+						let canUpgrade = false;
+						let advice = "";
+						if(batch.type === 'sea') {
+							const diff = logisticsCosts.air - logisticsCosts.sea;
+							upgradeCost = batch.qty * diff;
+							canUpgrade = true;
+							advice = "转空派";
+						} else if (batch.type === 'air') {
+							const diff = logisticsCosts.exp - logisticsCosts.air;
+							upgradeCost = batch.qty * diff;
+							canUpgrade = true;
+							advice = "转快递";
+						}
+						if(canUpgrade && lostProfitTotal > upgradeCost) {
+							const saved = Math.round(lostProfitTotal - upgradeCost);
+							el.innerHTML = `<div class="opp-header">💡 建议${advice} (挽回利润 ¥${saved})</div><div class="opp-detail"><span>断货少赚: -¥${Math.round(lostProfitTotal)}</span><span>运费增加: +¥${Math.round(upgradeCost)}</span></div>`;
+							el.style.display = 'block';
+							el.classList.add('visible');
+						}
+					});
+				}
+				
+				function createDiagonalPattern(ctx) {
+				    const shape = document.createElement('canvas');
+				    shape.width = 10; shape.height = 10;
+				    const c = shape.getContext('2d');
+				    c.strokeStyle = 'rgba(0,0,0,0.1)'; c.lineWidth = 1;
+				    c.beginPath(); c.moveTo(0,10); c.lineTo(10,0); c.stroke();
+				    return ctx.createPattern(shape, 'repeat');
+				}
+				function createBadge(val, c, t, y) { return { type: 'line', scaleID: 'x', value: val, borderColor: c, borderWidth: 1, borderDash: [4, 4], label: { display: true, content: t, backgroundColor: c, color: '#fff', font: {size: 10, weight: 'bold'}, borderRadius: 3, padding: 4, position: 'start', yAdjust: y, z: 10 } }; }
+		
+				function drawCharts(data, startDateStr) {
+				    const commonX = { 
+				        type: 'linear', min: data.xMin, max: data.xMax, 
+				        grid: { color: '#eee', lineWidth: 1 }, 
+				        ticks: { color: '#333', font: { weight: '900', size: 13 }, stepSize: 14, autoSkip: true, callback: (val) => fmtDateAxis(val, startDateStr) } 
+				    };
+				    const fixY = (axis) => { axis.width = 85; }; 
+				    const ctxG = document.getElementById('ganttChart').getContext('2d');
+				    const stockoutPattern = createDiagonalPattern(ctxG);
+				    const yLabels = batches.map((b, i) => getBatchLabel(i, b.name, b.qty));
+				
+				    if(chartGantt) {
+				        chartGantt.data.labels = yLabels;
+				        chartGantt.data.datasets[0].data = data.ganttProd;
+				        chartGantt.data.datasets[1].data = data.ganttShip;
+		        chartGantt.data.datasets[2].data = data.ganttHold;
+				        chartGantt.data.datasets[3].data = data.ganttSell;
+				        chartGantt.data.datasets[4].data = data.ganttStockout;
+				        chartGantt.options.scales.x.min = data.xMin;
+				        chartGantt.options.scales.x.max = data.xMax;
+				        chartGantt.update('none'); 
+				    } else {
+				        chartGantt = new Chart(ctxG, {
+				            type: 'bar',
+				            data: {
+				                labels: yLabels,
+				                datasets: [ 
+				                    { label: '产', data: data.ganttProd, backgroundColor: '#e74c3c', borderRadius: 4, barThickness: 25, borderSkipped:false }, 
+				                    { label: '运', data: data.ganttShip, backgroundColor: '#f1c40f', borderRadius: 4, barThickness: 25, borderSkipped:false }, 
+		                    { label: '待', data: data.ganttHold, backgroundColor: '#b0bec5', borderRadius: 0, barThickness: 25, borderSkipped:false }, 
+				                    { label: '销', data: data.ganttSell, backgroundColor: '#2ecc71', borderRadius: 4, barThickness: 25, borderSkipped:false },
+				                    { label: '断货', data: data.ganttStockout, backgroundColor: stockoutPattern, borderColor: '#c0392b', borderWidth: 1, borderDash: [4,4], borderRadius: 4, barThickness: 15, borderSkipped:false }
+				                ]
+				            },
+				            options: { 
+				                indexAxis: 'y', responsive: true, maintainAspectRatio: false, animation: false, layout: { padding: {right:40, top:20} },
+				                plugins: { 
+				                    legend: { display: false }, 
+				                    datalabels: { 
+				                        color: (ctx)=>{
+		                            if(ctx.dataset.label==='断货') return '#c0392b';
+		                            if(ctx.dataset.label==='待') return '#546e7a';
+		                            return 'white';
+		                        },
+				                        font: { weight: 'bold', size: 10 },
+				                        formatter: (val, ctx) => {
+		                            if(ctx.dataset.label==='断货') return `缺${val.gapDays}天`;
+		                            if(ctx.dataset.label==='待') return `待${val.duration}天`;
+		                            return ctx.dataset.label;
+				                        }
+				                    },
+				                    tooltip: { callbacks: { label: (ctx) => {
+				                        const start = fmtDateAxis(ctx.raw.x[0], startDateStr);
+				                        const end = fmtDateAxis(ctx.raw.x[1], startDateStr);
+		                        const d = ctx.raw;
+		                        
+		                        // RICH TOOLTIP LOGIC
+		                        if(ctx.dataset.label === '产') return [`🗓️ ${start} - ${end}`, `💰 生产成本: ¥${Math.round(d.cost).toLocaleString()}`];
+		                        if(ctx.dataset.label === '运') return [`🗓️ ${start} - ${end}`, `🚚 头程运费: ¥${Math.round(d.freight).toLocaleString()}`];
+		                        if(ctx.dataset.label === '销') return [`🗓️ ${start} - ${end}`, `💵 预计回款: ¥${Math.round(d.revenue).toLocaleString()}`];
+		                        if(ctx.dataset.label === '待') return `📦 库存积压: ${d.duration}天`;
+		                        if(ctx.dataset.label === '断货') return `⚠️ 断货时长: ${d.gapDays}天`;
+		                        
+				                        return `${ctx.dataset.label}: ${start} - ${end}`;
+				                    }}}
+				                }, 
+				                scales: { x: { ...commonX, display: true, offset: false, ticks: { ...commonX.ticks, color: 'transparent' }, grid: { display: true, color: '#eee', drawBorder: false } }, y: { stacked: true, afterFit: fixY, grid: { display: false } } } 
+				            }
+				        });
+				    }
+				
+				    const ctxC = document.getElementById('cashChart').getContext('2d');
+				    const gradient = ctxC.createLinearGradient(0, 0, 0, 300); gradient.addColorStop(0, 'rgba(41, 128, 185, 0.4)'); gradient.addColorStop(1, 'rgba(41, 128, 185, 0.0)');
+				    const cashAnnotations = { ...data.annotations }; 
+				    cashAnnotations['zeroLine'] = { type: 'line', yMin: 0, yMax: 0, borderColor: '#666', borderWidth: 1.5, borderDash: [6, 4] };
+				    
+				    if(chartCash) {
+				        chartCash.data.datasets[0].data = data.invPoints;
+				        chartCash.data.datasets[0].hidden = !visibleDatasets.inv;
+				        chartCash.data.datasets[1].data = data.cashPoints;
+						chartCash.data.datasets[2].data = data.profitPoints;
+						chartCash.data.datasets[2].hidden = !visibleDatasets.prof;
+				        chartCash.data.datasets[3] = data.bePoint ? 
+		            { label: `回本 ${data.breakevenDate}`, data: [data.bePoint], type: 'scatter', backgroundColor: '#fff', borderColor: '#2980b9', borderWidth: 4, pointRadius: 6, yAxisID: 'y', clip: false } : 
+		            { data: [], type: 'scatter', clip: false };
+				        chartCash.data.datasets[4] = data.profBePoint ? 
+		            { label: `盈利 ${data.profBeDateStr}`, data: [data.profBePoint], type: 'scatter', backgroundColor: '#fff', borderColor: '#27ae60', borderWidth: 4, pointRadius: 6, yAxisID: 'y', clip: false } : 
+		            { data: [], type: 'scatter', clip: false };
+				        
+				        chartCash.options.plugins.annotation.annotations = cashAnnotations;
+				        chartCash.options.scales.x.min = data.xMin;
+				        chartCash.options.scales.x.max = data.xMax;
+				        chartCash.update('none'); 
+				    } else {
+				        chartCash = new Chart(ctxC, {
+				            data: { datasets: [
+				                { type: 'line', label: '库存', data: data.invPoints, backgroundColor: 'rgba(41, 128, 185, 0.4)', borderColor: '#2980b9', borderWidth: 1, fill: true, pointRadius: 0, yAxisID: 'y1', order: 3, hidden: !visibleDatasets.inv, stepped: false }, 
+				                { type: 'line', label: '资金', data: data.cashPoints, borderColor: '#c0392b', backgroundColor: gradient, borderWidth: 2, fill: true, pointRadius: 0, yAxisID: 'y', order: 2 },
+								{ type: 'line', label: '累计利润', data: data.profitPoints, borderColor: '#27ae60', borderWidth: 2, borderDash:[5,5], fill: false, pointRadius: 0, yAxisID: 'y', order: 1, hidden: !visibleDatasets.prof },
+								{ type: 'scatter', label: '回本点', data: [], backgroundColor: '#fff', clip: false },
+				                { type: 'scatter', label: '盈利点', data: [], backgroundColor: '#fff', clip: false }
+						            ]},
+						            options: { 
+						                responsive: true, maintainAspectRatio: false, animation: false, layout: { padding: {right:40, top:6} },
+						                plugins: { 
+				                    legend: { display: false }, 
+				                    annotation: { annotations: cashAnnotations }, 
+				                    datalabels: { 
+		                        display: (c) => c.dataset.type === 'scatter', 
+		                        align: 'top', 
+		                        anchor: 'center',
+		                        offset: 6,
+		                        color: (c) => c.dataset.borderColor, 
+		                        font: { weight: 'bold', size: 11 }, 
+		                        formatter: (v, c) => c.dataset.label 
+		                    }, 
+				                    tooltip: { mode: 'index', intersect: false, callbacks: { 
+				                        label: (c) => {
+				                            if(c.dataset.label === '库存') return `📦 库存: ${c.raw.y} 件`;
+				                            if(c.dataset.label === '资金') return `💸 资金: ¥${Math.round(c.raw.y).toLocaleString()}`;
+				                            if(c.dataset.label === '累计利润') return `💰 利润: ¥${Math.round(c.raw.y).toLocaleString()}`;
+				                            return '';
+				                        } 
+				                    } } 
+				                }, 
+						                scales: { x: { ...commonX, position: 'top', border: { display: true, width: 3, color: '#333' }, offset: false }, y: { grid: { color: '#f8f9fa' }, afterFit: fixY, ticks: { callback: (v) => '¥' + v/1000 + 'k' } }, y1: { position: 'left', grid: { display: false }, display: false, min: 0 } } 
+						            }
+				        });
+				    }
+				}
+		
+		function getParams() {
+		    return {
+		        start: new Date(document.getElementById('sim_start').value),
+		        startDateStr: document.getElementById('sim_start').value,
+		        costUnit: safeParse('unit_cost'),
+		        rate: safeParse('exch_rate') || 7.2,
+		        prod: safeParse('prod_days'),
+		        monthlySales: calculatedActualSales, 
+		        monthlyPrices: [1,2,3,4,5,6].map(i => safeParse(`price_m${i}`)), 
+		        monthlyMargins: [1,2,3,4,5,6].map(i => safeParse(`prof_m${i}`)), 
+		        log: { 
+		            sea: { d: safeParse('sea_days'), p: logisticsCosts.sea }, 
+		            air: { d: safeParse('air_days'), p: logisticsCosts.air }, 
+		            exp: { d: safeParse('exp_days'), p: logisticsCosts.exp } 
+		        },
+		        ratioDep: safeParse('ratio_deposit') / 100,
+		        ratioBal: safeParse('ratio_balance') / 100
+		    };
+		}
+		
+		function handleSliderInput(id, rawValue) {
+		    window.activeBatchId = id; 
+		    const b = batches.find(x => x.id === id);
+		    if (!b) return;
+		    let val = parseInt(rawValue); if (val < 0) val = 0; b.offset = val;
+		    
+		    const slider = document.getElementById(`slider_${id}`);
+		    if(slider) slider.value = val;
+		
+		    const prodDays = parseFloat(document.getElementById('prod_days').value) || 0;
+		    const l = { d: safeParse(b.type+'_days') }; 
+		    const salesStart = parseInt(b.offset) + parseInt(prodDays) + l.d;
+		    const dateO = document.getElementById(`date_o_${id}`);
+		    const dateS = document.getElementById(`date_s_${id}`);
+		    const inpOff = document.getElementById(`inp_off_${id}`);
+		    if(dateO) dateO.innerText = getFormattedDate(b.offset);
+		    if(dateS) dateS.innerText = getFormattedDate(salesStart);
+		    if(inpOff) inpOff.value = b.offset;
+		    
+		    // --- REGULAR MODE CASCADE ---
+		    if (!isFreeMode) {
+		        if (id > 0) {
+		            const prevBatch = batches.find(bx => bx.id === id - 1);
+		            if (prevBatch && b.offset < prevBatch.offset) b.offset = prevBatch.offset;
+		        }
+		        let currentOffset = b.offset;
+		        for (let i = id + 1; i < batches.length; i++) {
+		            const nextBatch = batches[i];
+		            if (nextBatch.offset < currentOffset) {
+		                nextBatch.offset = currentOffset;
+		                const s = document.getElementById(`slider_${i}`);
+		                const inp = document.getElementById(`inp_off_${i}`);
+		                if(s) s.value = currentOffset;
+		                if(inp) inp.value = currentOffset;
+		            }
+		            currentOffset = nextBatch.offset;
+		        }
+		    }
+		    reqUpdate(); 
+		}
+		function stopDragging() { 
+		    window.activeBatchId = null; 
+		    if(chartGantt) chartGantt.update('none'); 
+		    document.getElementById('crosshair-line').style.display = 'none';
+		    batches.forEach(b => {
+		        const s = document.getElementById(`slider_${b.id}`);
+		        const i = document.getElementById(`inp_off_${b.id}`);
+		        if(s && s.value != b.offset) s.value = b.offset;
+		        if(i && i.value != b.offset) i.value = b.offset;
+		    });
+		}
+		window.addBatch = () => { const id = batches.length; const last = batches[batches.length-1]; const off = last ? parseInt(last.offset) + 30 : 0; batches.push({ id: id, name: '手工补', type: 'sea', qty: 1000, offset: off }); renderBatchList(); reqUpdate(); };
+		window.delBatch = (id) => { batches = batches.filter(b => b.id !== id); batches.forEach((b, i) => b.id = i); renderBatchList(); reqUpdate(); };
+		function updB(id, k, v, redraw=true) { 
+		    const b = batches.find(x=>x.id===id); if(b){ 
+		        let val = (k==='type'||k==='name')?v:parseFloat(v); 
+		        if(k==='offset') { handleSliderInput(id, val); return; } 
+		        b[k]=val; if (k === 'type') { renderBatchList(); reqUpdate(); } else if (redraw) { renderBatchList(); reqUpdate(); }
+		    }
+		};
+		function renderBatchList() {
+		    const div = document.getElementById('batch_list'); 
+		    if(div.children.length !== batches.length) {
+		        div.innerHTML = '';
+		        const prodDays = parseFloat(document.getElementById('prod_days').value) || 0;
+		        batches.forEach((b, idx) => {
+		            const el = document.createElement('div'); el.className = `batch-card type-${b.type}`; el.id = `b_card_${b.id}`;
+		            const orderDate = getFormattedDate(b.offset);
+		            const shipDate = getFormattedDate(parseInt(b.offset) + prodDays);
+		            const typeLabel = b.type==='sea'?'海运':(b.type==='air'?'空派':'快递');
+		            const unitShipCost = logisticsCosts[b.type].toFixed(2);
+		            el.innerHTML = `<div class="bc-header" onclick="toggleBatchCard(this)"><span class="bc-title">#${idx+1} ${b.name}</span><span class="bc-summary" id="bc_sum_${b.id}">${typeLabel}(¥${unitShipCost}) | ${b.qty}件 | T+${b.offset}</span><div class="bc-actions"><div class="btn-del" onclick="event.stopPropagation(); delBatch(${b.id})">×</div><span class="toggle-icon"><svg class="icon-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></span></div></div><div class="bc-body"><div id="alert_b${b.id}" class="opp-alert"></div><div class="bc-row"><select class="bc-inp" style="width:50px;" onchange="updB(${b.id},'type',this.value, true)"><option value="sea" ${b.type==='sea'?'selected':''}>海</option><option value="air" ${b.type==='air'?'selected':''}>空</option><option value="exp" ${b.type==='exp'?'selected':''}>快</option></select><input type="number" class="bc-inp" value="${b.qty}" onchange="updB(${b.id},'qty',this.value, true)" placeholder="Q"><span style="font-size:10px; color:#999;">T+</span><input type="number" class="bc-inp" min="0" value="${b.offset}" onchange="handleSliderInput(${b.id}, this.value)" style="width:40px;" id="inp_off_${b.id}"></div><div class="slider-container"><div class="slider-top"><span style="font-size:9px; color:#999;">下单:</span><input type="range" class="slider-range" min="0" max="400" value="${b.offset}" id="slider_${b.id}" onmousedown="handleSliderInput(${b.id}, this.value)" ontouchstart="handleSliderInput(${b.id}, this.value)" onmouseup="stopDragging()" ontouchend="stopDragging()" oninput="handleSliderInput(${b.id}, this.value)"></div><div class="date-display"><span><span class="date-label">下单:</span><span id="date_o_${b.id}">${orderDate}</span></span><span><span class="date-label">发货:</span><span id="date_s_${b.id}" style="color:#e67e22;">${shipDate}</span></span></div></div></div>`;
+		            div.appendChild(el);
+		        });
+		    } else {
+		        const prodDays = parseFloat(document.getElementById('prod_days').value) || 0;
+		        batches.forEach(b => {
+		            const orderDate = getFormattedDate(b.offset); const shipDate = getFormattedDate(parseInt(b.offset) + prodDays);
+		            const typeLabel = b.type==='sea'?'海运':(b.type==='air'?'空派':'快递'); const unitShipCost = logisticsCosts[b.type].toFixed(2);
+		            const sumEl = document.getElementById(`bc_sum_${b.id}`); if(sumEl) sumEl.innerText = `${typeLabel}(¥${unitShipCost}) | ${b.qty}件 | T+${b.offset}`;
+		            const dateO = document.getElementById(`date_o_${b.id}`); const dateS = document.getElementById(`date_s_${b.id}`);
+		            if(dateO) dateO.innerText = orderDate; if(dateS) dateS.innerText = shipDate;
+		            const card = document.getElementById(`b_card_${b.id}`); if(card) card.className = `batch-card type-${b.type}`;
+		        });
+		    }
+		    analyzeOpportunity();
+		}
+		function toggleBatchCard(header) { header.parentElement.classList.toggle('collapsed'); }
+	</script>
+</body>
+</html>

@@ -83,7 +83,7 @@ const AdsAnalysis: React.FC = () => {
     <div className="p-8 space-y-12 max-w-[1600px] mx-auto">
 
       <div className="flex flex-col gap-1">
-        <h2 className="text-3xl font-black tracking-tight text-white">广告投放分析</h2>
+        <h2 className="text-3xl font-black tracking-tight text-white">广告投放模拟</h2>
         <div className="flex justify-between items-center mt-2">
           <p className="text-zinc-500 text-sm">Real-time Advertising Simulation & Performance Analysis</p>
           <button className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all shadow-lg shadow-blue-600/20">

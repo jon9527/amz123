@@ -14,6 +14,7 @@ import {
 import SaveProfitModelDialog from '../components/SaveProfitModelDialog';
 import { ProfitModelService } from '../services/profitModelService';
 import { ProfitModelInputs, ProfitModelResults, SavedProfitModel } from '../types';
+import { useProducts } from '../ProductContext';
 
 // --- 全局样式 ---
 const globalInputStyles = `
@@ -89,7 +90,30 @@ const StepperInput = ({ value, onChange, step = 0.1, color = "white", min = 0, d
   );
 };
 
+const DistributionRow: React.FC<{ label: string, value: number, price: number, color: string, isBold?: boolean }> = ({ label, value, price, color, isBold }) => {
+  const pct = price > 0 ? (value / price) * 100 : 0;
+  return (
+    <div className="group w-full">
+      <div className="flex items-center justify-between mb-1.5">
+        <div className="flex items-center gap-2.5">
+          <div className={`size-2.5 rounded-full ${color} shadow-lg shadow-black/50`}></div>
+          <span className="text-[13px] text-zinc-400 font-black uppercase tracking-tight">{label}</span>
+        </div>
+        <div className="flex items-center gap-4">
+          <span className={`text-[14px] font-mono ${isBold ? 'text-emerald-500 font-black' : 'text-zinc-100 font-black'}`}>{fmtUSD(value)}</span>
+          <span className="text-[10px] text-zinc-600 font-mono w-10 text-right font-black">{pct.toFixed(1)}%</span>
+        </div>
+      </div>
+      <div className="h-[2px] bg-zinc-950 rounded-full overflow-hidden">
+        <div className={`h-full ${color} opacity-90 transition-all duration-700 ease-out`} style={{ width: `${Math.max(0, Math.min(100, pct))}%` }}></div>
+      </div>
+    </div>
+  );
+};
+
 const ProfitCalculator: React.FC = () => {
+  const { products } = useProducts();
+  const [selectedProductId, setSelectedProductId] = useState<string>('');
   const [targetAcos, setTargetAcos] = useState(15);
   const [targetMargin, setTargetMargin] = useState(15);
   const [autoComm, setAutoComm] = useState(true);
@@ -115,30 +139,63 @@ const ProfitCalculator: React.FC = () => {
   const [allModels, setAllModels] = useState<SavedProfitModel[]>([]);
   const [expandedProduct, setExpandedProduct] = useState<string | null>(null);
 
+  // Smart Model Detection State
+  const [existingModelsForProduct, setExistingModelsForProduct] = useState<SavedProfitModel[]>([]);
+
   // 新增：产品基本信息（用于保存和对比）
   const [productName, setProductName] = useState('');
-  // const [asin, setAsin] = useState(''); // Removed ASIN
+  const [loadedLabel, setLoadedLabel] = useState(''); // 记录导入的方案标签
+  const [loadedNote, setLoadedNote] = useState('');   // 记录导入的备注
+  const [loadedModelId, setLoadedModelId] = useState<string | null>(null); // 记录导入的模型 ID（用于更新而非新建）
 
-  // Ref to track if user has manually edited Plan B price
-  // If false, Plan B price follows Plan A price automatically
-  const hasEditedPlanB = React.useRef(false);
+  // Content Hashing for Smart Save
+  const [loadedHash, setLoadedHash] = useState<string>('');
+  const [saveMode, setSaveMode] = useState<'update' | 'create'>('create');
+  const [smartLabel, setSmartLabel] = useState<string>('');
 
-  useEffect(() => {
-    // 加载最近的产品配置（每个产品取最新的一个方案）
-    const models = ProfitModelService.getAll();
-    const uniqueProducts = new Map<string, SavedProfitModel>();
+  // Source-Based Save Logic: Track where data came from
+  const [dataSource, setDataSource] = useState<'productLibrary' | 'profitModel' | 'manual'>('manual');
+  const [toastMessage, setToastMessage] = useState<string>('方案已保存到利润模型库');
 
-    // Sort all models date desc
-    const sorted = models.sort((a, b) => b.timestamp - a.timestamp);
-    setAllModels(sorted);
-    setRecentProducts(sorted); // User requested flat list of ALL versions
-  }, [showLoadMenu]); // 每次打开菜单重新加载
+  const generateContentHash = (inputs: ProfitModelInputs) => {
+    // 包含所有影响 Plan B 的输入框（targetMargin 只影响 Plan A，不纳入）
+    return JSON.stringify({
+      // 运营目标（只有 targetAcos 影响 Plan B）
+      tAcos: inputs.targetAcos,
+      aComm: inputs.autoComm,
+      mComm: inputs.manualComm,
+      // 产品成本
+      pRMB: inputs.purchaseRMB,
+      rate: inputs.exchangeRate,
+      // 物流仓储
+      ship: inputs.shippingUSD,
+      fba: inputs.fbaFee,
+      misc: inputs.miscFee,
+      stor: inputs.storageFee,
+      // 退货损耗
+      ret: inputs.returnRate,
+      unsel: inputs.unsellableRate,
+      proc: inputs.retProcFee,
+      rem: inputs.retRemFee,
+      // Plan B 价格
+      price: inputs.actualPrice,
+    });
+  };
+
+  // Helper to generate label: 价格-时间 格式 (e.g., "20.99-22:31:45")
+  const getUniqueLabel = (baseLabel: string, _currentProductName: string) => {
+    const now = new Date();
+    const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+    return `${baseLabel}-${time}`;
+  };
+
+  // ... (existing code)
 
   const handleLoadModel = (model: SavedProfitModel) => {
-    setTargetAcos(model.inputs.targetAcos);
-    setTargetMargin(model.inputs.targetMargin);
-    setAutoComm(model.inputs.autoComm);
-    setManualComm(model.inputs.manualComm);
+    if (model.productId) setSelectedProductId(model.productId);
+    else setSelectedProductId('');
+
+    // Restore Inputs
     setPurchaseRMB(model.inputs.purchaseRMB);
     setExchangeRate(model.inputs.exchangeRate);
     setShippingUSD(model.inputs.shippingUSD);
@@ -151,20 +208,184 @@ const ProfitCalculator: React.FC = () => {
     setRetRemFee(model.inputs.retRemFee);
     setActualPrice(model.inputs.actualPrice);
     setActualPriceDisplay(model.inputs.actualPrice.toString());
-    setProductName(model.productName);
-    // setAsin(model.asin || '');
+    setTargetAcos(model.inputs.targetAcos);
+    setTargetMargin(model.inputs.targetMargin);
+    setAutoComm(model.inputs.autoComm);
+    setManualComm(model.inputs.manualComm);
 
-    // When loading, disable auto-sync
+    setProductName(model.productName);
+    setLoadedLabel(model.label || '');
+    setLoadedNote(model.note || '');
+    setLoadedModelId(model.id);
+
+    // Set Hash & Source
+    setLoadedHash(generateContentHash(model.inputs));
+    setDataSource('profitModel'); // 追踪来源：利润模型
+
+    // Disable auto-sync
     hasEditedPlanB.current = true;
 
     setShowLoadMenu(false);
-    setShowToast(true); // Reuse toast specifically for "Loaded" if we want, but simple feedback is OK
+    setToastMessage('方案数据已导入');
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 2000);
   };
 
-  const handleSaveModel = (data: { productName: string; asin: string; label: string; note?: string }) => {
-    // 每次保存成功后，更新本地的产品上下文，这样下次保存时就会自动带入
+  // ... (existing code)
+
+
+  // If false, Plan B price follows Plan A price automatically
+  const hasEditedPlanB = React.useRef(false);
+
+  // Fetch real-time exchange rate
+  const fetchRate = async () => {
+    try {
+      const res = await fetch('https://open.er-api.com/v6/latest/USD');
+      const data = await res.json();
+      if (data && data.rates && data.rates.CNY) {
+        return data.rates.CNY;
+      }
+    } catch (e) {
+      console.error("Failed to fetch rate", e);
+    }
+    return 7.02; // Fallback to current approx rate
+  };
+
+  useEffect(() => {
+    fetchRate().then(rate => setExchangeRate(r2(rate)));
+  }, []); // Run once on mount
+
+  const handleProductSelect = (pid: string) => {
+    setSelectedProductId(pid);
+    // 选择新产品时，清除导入的模型追踪，避免覆盖错误的记录
+    setLoadedModelId(null);
+    setLoadedLabel('');
+    setLoadedHash(''); // 重置 hash，防止切换回来后重复保存
+    setExistingModelsForProduct([]);
+    setDataSource('productLibrary'); // 追踪来源：产品库
+
+    if (!pid) return; // User cleared selection
+
+    // 1. Load Product Data from Library
+    const product = products.find(p => p.id === pid);
+    if (product) {
+      setProductName(product.name);
+      setPurchaseRMB(product.unitCost);
+      if (product.defaultPrice) {
+        setActualPrice(product.defaultPrice);
+        setActualPriceDisplay(product.defaultPrice.toString());
+        hasEditedPlanB.current = false;
+      }
+    }
+
+    // 2. Smart Detection: Check for existing profit models for this product
+    const allModels = ProfitModelService.getAll();
+    // Filter by productId OR strictly matching productName (fallback)
+    const matches = allModels.filter(m =>
+      m.productId === pid ||
+      (product && m.productName === product.name)
+    ).sort((a, b) => b.timestamp - a.timestamp); // Newest first
+
+    if (matches.length > 0) {
+      setExistingModelsForProduct(matches);
+    }
+  };
+
+  const loadRecentModel = () => {
+    if (existingModelsForProduct.length > 0) {
+      handleLoadModel(existingModelsForProduct[0]);
+    }
+  };
+
+
+  // Grouped models state
+  const [groupedModels, setGroupedModels] = useState<Record<string, SavedProfitModel[]>>({});
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+
+  const toggleGroup = (groupName: string) => {
+    setExpandedGroups(prev => ({ ...prev, [groupName]: !prev[groupName] }));
+  };
+
+  useEffect(() => {
+    // Load and group models
+    const models = ProfitModelService.getAll();
+    // Sort by date desc
+    models.sort((a, b) => b.timestamp - a.timestamp);
+
+    setAllModels(models);
+    setRecentProducts(models);
+
+    // Grouping logic
+    const groups: Record<string, SavedProfitModel[]> = {};
+    models.forEach(m => {
+      const name = m.productName || '未命名产品';
+      if (!groups[name]) groups[name] = [];
+      groups[name].push(m);
+    });
+    setGroupedModels(groups);
+
+  }, [showLoadMenu]); // Reload on menu open
+
+
+
+  const onInfosSaveClick = () => {
+    // 1. Generate current hash
+    const currentInputs: ProfitModelInputs = {
+      purchaseRMB, exchangeRate, shippingUSD, fbaFee, miscFee, storageFee,
+      returnRate, unsellableRate, retProcFee, retRemFee,
+      actualPrice, targetAcos, targetMargin, autoComm, manualComm
+    };
+    const currentHash = generateContentHash(currentInputs);
+
+    // 2. Compare with loaded hash - 数据未变化
+    if (loadedModelId && currentHash === loadedHash) {
+      setToastMessage('数据未做更改');
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 2000);
+      return;
+    }
+
+    // 3. 检查是否已存在相同内容的方案（防止切换产品后重复保存）
+    const allModels = ProfitModelService.getAll();
+    const duplicateModel = allModels.find(m => {
+      // 检查同一产品下是否有相同 hash 的方案
+      const matchesProduct = m.productId === selectedProductId || m.productName === productName;
+      if (!matchesProduct) return false;
+      const modelHash = generateContentHash(m.inputs);
+      return modelHash === currentHash;
+    });
+
+    if (duplicateModel) {
+      setToastMessage(`该方案已存在: ${duplicateModel.label || duplicateModel.inputs.actualPrice}`);
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 2000);
+      return;
+    }
+
+    // 3. 根据数据来源决定保存行为
+    if (dataSource === 'profitModel' && loadedModelId) {
+      // 来源：利润模型 → 更新原方案
+      setSaveMode('update');
+    } else {
+      // 来源：产品库或手动 → 创建新方案
+      setSaveMode('create');
+    }
+
+    // 标签始终使用当前 Plan B 价格（自动去重）
+    const baseLabel = actualPrice.toString();
+    const uniqueLabel = getUniqueLabel(baseLabel, productName);
+    setSmartLabel(uniqueLabel);
+
+    // 先隐藏 Toast，然后在下一帧打开对话框，避免闪烁
+    setShowToast(false);
+    // 使用 requestAnimationFrame 确保状态已更新后再显示对话框
+    requestAnimationFrame(() => {
+      setShowSaveDialog(true);
+    });
+  };
+
+  const handleSaveModel = (data: { productName: string; asin: string; label: string; note?: string }, saveAsNew: boolean = false, forceUpdateId?: string) => {
     setProductName(data.productName);
-    // setAsin(data.asin);
 
     const inputs: ProfitModelInputs = {
       targetAcos,
@@ -190,8 +411,30 @@ const ProfitCalculator: React.FC = () => {
       costProdUSD: results.costProdUSD
     };
 
+    // Smart Save Logic based on SaveMode state determined purely by connection + content hash
+    let isUpdate = false;
+    let targetId: string;
+
+    if (saveAsNew) {
+      // Manual override by user toggling "Save as New"
+      isUpdate = false;
+      targetId = ProfitModelService.generateId();
+    } else if (forceUpdateId) {
+      isUpdate = true;
+      targetId = forceUpdateId;
+    } else if (saveMode === 'update' && loadedModelId) {
+      // Only update if our smart check said so
+      isUpdate = true;
+      targetId = loadedModelId;
+    } else {
+      // Default to new
+      isUpdate = false;
+      targetId = ProfitModelService.generateId();
+    }
+
     const model = {
-      id: ProfitModelService.generateId(),
+      id: targetId,
+      productId: selectedProductId || undefined,
       productName: data.productName,
       asin: data.asin,
       label: data.label,
@@ -201,11 +444,30 @@ const ProfitCalculator: React.FC = () => {
       results: modelResults
     };
 
-    const success = ProfitModelService.save(model);
+    let success: boolean;
+    if (isUpdate) {
+      success = ProfitModelService.update(targetId, model);
+    } else {
+      success = ProfitModelService.save(model);
+    }
+
     if (success) {
       setSavedModelId(model.id);
+
+      // Update Context for next operation
+      setLoadedModelId(model.id);
+      setLoadedLabel(data.label);
+      setLoadedHash(generateContentHash(inputs)); // Update hash to current
+      // 注意：不要在这里改变 dataSource！
+      // 产品库来源的数据，每次修改后保存都应该是新建
+      // 只有从利润模型导入的才应该是更新
+
+      // 设置不同的 Toast 消息
+      setToastMessage(isUpdate ? '方案已更新' : '新方案已保存');
       setShowToast(true);
-      setTimeout(() => setShowToast(false), 5000);
+      setShowSaveDialog(false);
+
+      setTimeout(() => setShowToast(false), 2000);
     }
   };
 
@@ -377,11 +639,11 @@ const ProfitCalculator: React.FC = () => {
   );
 
   return (
-    <div className="p-6 max-w-[1700px] mx-auto space-y-8 animate-in fade-in duration-500">
+    <div className="p-6 max-w-[1700px] mx-auto space-y-8 animate-in fade-in duration-500" >
       <style>{globalInputStyles}</style>
 
       {/* 顶部标题区 */}
-      <div className="flex items-center justify-between gap-6 px-4 py-10 border-b border-[#27272a]/20">
+      <div className="flex items-center justify-between gap-6 px-4 py-10 border-b border-[#27272a]/20" >
         <div className="flex items-center gap-6">
           <div className="bg-blue-600/10 p-4 rounded-2xl border border-blue-500/20 shadow-lg shadow-blue-500/5">
             <span className="material-symbols-outlined text-6xl text-blue-500 leading-none">account_balance_wallet</span>
@@ -392,70 +654,104 @@ const ProfitCalculator: React.FC = () => {
           </div>
         </div>
         <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 mr-2">
+            <div className="relative">
+              <select
+                value={selectedProductId}
+                onChange={(e) => handleProductSelect(e.target.value)}
+                className="appearance-none bg-[#0c0c0e] hover:bg-[#18181b] border border-[#27272a] hover:border-zinc-600 text-zinc-300 text-xs font-bold py-3 pl-4 pr-10 rounded-xl transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/50 min-w-[200px]"
+              >
+                <option value="">-- 选择产品 (未关联) --</option>
+                {products.map(p => (
+                  <option key={p.id} value={p.id}>{p.name} ({p.sku || 'No SKU'})</option>
+                ))}
+              </select>
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none flex flex-col">
+                <span className="material-symbols-outlined text-zinc-500 text-[18px]">expand_more</span>
+              </div>
+            </div>
+            <div className={`flex items-center justify-center w-8 h-8 rounded-full border transition-all duration-300 ${selectedProductId ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-zinc-800/30 border-zinc-800'}`} title={selectedProductId ? "基础数据已同步" : "未关联产品"}>
+              <span className={`w-2 h-2 rounded-full transition-all duration-300 ${selectedProductId ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-zinc-700'}`}></span>
+            </div>
+
+
+          </div>
+
+
+          <div className="w-px h-8 bg-zinc-800 mx-1"></div>
           <div className="relative">
             <button
               onClick={() => setShowLoadMenu(!showLoadMenu)}
               className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-2.5 transition-all border border-zinc-700"
             >
               <span className="material-symbols-outlined text-[20px]">file_open</span>
-              导入配置
+              导入数据
             </button>
             {showLoadMenu && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setShowLoadMenu(false)}></div>
                 <div className="absolute right-0 top-full mt-2 w-72 bg-[#18181b] border border-[#27272a] rounded-xl shadow-2xl z-50 overflow-hidden py-1 animate-in fade-in zoom-in-95 duration-200">
-                  <div className="px-3 py-2 border-b border-zinc-800">
-                    <div className="relative">
-                      <span className="material-symbols-outlined absolute left-2 top-1.5 text-zinc-500 text-[16px]">search</span>
-                      <input
-                        type="text"
-                        placeholder="搜索产品..."
-                        className="w-full bg-zinc-900 border border-zinc-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-zinc-200 focus:border-blue-500 outline-none transition-colors"
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={(e) => {
-                          const term = e.target.value.toLowerCase();
-                          const items = document.querySelectorAll('.load-item');
-                          items.forEach((item: any) => {
-                            const name = item.dataset.name.toLowerCase();
-                            item.style.display = name.includes(term) ? 'flex' : 'none';
-                          });
-                        }}
-                      />
-                    </div>
-                  </div>
-                  <div className="px-3 py-2 text-[10px] font-black text-zinc-500 uppercase tracking-widest border-b border-zinc-800 mb-1">
-                    最近编辑的产品
-                  </div>
                   {recentProducts.length === 0 ? (
                     <div className="px-4 py-8 text-center text-zinc-500 text-xs">
                       暂无保存记录
                     </div>
                   ) : (
                     <div className="max-h-[400px] overflow-y-auto">
-                      {recentProducts.map(model => (
-                        <button
-                          key={model.id}
-                          className="load-item w-full text-left px-4 py-3 hover:bg-zinc-800 transition-colors flex flex-col gap-1 border-b border-zinc-800/50 last:border-0 group"
-                          data-name={model.productName}
-                          onClick={() => handleLoadModel(model)}
-                        >
-                          <div className="flex items-center justify-between w-full">
-                            <span className="text-sm font-bold text-zinc-300 group-hover:text-white">{model.productName}</span>
-                            <span className="text-xs font-black font-mono text-zinc-500 group-hover:text-white transition-colors">
-                              ${model.inputs.actualPrice}
-                            </span>
-                          </div>
+                      {Object.keys(groupedModels).map(groupName => {
+                        const groupItems = groupedModels[groupName];
+                        const isExpanded = expandedGroups[groupName];
 
-                          <div className="flex items-center gap-2 text-[10px] text-zinc-600 font-mono">
-                            <span>{new Date(model.timestamp).toLocaleString()}</span>
-                            {model.label && (
-                              <span className="bg-zinc-800 text-zinc-500 px-1.5 py-0.5 rounded border border-zinc-700/50 group-hover:border-zinc-600 transition-colors">
-                                {model.label}
-                              </span>
+                        return (
+                          <div key={groupName} className="border-b border-zinc-800/50 last:border-0">
+                            {/* Group Header */}
+                            <button
+                              onClick={(e) => { e.stopPropagation(); toggleGroup(groupName); }}
+                              className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-zinc-800/50 transition-colors group"
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] text-zinc-500 material-symbols-outlined transition-transform duration-200" style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>chevron_right</span>
+                                <span className="text-xs font-bold text-zinc-300 group-hover:text-white">{groupName}</span>
+                                <span className="text-[10px] text-zinc-600 bg-zinc-800 px-1.5 rounded-full">{groupItems.length}</span>
+                              </div>
+                            </button>
+
+                            {/* Group Content */}
+                            {isExpanded && (
+                              <div className="bg-zinc-900/30 pb-1">
+                                {groupItems.map(model => {
+                                  // 计算利润率用于显示（margin 是小数，需要乘100）
+                                  const marginPct = (model.results?.planB?.margin ?? 0) * 100;
+                                  const marginColor = marginPct >= 20 ? 'text-emerald-400' : marginPct >= 10 ? 'text-yellow-400' : 'text-red-400';
+
+                                  return (
+                                    <button
+                                      key={model.id}
+                                      className="load-item w-full text-left pl-9 pr-4 py-2 hover:bg-zinc-800 transition-colors flex items-center justify-between border-l-2 border-transparent hover:border-blue-500/50 ml-1"
+                                      data-name={model.productName}
+                                      onClick={() => handleLoadModel(model)}
+                                    >
+                                      {/* 标签 */}
+                                      <span className="text-[10px] bg-blue-500/15 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded font-medium truncate max-w-[110px]">
+                                        {model.label || '无标签'}
+                                      </span>
+                                      {/* 价格 + 利润率 */}
+                                      <div className="flex items-center gap-4">
+                                        <span className="text-sm font-black font-mono text-zinc-300 w-16 text-right">
+                                          ${model.inputs.actualPrice}
+                                        </span>
+                                        <span className={`text-[10px] font-bold ${marginColor} flex items-center gap-0.5 w-14`}>
+                                          <span className="material-symbols-outlined text-[12px]">trending_up</span>
+                                          {marginPct.toFixed(1)}%
+                                        </span>
+                                      </div>
+                                    </button>
+                                  );
+                                })}
+                              </div>
                             )}
                           </div>
-                        </button>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -464,18 +760,19 @@ const ProfitCalculator: React.FC = () => {
           </div>
 
           <button
-            onClick={() => setShowSaveDialog(true)}
+            onClick={onInfosSaveClick}
             className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl text-sm font-bold flex items-center gap-2.5 transition-all shadow-lg shadow-blue-600/20 whitespace-nowrap"
           >
             <span className="material-symbols-outlined text-[20px]">save</span>
             保存当前方案
           </button>
         </div>
-      </div>
+      </div >
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
         {/* 输入面板 */}
         <div className="lg:col-span-4 flex flex-col gap-5">
+
           <div className="bg-[#0c0c0e] border border-[#27272a] rounded-2xl p-6 shadow-lg space-y-6">
             <h3 className="text-[12px] font-black text-white uppercase tracking-widest flex items-center gap-2.5">
               <span className="material-symbols-outlined text-blue-500 text-[20px] font-bold">radio_button_checked</span> 运营目标
@@ -511,8 +808,19 @@ const ProfitCalculator: React.FC = () => {
           <div className="bg-[#0c0c0e] border border-[#27272a] rounded-2xl p-6 shadow-lg space-y-5">
             <h3 className="text-[12px] font-black text-white uppercase tracking-widest flex items-center gap-2.5"><span className="material-symbols-outlined text-blue-500 text-[20px]">payments</span> 产品成本</h3>
             <div className="grid grid-cols-2 gap-4">
-              <div className="group"><Label>采购价 ¥</Label><StepperInput value={purchaseRMB} onChange={setPurchaseRMB} step={1} /></div>
-              <div className="group"><Label>汇率</Label><StepperInput value={exchangeRate} onChange={setExchangeRate} step={0.01} min={0.01} /></div>
+              <div className="group">
+                <div className="flex items-center justify-center mb-1.5 h-[14px]">
+                  <label className="text-[11px] font-black text-zinc-400 uppercase tracking-tight leading-none text-center">采购价 ¥</label>
+                </div>
+                <StepperInput value={purchaseRMB} onChange={setPurchaseRMB} step={1} />
+              </div>
+              <div className="group relative">
+                <div className="flex items-center justify-center gap-2 mb-1.5 h-[14px]">
+                  <label className="text-[11px] font-black text-zinc-400 uppercase tracking-tight leading-none text-center">汇率</label>
+                  <span className="text-[9px] px-1 py-[1px] rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 leading-none flex items-center h-[13px]">实时</span>
+                </div>
+                <StepperInput value={exchangeRate} onChange={setExchangeRate} step={0.01} min={0.01} disabled={true} color="white" />
+              </div>
             </div>
           </div>
 
@@ -538,10 +846,15 @@ const ProfitCalculator: React.FC = () => {
                 <Label className="mb-1 font-black">处理费</Label>
                 <StepperInput value={retProcFee} onChange={setRetProcFee} step={0.01} />
               </div>
-              <div className="group flex flex-col items-center">
-                <Label className="mb-1 font-black">管理费</Label>
-                <div className={`${CONTAINER_CLASS} bg-zinc-900/20 border-dashed border-zinc-800 font-mono text-zinc-500 text-[13px] font-black cursor-default`} title="佣金的 20%">
-                  {getRefundAdminFee(actualPrice, results.planB.commRate).toFixed(2)}
+              <div className="group flex flex-col items-center w-full">
+                <div className="flex items-center justify-center gap-1 mb-1 h-[14px] w-full">
+                  <label className="text-[11px] font-black text-zinc-400 uppercase tracking-tight leading-none text-center">管理费</label>
+                  <span className="text-[9px] px-1 py-[1px] rounded bg-blue-500/20 text-blue-400 border border-blue-500/50 leading-none flex items-center h-[13px] self-center">固定</span>
+                </div>
+                <div className={`${CONTAINER_CLASS} bg-[#141416] border-[#1f1f21] cursor-not-allowed opacity-60`}>
+                  <span className={INPUT_CLASS + " flex items-center justify-center text-zinc-400"}>
+                    {getRefundAdminFee(actualPrice, results.planB.commRate).toFixed(2)}
+                  </span>
                 </div>
               </div>
               <div className="group flex flex-col items-center">
@@ -719,14 +1032,7 @@ const ProfitCalculator: React.FC = () => {
               </BarChart>
             </ResponsiveContainer>
           </div>
-          <div className="mt-16 flex items-center justify-center border-t border-zinc-900 pt-12 text-center">
-            <div className="flex items-center gap-4 text-zinc-600 bg-zinc-900/30 px-10 py-5 rounded-2xl border border-zinc-800/50 max-w-3xl">
-              <span className="material-symbols-outlined text-blue-500 text-3xl">info</span>
-              <p className="text-[14px] font-bold italic tracking-wide">
-                瀑布图直观展示了从销售总额到最终净利润的成本切削过程，帮助精准识别利润流失点。
-              </p>
-            </div>
-          </div>
+
         </div>
       </div>
 
@@ -735,21 +1041,31 @@ const ProfitCalculator: React.FC = () => {
         isOpen={showSaveDialog}
         onClose={() => setShowSaveDialog(false)}
         onSave={handleSaveModel}
+        onCheckDuplicate={(pName, pLabel) => {
+          // 检查是否存在同名同标签记录 (返回重复 ID 用于上下文切换)
+          const all = ProfitModelService.getAll();
+          const exist = all.find(m => m.productName === pName && m.label === pLabel);
+          return exist ? exist.id : null;
+        }}
         initialProductName={productName}
         initialAsin={''}
+        // 标签始终使用当前 Plan B 价格
+        initialLabel={smartLabel}
+        initialNote={saveMode === 'create' ? '' : loadedNote}
+        isUpdate={saveMode === 'update'}
         existingProductNames={Array.from(new Set(recentProducts.map(p => p.productName)))}
       />
 
       {/* 保存成功提示 */}
       {
         showToast && (
-          <div className="fixed bottom-8 right-8 z-50 bg-[#0c0c0e] border border-emerald-500/30 rounded-2xl shadow-2xl shadow-emerald-500/10 p-6 flex items-center gap-4 animate-in slide-in-from-bottom-4 duration-300">
+          <div className="fixed top-28 left-1/2 -translate-x-1/2 z-50 bg-[#0c0c0e] border border-emerald-500/30 rounded-2xl shadow-2xl shadow-emerald-500/10 p-4 flex items-center gap-3 animate-in zoom-in-95 fade-in duration-300">
             <div className="bg-emerald-500/10 p-2.5 rounded-xl">
               <span className="material-symbols-outlined text-emerald-500 text-2xl">check_circle</span>
             </div>
             <div className="flex flex-col">
-              <span className="text-white font-black text-sm">保存成功！</span>
-              <span className="text-zinc-500 text-xs font-bold mt-0.5">方案已保存到利润模型库</span>
+              <span className="text-white font-black text-sm">操作成功</span>
+              <span className="text-zinc-500 text-xs font-bold mt-0.5">{toastMessage}</span>
             </div>
             <button
               onClick={() => setShowToast(false)}
@@ -761,27 +1077,6 @@ const ProfitCalculator: React.FC = () => {
         )
       }
     </div >
-  );
-};
-
-const DistributionRow: React.FC<{ label: string, value: number, price: number, color: string, isBold?: boolean }> = ({ label, value, price, color, isBold }) => {
-  const pct = price > 0 ? (value / price) * 100 : 0;
-  return (
-    <div className="group w-full">
-      <div className="flex items-center justify-between mb-1.5">
-        <div className="flex items-center gap-2.5">
-          <div className={`size-2.5 rounded-full ${color} shadow-lg shadow-black/50`}></div>
-          <span className="text-[13px] text-zinc-400 font-black uppercase tracking-tight">{label}</span>
-        </div>
-        <div className="flex items-center gap-4">
-          <span className={`text-[14px] font-mono ${isBold ? 'text-emerald-500 font-black' : 'text-zinc-100 font-black'}`}>{fmtUSD(value)}</span>
-          <span className="text-[10px] text-zinc-600 font-mono w-10 text-right font-black">{pct.toFixed(1)}%</span>
-        </div>
-      </div>
-      <div className="h-[2px] bg-zinc-950 rounded-full overflow-hidden">
-        <div className={`h-full ${color} opacity-90 transition-all duration-700 ease-out`} style={{ width: `${Math.max(0, Math.min(100, pct))}%` }}></div>
-      </div>
-    </div>
   );
 };
 

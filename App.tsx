@@ -7,6 +7,9 @@ import AdsAnalysis from './pages/AdsAnalysis';
 import PromotionAnalysis from './pages/PromotionAnalysis';
 import ProductProfitList from './pages/ProductProfitList';
 import PromotionDeduction from './pages/PromotionDeduction';
+import ReplenishmentAdvice from './pages/ReplenishmentAdvice';
+import ProductLibrary from './pages/ProductLibrary';
+import { ProductProvider } from './ProductContext';
 import { NAVIGATION_ITEMS } from './constants';
 
 const App: React.FC = () => {
@@ -16,6 +19,8 @@ const App: React.FC = () => {
     switch (currentView) {
       case AppView.DASHBOARD:
         return <Dashboard />;
+      case AppView.PRODUCT_LIBRARY:
+        return <ProductLibrary />;
       case AppView.PROFIT:
         return <ProfitCalculator />;
       case AppView.ADS:
@@ -26,6 +31,8 @@ const App: React.FC = () => {
         return <ProductProfitList />;
       case AppView.DEDUCTION:
         return <PromotionDeduction />;
+      case AppView.REPLENISHMENT:
+        return <ReplenishmentAdvice />;
       default:
         const label = NAVIGATION_ITEMS.find(n => n.view === currentView)?.label || currentView;
         return (
@@ -47,9 +54,11 @@ const App: React.FC = () => {
   };
 
   return (
-    <Layout currentView={currentView} onViewChange={setCurrentView}>
-      {renderContent()}
-    </Layout>
+    <ProductProvider>
+      <Layout currentView={currentView} onViewChange={setCurrentView}>
+        {renderContent()}
+      </Layout>
+    </ProductProvider>
   );
 };
 

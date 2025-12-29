@@ -1,40 +1,46 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { ProfitModelService } from '../services/profitModelService';
 import { SavedProfitModel } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList } from 'recharts';
 import PromotionOrderBreakdown from '../components/PromotionOrderBreakdown';
 import PromotionStrategyPanel from '../components/PromotionStrategyPanel';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 
 // Helper for rounding
 const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 const fmtUSD = (num: number) => '$' + num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-// Custom Stepper Input for Volume (Integer only, no leading zeros)
+// Custom Stepper Input for Volume (Integer only, max 9999)
 const VolumeStepper = ({ value, onChange }: { value: number, onChange: (v: number) => void }) => {
+    const MAX_VOLUME = 9999;
+
     const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
         const val = e.target.value;
         if (val === '') {
             onChange(0);
             return;
         }
-        // Remove leading zeros
-        const cleanVal = val.replace(/^0+/, '');
+        // Only allow digits
+        const cleanVal = val.replace(/\D/g, '').replace(/^0+/, '') || '0';
         const num = parseInt(cleanVal);
         if (!isNaN(num)) {
-            onChange(num);
+            onChange(Math.min(num, MAX_VOLUME));
         }
     };
 
-    const inc = () => onChange(Math.floor(value + 10)); // Step 10 for volume
+    const inc = () => onChange(Math.min(MAX_VOLUME, Math.floor(value + 10)));
     const dec = () => onChange(Math.max(0, Math.floor(value - 10)));
 
     return (
         <div className="relative group w-24">
             <input
                 type="text"
+                inputMode="numeric"
                 value={value}
                 onChange={handleInput}
-                className="bg-transparent border-none outline-none text-white font-mono font-bold w-full text-right text-lg pr-4"
+                maxLength={4}
+                className="bg-zinc-800/50 border border-zinc-700 rounded-lg text-white font-mono font-bold w-full text-center text-lg py-1 focus:border-blue-500 outline-none transition-colors"
             />
             <div className="absolute right-0 top-1/2 -translate-y-1/2 flex flex-col opacity-0 group-hover:opacity-100 transition-opacity">
                 <button
@@ -71,6 +77,12 @@ const PromotionAnalysis: React.FC = () => {
     const [simCtr, setSimCtr] = useState<number>(0.5);
     const [simCvr, setSimCvr] = useState<number>(11);
 
+    // Dropdown State
+    const [showDropdown, setShowDropdown] = useState(false);
+    const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+    const [isExporting, setIsExporting] = useState(false);
+    const contentRef = useRef<HTMLDivElement>(null);
+
     // Load Models
     useEffect(() => {
         const models = ProfitModelService.getAll().sort((a, b) => b.timestamp - a.timestamp);
@@ -79,53 +91,94 @@ const PromotionAnalysis: React.FC = () => {
             setSelectedModelId(models[0].id);
             // Default to Saved Price (Plan B)
             setSimPrice(models[0].results.planB.price);
+            // 默认折叠所有分组
         }
     }, []);
 
-    // Effect: Auto-sim BEP CPC when model/price changes (Only initially or explicit reset, theoretically. 
-    // But user wants default to be BEP. We'll set it when 'calc' is ready if simCpc is untouched? 
-    // Better: Set it when model loads/changes using a separate effect or inside handleModelChange)
+    // Group models by product name
+    const groupedModels = useMemo(() => {
+        const groups: Record<string, SavedProfitModel[]> = {};
+        savedModels.forEach(m => {
+            const key = m.productName || '未分类';
+            if (!groups[key]) groups[key] = [];
+            groups[key].push(m);
+        });
+        return groups;
+    }, [savedModels]);
 
-    // We need to calculate BEP based on loaded model to set initial simCpc
-    // Since 'calc' depends on simCpc (for loop? no, calc depends on simPrice/Tacos), we can use a second Effect.
-    // BUT 'calc' is complex. Let's do a simplified BEP calc just for initialization to avoid circular deps if possible.
-    // Actually 'calc' does NOT depend on 'simCpc' for the unit cost part (except AdSpend which is Price*TACOS).
-    // So we can use 'calc' to update 'simCpc' IF we are careful to avoid loops.
-    // Ideally, we just update simCpc when selectedModelId changes.
+    // Toggle group expand/collapse
+    const toggleGroup = useCallback((groupName: string) => {
+        setExpandedGroups(prev => ({ ...prev, [groupName]: !prev[groupName] }));
+    }, []);
 
-    useEffect(() => {
-        if (calc?.unit?.breakEvenCpc) {
-            // Only set if we just loaded (e.g. tracking a "loaded" state or just allow overwrite on model switch)
-            // For now, let's set it when model changes.
-        }
-    }, [selectedModelId]); // This is tricky because calc depends on state.
-
-    // Better approach: Calculate BEP inside handleModelChange logic? 
-    // Hard because fees are complex.
-    // Let's use an effect that listens to [selectedModelId, simPrice, simCvr] but guards against user input?
-    // User said: "Default fill into Break-even CPC". 
-    // Let's just set it once when the calc is ready and it's 0.9 (default).
-
-    useEffect(() => {
-        if (calc && calc.unit.breakEvenCpc > 0) {
-            // We verify if it is the "first run" or "model switch"
-            // For simplicity, let's sync it. But user wants to CHANGE it.
-            // So only sync if the user hasn't touched it? Or just on mount/model change.
-            // Let's rely on handleModelChange to trigger a flag, and this effect consumes it.
-            // For now, let's just do it on mount/model change by checking if simCpc is default 0.9 or we force it.
-            setSimCpc(parseFloat(calc.unit.breakEvenCpc.toFixed(2)));
-        }
-    }, [selectedModelId]); // Remove simCvr/simPrice to avoid loop/overwriting user input during tweaking
-    // Note: If user changes CVR, CPC updates. exact match to "From Ad Simulation".
+    // Get selected model for display
+    const selectedModel = savedModels.find(m => m.id === selectedModelId);
 
 
 
     // Handle Model Change
-    const handleModelChange = (id: string) => {
+    const handleModelChange = useCallback((id: string) => {
         setSelectedModelId(id);
         const model = savedModels.find(m => m.id === id);
         if (model) {
             setSimPrice(model.results.planB.price);
+        }
+    }, [savedModels]);
+
+    // Export PDF
+    const handleExportPDF = async () => {
+        if (!contentRef.current || isExporting) return;
+        setIsExporting(true);
+        try {
+            const element = contentRef.current;
+
+            // 临时保存原始样式
+            const originalStyle = element.style.cssText;
+            const originalOverflow = document.body.style.overflow;
+
+            // 临时移除高度限制，确保完整捕获
+            element.style.overflow = 'visible';
+            element.style.height = 'auto';
+            element.style.maxHeight = 'none';
+            document.body.style.overflow = 'visible';
+
+            // 等待重新渲染
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            const canvas = await html2canvas(element, {
+                backgroundColor: '#0a0a0b',
+                scale: 2,
+                useCORS: true,
+                logging: false,
+                allowTaint: true,
+                foreignObjectRendering: false,
+            });
+
+            // 恢复原始样式
+            element.style.cssText = originalStyle;
+            document.body.style.overflow = originalOverflow;
+
+            const imgData = canvas.toDataURL('image/jpeg', 0.9);
+
+            // 使用原始 canvas 尺寸
+            const imgWidth = canvas.width;
+            const imgHeight = canvas.height;
+
+            const pdf = new jsPDF({
+                orientation: imgWidth > imgHeight ? 'landscape' : 'portrait',
+                unit: 'px',
+                format: [imgWidth, imgHeight],
+                compress: true
+            });
+
+            pdf.addImage(imgData, 'JPEG', 0, 0, imgWidth, imgHeight);
+            const model = savedModels.find(m => m.id === selectedModelId);
+            const fileName = `盈亏沙盘_${model?.productName || 'export'}_${new Date().toLocaleDateString()}.pdf`;
+            pdf.save(fileName);
+        } catch (err) {
+            console.error('PDF export failed:', err);
+        } finally {
+            setIsExporting(false);
         }
     };
 
@@ -255,6 +308,13 @@ const PromotionAnalysis: React.FC = () => {
         };
     }, [selectedModelId, savedModels, simPrice, simTacos, targetVolume, simCvr]);
 
+    // 当切换模型时，自动将 simCpc 设置为盈亏 CPC
+    useEffect(() => {
+        if (calc && calc.unit.breakEvenCpc > 0) {
+            setSimCpc(parseFloat(calc.unit.breakEvenCpc.toFixed(2)));
+        }
+    }, [selectedModelId]);
+
     // Guard: If no calc data (no saved models), show empty state
     if (!calc) {
         return (
@@ -315,7 +375,7 @@ const PromotionAnalysis: React.FC = () => {
     };
 
     return (
-        <div className="p-8 space-y-12 max-w-[1800px] mx-auto animate-in fade-in duration-500 pb-24">
+        <div ref={contentRef} className="p-8 space-y-12 max-w-[1800px] mx-auto animate-in fade-in duration-500 pb-24">
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div className="flex flex-col gap-1">
@@ -323,22 +383,113 @@ const PromotionAnalysis: React.FC = () => {
                     <p className="text-zinc-500 text-sm">Profit Analysis Sandbox & Budget Simulation</p>
                 </div>
 
-                {/* Data Source Selector */}
-                <div className="flex items-center gap-3 bg-[#0c0c0e] border border-zinc-800 rounded-xl px-4 py-2 shadow-lg">
-                    <span className="text-xs font-bold text-zinc-500 uppercase tracking-wider">数据源:</span>
-                    <div className="relative group">
-                        <select
-                            value={selectedModelId}
-                            onChange={(e) => handleModelChange(e.target.value)}
-                            className="bg-zinc-900 border border-zinc-700 rounded-lg pl-3 pr-8 py-1.5 text-xs font-bold text-zinc-200 outline-none focus:border-blue-500 min-w-[240px] appearance-none cursor-pointer hover:border-zinc-500 transition-colors font-mono"
+                {/* Actions: Import + Export */}
+                <div className="flex items-center gap-3">
+                    {/* Current Model Indicator with breathing light */}
+                    {selectedModel && (
+                        <div className="flex items-center gap-2.5 bg-zinc-900/80 border border-zinc-700/50 rounded-xl px-4 py-2 mr-2">
+                            <span className="relative flex h-2.5 w-2.5">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-500"></span>
+                            </span>
+                            <span className="text-xs text-zinc-400">当前方案:</span>
+                            <span className="text-sm font-bold text-white">{selectedModel.productName}</span>
+                            <span className="text-[10px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-1.5 py-0.5 rounded font-medium">
+                                {selectedModel.label || '无标签'}
+                            </span>
+                            <span className="text-sm font-black font-mono text-zinc-300">${selectedModel.inputs.actualPrice}</span>
+                            <span className={`text-[10px] font-bold flex items-center gap-0.5 ${(selectedModel.results?.planB?.margin ?? 0) * 100 >= 20 ? 'text-emerald-400' : (selectedModel.results?.planB?.margin ?? 0) * 100 >= 10 ? 'text-yellow-400' : 'text-red-400'}`}>
+                                <span className="material-symbols-outlined text-[12px]">trending_up</span>
+                                {((selectedModel.results?.planB?.margin ?? 0) * 100).toFixed(1)}%
+                            </span>
+                        </div>
+                    )}
+
+                    {/* Export PDF Button */}
+                    <button
+                        onClick={handleExportPDF}
+                        disabled={isExporting}
+                        className="flex items-center gap-2 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-400 rounded-xl px-4 py-2.5 shadow-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        <span className="material-symbols-outlined text-lg">{isExporting ? 'hourglass_empty' : 'picture_as_pdf'}</span>
+                        <span className="text-sm font-bold">{isExporting ? '导出中...' : '导出 PDF'}</span>
+                    </button>
+
+                    {/* Data Source Selector - Custom Grouped Dropdown */}
+                    <div className="relative">
+                        <button
+                            onClick={() => setShowDropdown(!showDropdown)}
+                            className="flex items-center gap-3 bg-[#0c0c0e] border border-zinc-800 hover:border-zinc-700 rounded-xl px-4 py-2.5 shadow-lg transition-colors"
                         >
-                            {savedModels.map(m => (
-                                <option key={m.id} value={m.id}>
-                                    {m.productName} ({new Date(m.timestamp).toLocaleDateString()}) - ${m.results.planB.price}
-                                </option>
-                            ))}
-                        </select>
-                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none material-symbols-outlined text-[16px]">expand_more</span>
+                            <span className="material-symbols-outlined text-blue-500 text-lg">description</span>
+                            <span className="text-sm font-bold text-white">导入数据</span>
+                            <span className="material-symbols-outlined text-zinc-500 text-sm">{showDropdown ? 'expand_less' : 'expand_more'}</span>
+                        </button>
+
+                        {/* Dropdown Panel */}
+                        {showDropdown && (
+                            <div
+                                className="absolute right-0 mt-2 w-[320px] bg-[#111111] border border-zinc-800 rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+                                onMouseLeave={() => setShowDropdown(false)}
+                            >
+                                <div className="max-h-[360px] overflow-y-auto [&::-webkit-scrollbar]:hidden">
+                                    {Object.keys(groupedModels).map(groupName => {
+                                        const groupItems = groupedModels[groupName];
+                                        const isExpanded = expandedGroups[groupName];
+
+                                        return (
+                                            <div key={groupName} className="border-b border-zinc-800/50 last:border-0">
+                                                {/* Group Header */}
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); toggleGroup(groupName); }}
+                                                    className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-zinc-800/50 transition-colors group"
+                                                >
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-[10px] text-zinc-500 material-symbols-outlined transition-transform duration-200" style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>chevron_right</span>
+                                                        <span className="text-xs font-bold text-zinc-300 group-hover:text-white">{groupName}</span>
+                                                        <span className="text-[10px] text-zinc-600 bg-zinc-800 px-1.5 rounded-full">{groupItems.length}</span>
+                                                    </div>
+                                                </button>
+
+                                                {/* Group Content */}
+                                                {isExpanded && (
+                                                    <div className="bg-zinc-900/30 pb-1">
+                                                        {groupItems.map(model => {
+                                                            const marginPct = (model.results?.planB?.margin ?? 0) * 100;
+                                                            const marginColor = marginPct >= 20 ? 'text-emerald-400' : marginPct >= 10 ? 'text-yellow-400' : 'text-red-400';
+                                                            const isSelected = model.id === selectedModelId;
+
+                                                            return (
+                                                                <button
+                                                                    key={model.id}
+                                                                    className={`w-full text-left pl-9 pr-4 py-2 hover:bg-zinc-800 transition-colors flex items-center justify-between border-l-2 ml-1 ${isSelected ? 'bg-blue-900/20 border-blue-500' : 'border-transparent hover:border-blue-500/50'}`}
+                                                                    onClick={() => { handleModelChange(model.id); setShowDropdown(false); }}
+                                                                >
+                                                                    {/* 标签 */}
+                                                                    <span className={`text-[10px] ${isSelected ? 'bg-blue-500/30 text-blue-300' : 'bg-blue-500/15 text-blue-400'} border border-blue-500/20 px-1.5 py-0.5 rounded font-medium truncate max-w-[110px]`}>
+                                                                        {model.label || '无标签'}
+                                                                    </span>
+                                                                    {/* 价格 + 利润率 */}
+                                                                    <div className="flex items-center gap-4">
+                                                                        <span className="text-sm font-black font-mono text-zinc-300 w-16 text-right">
+                                                                            ${model.inputs.actualPrice}
+                                                                        </span>
+                                                                        <span className={`text-[10px] font-bold ${marginColor} flex items-center gap-0.5 w-14`}>
+                                                                            <span className="material-symbols-outlined text-[12px]">trending_up</span>
+                                                                            {marginPct.toFixed(1)}%
+                                                                        </span>
+                                                                    </div>
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
@@ -377,8 +528,8 @@ const PromotionAnalysis: React.FC = () => {
                                             ¥{(calc.unit.netProfit * savedModels.find(m => m.id === selectedModelId)!.inputs.exchangeRate).toFixed(2)}
                                         </div>
                                     )}
-                                    <div className={`text-[11px] font-bold mt-2 font-mono border-t border-white/10 pt-1 w-full flex justify-center ${calc.unit.netProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                                        {calc.unit.netMargin.toFixed(1)}% Margin
+                                    <div className={`text-[11px] font-bold mt-2 font-mono border-t border-white/10 pt-1 w-full text-center ${calc.unit.netProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                        {calc.unit.netMargin.toFixed(1)}%
                                     </div>
                                 </div>
                             </div>
@@ -423,8 +574,8 @@ const PromotionAnalysis: React.FC = () => {
                                             ¥{(calc.volume.netProfit * savedModels.find(m => m.id === selectedModelId)!.inputs.exchangeRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                         </div>
                                     )}
-                                    <div className={`text-[11px] font-bold mt-2 font-mono border-t border-white/10 pt-1 w-full flex justify-center ${calc.volume.netProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                                        {calc.volume.netMargin.toFixed(1)}% Margin
+                                    <div className={`text-[11px] font-bold mt-2 font-mono border-t border-white/10 pt-1 w-full text-center ${calc.volume.netProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                        {calc.volume.netMargin.toFixed(1)}%
                                     </div>
                                 </div>
                             </div>

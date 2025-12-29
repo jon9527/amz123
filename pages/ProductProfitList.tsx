@@ -1,17 +1,43 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import ReactDOM from 'react-dom';
 import { SavedProfitModel } from '../types';
 import { ProfitModelService } from '../services/profitModelService';
+import { useProducts } from '../ProductContext';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend } from 'recharts';
 
 const fmtUSD = (num: number) => '$' + num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtPct = (num: number) => (num * 100).toFixed(1) + '%';
+
+// 标签颜色配置（暗色主题）
+const TAG_COLORS = [
+  { bg: 'bg-gray-700/60', text: 'text-gray-200', hover: 'hover:bg-gray-600/60' },
+  { bg: 'bg-red-900/50', text: 'text-red-300', hover: 'hover:bg-red-800/50' },
+  { bg: 'bg-orange-900/50', text: 'text-orange-300', hover: 'hover:bg-orange-800/50' },
+  { bg: 'bg-yellow-900/50', text: 'text-yellow-300', hover: 'hover:bg-yellow-800/50' },
+  { bg: 'bg-green-900/50', text: 'text-green-300', hover: 'hover:bg-green-800/50' },
+  { bg: 'bg-teal-900/50', text: 'text-teal-300', hover: 'hover:bg-teal-800/50' },
+  { bg: 'bg-blue-900/50', text: 'text-blue-300', hover: 'hover:bg-blue-800/50' },
+  { bg: 'bg-purple-900/50', text: 'text-purple-300', hover: 'hover:bg-purple-800/50' },
+  { bg: 'bg-pink-900/50', text: 'text-pink-300', hover: 'hover:bg-pink-800/50' },
+];
+
+// 根据标签名生成稳定的颜色索引
+const getTagColor = (tag: string) => {
+  let hash = 0;
+  for (let i = 0; i < tag.length; i++) {
+    hash = tag.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % TAG_COLORS.length;
+  return TAG_COLORS[index];
+};
 
 type SortKey = 'timestamp' | 'planBProfit' | 'planBMargin' | 'actualPrice' | 'productName';
 type SortOrder = 'asc' | 'desc';
 type ViewMode = 'table' | 'comparison';
 
 const ProductProfitList: React.FC = () => {
+  const { products } = useProducts();
   const [models, setModels] = useState<SavedProfitModel[]>([]);
   const [filteredModels, setFilteredModels] = useState<SavedProfitModel[]>([]);
   const [search, setSearch] = useState('');
@@ -21,6 +47,40 @@ const ProductProfitList: React.FC = () => {
   const [viewMode, setViewMode] = useState<ViewMode>('table');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [toDeleteIds, setToDeleteIds] = useState<string[]>([]);
+
+  // Grouped view state
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+
+  // Compute grouped models from filteredModels
+  const groupedModels = React.useMemo(() => {
+    const groups: Record<string, SavedProfitModel[]> = {};
+    filteredModels.forEach(m => {
+      const name = m.productName || '未命名产品';
+      if (!groups[name]) groups[name] = [];
+      groups[name].push(m);
+    });
+    return groups;
+  }, [filteredModels]);
+
+  const toggleGroup = (groupName: string) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(groupName)) {
+        next.delete(groupName);
+      } else {
+        next.add(groupName);
+      }
+      return next;
+    });
+  };
+
+  const expandAllGroups = () => {
+    setExpandedGroups(new Set(Object.keys(groupedModels)));
+  };
+
+  const collapseAllGroups = () => {
+    setExpandedGroups(new Set());
+  };
 
   useEffect(() => {
     loadData();
@@ -116,6 +176,63 @@ const ProductProfitList: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
+  // Get all unique tags across all models
+  const allTags = React.useMemo(() => {
+    const tagSet = new Set<string>();
+    models.forEach(m => {
+      (m.tags || []).forEach(tag => tagSet.add(tag));
+      // Also include old label if exists
+      if (m.label && !m.tags?.includes(m.label)) tagSet.add(m.label);
+    });
+    return Array.from(tagSet).sort();
+  }, [models]);
+
+  // Tag dropdown state
+  const [showTagDropdown, setShowTagDropdown] = useState<string | null>(null);
+  const [tagSearchValue, setTagSearchValue] = useState('');
+  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = () => setShowTagDropdown(null);
+    if (showTagDropdown) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [showTagDropdown]);
+
+  // Add tag to model
+  const addTagToModel = (modelId: string, tag: string) => {
+    const model = models.find(m => m.id === modelId);
+    if (model && tag.trim()) {
+      const currentTags = model.tags || [];
+      if (!currentTags.includes(tag.trim())) {
+        const updatedModel = { ...model, tags: [...currentTags, tag.trim()] };
+        ProfitModelService.update(modelId, updatedModel);
+        loadData();
+      }
+    }
+    setShowTagDropdown(null);
+    setTagSearchValue('');
+  };
+
+  // Remove tag from model
+  // Remove tag from model (handles both tags array and old label field)
+  const removeTagFromModel = (modelId: string, tagToRemove: string) => {
+    const model = models.find(m => m.id === modelId);
+    if (model) {
+      const currentTags = model.tags || [];
+      const updatedModel = {
+        ...model,
+        tags: currentTags.filter(t => t !== tagToRemove),
+        // Also clear label if it matches the tag being removed
+        label: model.label === tagToRemove ? '' : model.label
+      };
+      ProfitModelService.update(modelId, updatedModel);
+      loadData();
+    }
+  };
+
   const toggleSelect = (id: string) => {
     const newSelected = new Set(selectedIds);
     if (newSelected.has(id)) {
@@ -192,30 +309,7 @@ const ProductProfitList: React.FC = () => {
         </div>
       </div>
 
-      {/* 批量操作栏 */}
-      {selectedIds.size > 0 && (
-        <div className="bg-blue-600/10 border border-blue-500/30 rounded-xl p-4 flex items-center justify-between animate-in slide-in-from-top-2 duration-200">
-          <div className="flex items-center gap-3">
-            <span className="text-blue-500 font-black text-sm">{selectedIds.size} 项已选中</span>
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => handleExport(Array.from(selectedIds))}
-              className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-2"
-            >
-              <span className="material-symbols-outlined text-[16px]">download</span>
-              导出选中
-            </button>
-            <button
-              onClick={() => handleDelete(Array.from(selectedIds))}
-              className="px-4 py-2 bg-red-600/10 hover:bg-red-600/20 border border-red-500/30 text-red-500 rounded-lg text-xs font-bold transition-all flex items-center gap-2"
-            >
-              <span className="material-symbols-outlined text-[16px]">delete</span>
-              删除选中
-            </button>
-          </div>
-        </div>
-      )}
+
 
       {/* 内容区域 */}
       {filteredModels.length === 0 ? (
@@ -233,42 +327,99 @@ const ProductProfitList: React.FC = () => {
             <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
               <span className="w-1.5 h-4 bg-indigo-500 rounded-full"></span>
               Product Profit Models
+              <span className="text-[10px] text-slate-500 font-normal ml-2">({Object.keys(groupedModels).length} 产品, {filteredModels.length} 方案)</span>
             </h3>
-            <button
-              onClick={() => handleExport()}
-              className="group flex items-center gap-2 px-3 py-1.5 bg-[#334155] hover:bg-[#475569] text-slate-200 rounded-md transition-all text-xs font-semibold shadow-sm ring-1 ring-inset ring-white/10"
-            >
-              <span className="material-symbols-outlined text-[16px]">download</span>
-              <span>导出全部</span>
-            </button>
+            <div className="flex items-center gap-1.5">
+              {/* 固定按钮组 - 统一卡片样式 */}
+              <button
+                onClick={expandAllGroups}
+                className="p-2 bg-slate-700/50 hover:bg-slate-600 text-slate-300 rounded-lg transition-all"
+                title="展开全部"
+              >
+                <span className="material-symbols-outlined text-[16px]">unfold_more</span>
+              </button>
+              <button
+                onClick={collapseAllGroups}
+                className="p-2 bg-slate-700/50 hover:bg-slate-600 text-slate-300 rounded-lg transition-all"
+                title="折叠全部"
+              >
+                <span className="material-symbols-outlined text-[16px]">unfold_less</span>
+              </button>
+
+              <div className="w-px h-5 bg-slate-600 mx-1"></div>
+
+              {/* 选中数量 - 固定宽度 */}
+              <span className={`text-xs font-bold w-8 text-center transition-opacity ${selectedIds.size > 0 ? 'text-blue-400 opacity-100' : 'opacity-0'}`}>
+                {selectedIds.size || 0}项
+              </span>
+
+              {/* 智能导出按钮：有选中导出选中，无选中导出全部 */}
+              <button
+                onClick={() => selectedIds.size > 0 ? handleExport(Array.from(selectedIds)) : handleExport()}
+                className={`p-2 rounded-lg transition-all ${selectedIds.size > 0 ? 'bg-blue-600/20 hover:bg-blue-600/30 text-blue-400' : 'bg-slate-700/50 hover:bg-slate-600 text-slate-300'}`}
+                title={selectedIds.size > 0 ? `导出选中 (${selectedIds.size}项)` : '导出全部'}
+              >
+                <span className="material-symbols-outlined text-[16px]">download</span>
+              </button>
+
+              {/* 删除选中 - 使用 opacity 控制显隐 */}
+              <button
+                onClick={() => selectedIds.size > 0 && handleDelete(Array.from(selectedIds))}
+                className={`p-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-lg transition-all ${selectedIds.size > 0 ? 'opacity-100 cursor-pointer' : 'opacity-30 cursor-not-allowed'}`}
+                title="删除选中"
+                disabled={selectedIds.size === 0}
+              >
+                <span className="material-symbols-outlined text-[16px]">delete</span>
+              </button>
+
+              {/* 取消选择 */}
+              <button
+                onClick={() => setSelectedIds(new Set())}
+                className={`p-2 hover:bg-slate-600 text-slate-400 rounded-lg transition-all ${selectedIds.size > 0 ? 'opacity-100' : 'opacity-30 cursor-not-allowed'}`}
+                title="取消选择"
+                disabled={selectedIds.size === 0}
+              >
+                <span className="material-symbols-outlined text-[16px]">close</span>
+              </button>
+
+            </div>
           </div>
 
-          <div className="overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:none]">
-            <table className="w-full text-left border-collapse min-w-[1400px]">
-              <thead>
+          <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-320px)] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:none]">
+            <table className="w-full text-left border-collapse min-w-[1400px]" style={{ tableLayout: 'fixed' }}>
+              <thead className="sticky top-0 z-20">
                 <tr className="bg-[#1e293b] border-b border-[#334155] text-[13px] uppercase tracking-wider text-slate-400 font-bold">
+                  {/* Checkbox column */}
+                  <th rowSpan={2} className="px-2 py-3 text-center bg-[#1e293b] border-r border-[#334155]" style={{ width: '40px' }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.size === filteredModels.length && filteredModels.length > 0}
+                      onChange={selectAll}
+                      className="w-4 h-4 rounded border-slate-600 bg-slate-900 text-blue-500 focus:ring-blue-500/50 cursor-pointer"
+                    />
+                  </th>
                   {/* Group 1: Product Info (Sticky) */}
-                  <th rowSpan={2} className="px-3 py-3 text-left bg-[#1e293b] text-slate-300 sticky left-0 z-10 min-w-[150px] shadow-[4px_0_12px_rgba(0,0,0,0.25)] border-r border-[#334155]">
+                  <th rowSpan={2} className="px-3 py-3 text-center bg-[#1e293b] text-slate-300 sticky left-0 z-10 shadow-[4px_0_12px_rgba(0,0,0,0.25)] border-r border-[#334155]" style={{ width: '150px' }}>
                     产品信息
                   </th>
 
                   {/* Group 2: Selling Price */}
-                  <th className="px-2 py-2 text-center border-r border-[#334155]" rowSpan={2}>售价 $</th>
+                  <th className="px-2 py-2 text-center border-r border-[#334155] bg-[#1e293b]" rowSpan={2} style={{ width: '80px' }}>售价 $</th>
 
-                  {/* Group 3: Product Cost */}
-                  <th colSpan={2} className="px-2 py-1 text-center border-r border-[#334155]">产品成本</th>
+                  {/* Group 3: Product Cost - Blue */}
+                  <th colSpan={2} className="px-2 py-1 text-center border-r border-[#334155] bg-blue-500/15 text-blue-300">产品成本</th>
 
-                  {/* Group 4: Logistics */}
-                  <th colSpan={4} className="px-2 py-1 text-center border-r border-[#334155]">物流仓储</th>
+                  {/* Group 4: Logistics - Cyan */}
+                  <th colSpan={4} className="px-2 py-1 text-center border-r border-[#334155] bg-cyan-500/15 text-cyan-300">物流仓储</th>
 
-                  {/* Group 5: Returns */}
-                  <th colSpan={5} className="px-2 py-1 text-center border-r border-[#334155]">退货损耗</th>
+                  {/* Group 5: Returns - Rose */}
+                  <th colSpan={5} className="px-2 py-1 text-center border-r border-[#334155] bg-rose-500/15 text-rose-300">退货损耗</th>
 
-                  {/* Group 6: Fees & Marketing */}
-                  <th colSpan={4} className="px-2 py-1 text-center border-r border-[#334155]">费用 & 广告</th>
+                  {/* Group 6: Fees & Marketing - Purple */}
+                  <th colSpan={4} className="px-2 py-1 text-center border-r border-[#334155] bg-purple-500/15 text-purple-300">费用 & 广告</th>
 
-                  {/* Group 7: Profit Results */}
-                  <th colSpan={5} className="px-2 py-1 text-center bg-[#1e293b] text-slate-300 border-l border-indigo-500/30">
+                  {/* Group 7: Profit Results - Emerald */}
+                  <th colSpan={5} className="px-2 py-1 text-center bg-emerald-500/15 text-emerald-300 border-l border-emerald-500/30">
                     核心利润指标
                   </th>
 
@@ -276,104 +427,250 @@ const ProductProfitList: React.FC = () => {
                   <th rowSpan={2} className="px-2 py-1 text-center bg-[#1e293b] border-l border-[#334155]">操作</th>
                 </tr>
                 <tr className="bg-[#1e293b] border-b border-[#334155] text-[11px] uppercase tracking-tight text-slate-500 font-bold">
-                  {/* Product Cost Sub-headers */}
-                  <th className="px-2 py-2 text-center border-r border-[#334155]/30">采购 ¥</th>
-                  <th className="px-2 py-2 text-center border-r border-[#334155]">汇率</th>
+                  {/* Product Cost Sub-headers - Blue */}
+                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-blue-500/10">采购 ¥</th>
+                  <th className="px-2 py-2 text-center border-r border-[#334155] bg-blue-500/10">汇率</th>
 
-                  {/* Logistics Sub-headers */}
-                  <th className="px-2 py-2 text-center border-r border-[#334155]/30">头程 $</th>
-                  <th className="px-2 py-2 text-center border-r border-[#334155]/30">FBA $</th>
-                  <th className="px-2 py-2 text-center border-r border-[#334155]/30">杂费 $</th>
-                  <th className="px-2 py-2 text-center border-r border-[#334155]">仓储 $</th>
+                  {/* Logistics Sub-headers - Cyan */}
+                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-cyan-500/10">头程 $</th>
+                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-cyan-500/10">FBA $</th>
+                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-cyan-500/10">杂费 $</th>
+                  <th className="px-2 py-2 text-center border-r border-[#334155] bg-cyan-500/10">仓储 $</th>
 
-                  {/* Returns Sub-headers */}
-                  <th className="px-2 py-2 text-center border-r border-[#334155]/30">退货 %</th>
-                  <th className="px-2 py-2 text-center border-r border-[#334155]/30">不可售 %</th>
-                  <th className="px-2 py-2 text-center border-r border-[#334155]/30">处理费 $</th>
-                  <th className="px-2 py-2 text-center border-r border-[#334155]/30">管理费 $</th>
-                  <th className="px-2 py-2 text-center border-r border-[#334155]">移除费 $</th>
+                  {/* Returns Sub-headers - Rose */}
+                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-rose-500/10">退货 %</th>
+                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-rose-500/10">不可售 %</th>
+                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-rose-500/10">处理费 $</th>
+                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-rose-500/10">管理费 $</th>
+                  <th className="px-2 py-2 text-center border-r border-[#334155] bg-rose-500/10">移除费 $</th>
 
-                  {/* Fees & Ads Sub-headers */}
-                  <th className="px-2 py-2 text-center border-r border-[#334155]/30">佣金 %</th>
-                  <th className="px-2 py-2 text-center border-r border-[#334155]/30">佣金 $</th>
-                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 text-indigo-400">TACOS %</th>
-                  <th className="px-2 py-2 text-center border-r border-[#334155]">广告费 $</th>
+                  {/* Fees & Ads Sub-headers - Purple */}
+                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-purple-500/10">佣金 %</th>
+                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-purple-500/10">佣金 $</th>
+                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-purple-500/10 text-purple-400">TACOS %</th>
+                  <th className="px-2 py-2 text-center border-r border-[#334155] bg-purple-500/10">广告费 $</th>
 
-                  {/* Results Sub-headers */}
-                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 text-amber-500">总成本 <br /><span className="text-[9px] opacity-60 font-normal">(无广)</span></th>
-                  <th className="px-2 py-2 text-center border-r border-[#334155]/30">盈亏平衡</th>
-                  <th className="px-2 py-2 text-center border-r border-[#334155]/30">目标利润 %</th>
-                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 text-emerald-400">净利率 %</th>
-                  <th className="px-2 py-2 text-center text-emerald-400 font-bold bg-[#1e293b]">净利润 $</th>
+                  {/* Results Sub-headers - Emerald */}
+                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-emerald-500/10 text-amber-400">总成本 <br /><span className="text-[9px] opacity-60 font-normal">(无广)</span></th>
+                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-emerald-500/10">盈亏平衡</th>
+                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-emerald-500/10">目标利润 %</th>
+                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-emerald-500/10 text-emerald-400">净利率 %</th>
+                  <th className="px-2 py-2 text-center bg-emerald-500/10 text-emerald-400 font-bold">净利润 $</th>
                 </tr>
               </thead>
               <tbody className="text-[11px] text-slate-300">
-                {filteredModels.map((model) => {
-                  const res = model.results.planB;
-                  const adminFee = (res.price * res.commRate * 0.20).toFixed(2);
-                  const totalCostExclAds = res.sellCost.toFixed(2);
+                {(Object.entries(groupedModels) as [string, SavedProfitModel[]][]).map(([groupName, groupItems]) => {
+                  const isExpanded = expandedGroups.has(groupName);
+                  const groupSelectedCount = groupItems.filter(m => selectedIds.has(m.id)).length;
+                  const allGroupSelected = groupSelectedCount === groupItems.length;
 
                   return (
-                    <tr key={model.id} className="hover:bg-[#1e293b]/50 transition-colors border-b border-[#334155]/50 group">
-                      {/* 1. Product Info (Sticky) */}
-                      <td className="px-3 py-3 text-left bg-[#0f172a] sticky left-0 z-10 shadow-[4px_0_12px_rgba(0,0,0,0.25)] border-r border-[#334155]">
-                        <div className="flex flex-col">
-                          <span className="text-slate-100 font-bold text-sm truncate max-w-[140px]" title={model.productName}>{model.productName}</span>
-                          <div className="flex items-center gap-2 mt-1.5">
-                            {model.label && (
-                              <span className="px-1.5 py-0.5 bg-[#334155]/50 text-slate-400 rounded text-[10px] border border-[#334155]">
-                                {model.label}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </td>
+                    <React.Fragment key={groupName}>
+                      {/* Group Header Row */}
+                      {(() => {
+                        // Get SKU from first model's linked product
+                        const firstModel = groupItems[0];
+                        const linkedProduct = firstModel?.productId
+                          ? products.find(p => p.id === firstModel.productId)
+                          : null;
+                        const sku = linkedProduct?.sku || '';
 
-                      {/* 2. Selling Price */}
-                      <td className="px-2 py-3 text-center border-r border-[#334155]">
-                        <span className="font-bold text-white text-sm bg-[#1e293b]/50 px-2 py-1 rounded">${res.price.toFixed(2)}</span>
-                      </td>
+                        return (
+                          <tr
+                            className="bg-[#1e293b]/80 border-b border-[#334155] cursor-pointer hover:bg-[#1e293b] transition-colors"
+                            onClick={() => toggleGroup(groupName)}
+                          >
+                            <td
+                              colSpan={22}
+                              className="px-3 py-2.5 sticky left-0 z-10 bg-[#1e293b]/95"
+                            >
+                              <div className="flex items-center gap-3">
+                                <span
+                                  className={`material-symbols-outlined text-[16px] text-slate-400 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}
+                                >
+                                  chevron_right
+                                </span>
+                                <span className="font-bold text-slate-100 text-sm">{groupName}</span>
+                                {sku && (
+                                  <span className="px-2 py-0.5 bg-slate-700/50 text-slate-400 rounded text-[10px] font-mono">
+                                    SKU: {sku}
+                                  </span>
+                                )}
+                                <span className="px-2 py-0.5 bg-[#334155] text-slate-400 rounded-full text-[10px] font-bold">
+                                  {groupItems.length} 个方案
+                                </span>
+                                {groupSelectedCount > 0 && (
+                                  <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded-full text-[10px] font-bold">
+                                    已选 {groupSelectedCount}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })()}
 
-                      {/* 3. Product Cost */}
-                      <td className="px-2 py-3 text-center text-slate-400 border-r border-[#334155]/30">¥{model.inputs.purchaseRMB}</td>
-                      <td className="px-2 py-3 text-center text-slate-500 border-r border-[#334155]">{model.inputs.exchangeRate}</td>
+                      {/* Group Items */}
+                      {isExpanded && groupItems.map((model) => {
+                        const res = model.results.planB;
+                        const adminFee = (res.price * res.commRate * 0.20).toFixed(2);
+                        const totalCostExclAds = res.sellCost.toFixed(2);
 
-                      {/* 4. Logistics */}
-                      <td className="px-2 py-3 text-center text-slate-400 border-r border-[#334155]/30">${model.inputs.shippingUSD}</td>
-                      <td className="px-2 py-3 text-center text-slate-400 border-r border-[#334155]/30">${model.inputs.fbaFee}</td>
-                      <td className="px-2 py-3 text-center text-slate-500 border-r border-[#334155]/30">${model.inputs.miscFee}</td>
-                      <td className="px-2 py-3 text-center text-slate-500 border-r border-[#334155]">${model.inputs.storageFee}</td>
+                        return (
+                          <tr key={model.id} className="hover:bg-[#1e293b]/50 transition-colors border-b border-[#334155]/30 group">
+                            {/* Checkbox */}
+                            <td className="px-2 py-2 text-center border-r border-[#334155]/30">
+                              <input
+                                type="checkbox"
+                                checked={selectedIds.has(model.id)}
+                                onChange={() => toggleSelect(model.id)}
+                                onClick={e => e.stopPropagation()}
+                                className="w-4 h-4 rounded border-slate-600 bg-slate-900 text-blue-500 focus:ring-blue-500/50 cursor-pointer"
+                              />
+                            </td>
+                            {/* 1. Product Info (Sticky) - Shows multiple tags */}
+                            <td className="px-3 py-2 text-left bg-[#0f172a] sticky left-0 z-10 shadow-[4px_0_12px_rgba(0,0,0,0.25)] border-r border-[#334155]">
+                              <div className="flex flex-col gap-1" onClick={e => e.stopPropagation()}>
+                                {/* Display existing tags - include old label if exists */}
+                                {(() => {
+                                  const allTags = model.tags || [];
+                                  // Add old label if it exists and isn't already in tags
+                                  if (model.label && !allTags.includes(model.label)) {
+                                    allTags.push(model.label);
+                                  }
+                                  return allTags;
+                                })().map((tag, i) => {
+                                  const tagColor = getTagColor(tag);
+                                  return (
+                                    <span
+                                      key={i}
+                                      className={`px-2 py-0.5 ${tagColor.bg} ${tagColor.text} rounded text-[9px] font-medium flex items-center gap-1 w-fit`}
+                                    >
+                                      <span className="whitespace-nowrap">{tag}</span>
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); removeTagFromModel(model.id, tag); }}
+                                        className="hover:text-red-400 transition-colors opacity-70 hover:opacity-100 flex-shrink-0"
+                                        title="删除标签"
+                                      >
+                                        <span className="material-symbols-outlined text-[10px]">close</span>
+                                      </button>
+                                    </span>
+                                  );
+                                })}
+                                {/* Add tag button */}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const rect = e.currentTarget.getBoundingClientRect();
+                                    setDropdownPos({ top: rect.bottom + 4, left: rect.left });
+                                    setShowTagDropdown(showTagDropdown === model.id ? null : model.id);
+                                  }}
+                                  className="px-2 py-0.5 bg-[#334155]/30 text-slate-500 rounded text-[9px] flex items-center gap-1 w-fit hover:bg-[#334155]/50 hover:text-slate-400 transition-all"
+                                  title="添加标签"
+                                >
+                                  <span className="material-symbols-outlined text-[10px]">add</span>
+                                  <span>添加</span>
+                                </button>
+                                {showTagDropdown === model.id && ReactDOM.createPortal(
+                                  <div
+                                    className="fixed z-[9999] bg-[#1e293b] border border-[#334155] rounded-lg shadow-2xl w-44 p-2"
+                                    style={{ top: dropdownPos.top, left: dropdownPos.left }}
+                                    onClick={e => e.stopPropagation()}
+                                  >
+                                    <input
+                                      type="text"
+                                      value={tagSearchValue}
+                                      onChange={e => setTagSearchValue(e.target.value)}
+                                      onKeyDown={e => {
+                                        if (e.key === 'Enter' && tagSearchValue.trim()) {
+                                          addTagToModel(model.id, tagSearchValue);
+                                        }
+                                        if (e.key === 'Escape') setShowTagDropdown(null);
+                                      }}
+                                      className="w-full px-2 py-1.5 bg-[#0f172a] border border-[#334155] rounded text-xs text-white outline-none mb-2"
+                                      autoFocus
+                                      placeholder="搜索或创建标签..."
+                                    />
+                                    <div className="max-h-32 overflow-y-auto space-y-1">
+                                      {allTags
+                                        .filter(t => !model.tags?.includes(t) && t !== model.label)
+                                        .filter(t => t.toLowerCase().includes(tagSearchValue.toLowerCase()))
+                                        .slice(0, 6)
+                                        .map(tag => {
+                                          const tagColor = getTagColor(tag);
+                                          return (
+                                            <button
+                                              key={tag}
+                                              onClick={() => addTagToModel(model.id, tag)}
+                                              className={`w-full px-2 py-1 text-left text-xs rounded ${tagColor.bg} ${tagColor.text} ${tagColor.hover} transition-colors`}
+                                            >
+                                              {tag}
+                                            </button>
+                                          );
+                                        })}
+                                      {tagSearchValue.trim() && !allTags.includes(tagSearchValue.trim()) && (
+                                        <button
+                                          onClick={() => addTagToModel(model.id, tagSearchValue)}
+                                          className="w-full px-2 py-1 text-left text-xs rounded bg-blue-500/20 text-blue-300 hover:bg-blue-500/30 transition-colors"
+                                        >
+                                          + 创建 "{tagSearchValue.trim()}"
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>,
+                                  document.body
+                                )}
+                              </div>
+                            </td>
 
-                      {/* 5. Returns */}
-                      <td className="px-2 py-3 text-center text-slate-500 border-r border-[#334155]/30">{model.inputs.returnRate}%</td>
-                      <td className="px-2 py-3 text-center text-slate-500 border-r border-[#334155]/30">{model.inputs.unsellableRate}%</td>
-                      <td className="px-2 py-3 text-center text-slate-500 border-r border-[#334155]/30">${model.inputs.retProcFee}</td>
-                      <td className="px-2 py-3 text-center text-slate-500 border-r border-[#334155]/30">${adminFee}</td>
-                      <td className="px-2 py-3 text-center text-slate-500 border-r border-[#334155]">${model.inputs.retRemFee}</td>
+                            {/* 2. Selling Price */}
+                            <td className="px-2 py-3 text-center border-r border-[#334155]">
+                              <span className="font-bold text-white text-sm bg-[#1e293b]/50 px-2 py-1 rounded">${res.price.toFixed(2)}</span>
+                            </td>
 
-                      {/* 6. Fees & Ads */}
-                      <td className="px-2 py-3 text-center text-slate-400 border-r border-[#334155]/30">{(res.commRate * 100).toFixed(0)}%</td>
-                      <td className="px-2 py-3 text-center text-slate-400 border-r border-[#334155]/30">${res.commVal}</td>
-                      <td className="px-2 py-3 text-center text-indigo-400 font-medium border-r border-[#334155]/30">{model.inputs.targetAcos}%</td>
-                      <td className="px-2 py-3 text-center text-slate-400 border-r border-[#334155]">${res.adsVal}</td>
+                            {/* 3. Product Cost - Blue */}
+                            <td className="px-2 py-3 text-center text-slate-400 border-r border-[#334155]/30 bg-blue-500/5">¥{model.inputs.purchaseRMB}</td>
+                            <td className="px-2 py-3 text-center text-slate-500 border-r border-[#334155] bg-blue-500/5">{model.inputs.exchangeRate}</td>
 
-                      {/* 7. Results */}
-                      <td className="px-2 py-3 text-center text-amber-500 font-medium border-r border-[#334155]/30">${totalCostExclAds}</td>
-                      <td className="px-2 py-3 text-center text-slate-400 border-r border-[#334155]/30">${res.be}</td>
-                      <td className="px-2 py-3 text-center text-slate-500 border-r border-[#334155]/30">{model.inputs.targetMargin}%</td>
-                      <td className="px-2 py-3 text-center text-emerald-400 font-bold border-r border-[#334155]/30 bg-[#1e293b]/20">{(res.margin * 100).toFixed(1)}%</td>
-                      <td className="px-2 py-3 text-center text-emerald-400 font-black text-sm bg-[#1e293b]/20">${res.profit}</td>
+                            {/* 4. Logistics - Cyan */}
+                            <td className="px-2 py-3 text-center text-slate-400 border-r border-[#334155]/30 bg-cyan-500/5">${model.inputs.shippingUSD}</td>
+                            <td className="px-2 py-3 text-center text-slate-400 border-r border-[#334155]/30 bg-cyan-500/5">${model.inputs.fbaFee}</td>
+                            <td className="px-2 py-3 text-center text-slate-500 border-r border-[#334155]/30 bg-cyan-500/5">${model.inputs.miscFee}</td>
+                            <td className="px-2 py-3 text-center text-slate-500 border-r border-[#334155] bg-cyan-500/5">${model.inputs.storageFee}</td>
 
-                      {/* 8. Actions */}
-                      <td className="px-2 py-3 text-center border-l border-[#334155]/30">
-                        <button
-                          onClick={() => handleDelete([model.id])}
-                          className="p-1.5 text-slate-600 hover:text-rose-500 transition-colors rounded hover:bg-[#334155]/50"
-                          title="删除">
-                          <span className="material-symbols-outlined text-[16px]">close</span>
-                        </button>
-                      </td>
-                    </tr>
+                            {/* 5. Returns - Rose */}
+                            <td className="px-2 py-3 text-center text-slate-500 border-r border-[#334155]/30 bg-rose-500/5">{model.inputs.returnRate}%</td>
+                            <td className="px-2 py-3 text-center text-slate-500 border-r border-[#334155]/30 bg-rose-500/5">{model.inputs.unsellableRate}%</td>
+                            <td className="px-2 py-3 text-center text-slate-500 border-r border-[#334155]/30 bg-rose-500/5">${model.inputs.retProcFee}</td>
+                            <td className="px-2 py-3 text-center text-slate-500 border-r border-[#334155]/30 bg-rose-500/5">${adminFee}</td>
+                            <td className="px-2 py-3 text-center text-slate-500 border-r border-[#334155] bg-rose-500/5">${model.inputs.retRemFee}</td>
+
+                            {/* 6. Fees & Ads - Purple */}
+                            <td className="px-2 py-3 text-center text-slate-400 border-r border-[#334155]/30 bg-purple-500/5">{(res.commRate * 100).toFixed(0)}%</td>
+                            <td className="px-2 py-3 text-center text-slate-400 border-r border-[#334155]/30 bg-purple-500/5">${res.commVal}</td>
+                            <td className="px-2 py-3 text-center text-purple-400 font-medium border-r border-[#334155]/30 bg-purple-500/5">{model.inputs.targetAcos}%</td>
+                            <td className="px-2 py-3 text-center text-slate-400 border-r border-[#334155] bg-purple-500/5">${res.adsVal}</td>
+
+                            {/* 7. Results - Emerald */}
+                            <td className="px-2 py-3 text-center text-amber-400 font-medium border-r border-[#334155]/30 bg-emerald-500/5">${totalCostExclAds}</td>
+                            <td className="px-2 py-3 text-center text-slate-400 border-r border-[#334155]/30 bg-emerald-500/5">${res.be}</td>
+                            <td className="px-2 py-3 text-center text-slate-500 border-r border-[#334155]/30 bg-emerald-500/5">{model.inputs.targetMargin}%</td>
+                            <td className="px-2 py-3 text-center text-emerald-400 font-bold border-r border-[#334155]/30 bg-emerald-500/10">{(res.margin * 100).toFixed(1)}%</td>
+                            <td className="px-2 py-3 text-center text-emerald-400 font-black text-sm bg-emerald-500/10">${res.profit}</td>
+
+                            {/* 8. Actions */}
+                            <td className="px-2 py-3 text-center border-l border-[#334155]/30">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleDelete([model.id]); }}
+                                className="p-1.5 text-slate-600 hover:text-rose-500 transition-colors rounded hover:bg-[#334155]/50"
+                                title="删除">
+                                <span className="material-symbols-outlined text-[16px]">close</span>
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </React.Fragment>
                   );
                 })}
               </tbody>

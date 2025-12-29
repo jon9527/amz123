@@ -8,7 +8,45 @@ export enum AppView {
   INVENTORY = 'INVENTORY',
   TRAFFIC = 'TRAFFIC',
   TOOLBOX = 'TOOLBOX',
-  DEDUCTION = 'DEDUCTION'
+  DEDUCTION = 'DEDUCTION',
+  REPLENISHMENT = 'REPLENISHMENT',
+  PRODUCT_LIBRARY = 'PRODUCT_LIBRARY'
+}
+
+// ============ 产品库类型 ============
+export interface ProductSpec {
+  id: string; // Internal UUID
+  displayId?: string; // User-facing ID (e.g. P-1001)
+  name: string;
+  sku: string;
+  // 规格尺寸
+  length: number;  // cm
+  width: number;   // cm
+  height: number;  // cm
+  weight: number;  // kg
+  pcsPerBox: number;
+  // 成本
+  unitCost: number;      // 采购单价 (¥)
+  defaultPrice: number;  // 默认售价 ($)
+  // 物流费率（可选，留空则用全局设置）
+  seaPriceCbm?: number;
+  airPriceKg?: number;
+  expPriceKg?: number;
+  // 其他
+  asin?: string;
+  imageUrl?: string;
+  notes?: string;
+  tags?: string[];  // 产品标签
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ReplenishmentBatch {
+  id: number;
+  name: string;
+  type: 'sea' | 'air' | 'exp';
+  qty: number;
+  offset: number;
 }
 
 export interface ProductData {
@@ -95,9 +133,11 @@ export interface ProfitModelResults {
 
 export interface SavedProfitModel {
   id: string;
+  productId?: string; // 关联的产品ID
   productName: string;
   asin?: string;
-  label: string;
+  label: string; // 保留用于向后兼容
+  tags?: string[]; // 新增：多标签数组
   note?: string;
   timestamp: number;
   inputs: ProfitModelInputs;

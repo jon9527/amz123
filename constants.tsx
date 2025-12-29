@@ -3,13 +3,14 @@ import { AppView, KPI, CampaignData, ProductData } from './types';
 
 export const NAVIGATION_ITEMS = [
   { view: AppView.DASHBOARD, label: '总览面板', icon: 'dashboard' },
+  { view: AppView.PRODUCT_LIBRARY, label: '产品库', icon: 'inventory_2' },
   { view: AppView.PROFIT, label: '利润计算器', icon: 'attach_money' },
-  { view: AppView.SIMULATION, label: '利润模型', icon: 'analytics' }, // Moved & Renamed
+  { view: AppView.SIMULATION, label: '利润模型', icon: 'analytics' },
   { view: AppView.PROMOTION, label: '盈亏沙盘', icon: 'trending_up' },
-  { view: AppView.ADS, label: '广告投放模拟', icon: 'bar_chart' }, // Renamed
+  { view: AppView.ADS, label: '广告投放模拟', icon: 'bar_chart' },
   { view: AppView.DEDUCTION, label: '推广推演', icon: 'rocket_launch' },
+  { view: AppView.REPLENISHMENT, label: '补货建议', icon: 'local_shipping' },
   { view: AppView.TRAFFIC, label: '流量分析', icon: 'insights' },
-  { view: AppView.INVENTORY, label: '补货建议', icon: 'inventory_2' },
   { view: AppView.TOOLBOX, label: '运营工具箱', icon: 'construction' },
 ];
 

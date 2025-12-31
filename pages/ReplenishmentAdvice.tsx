@@ -16,6 +16,7 @@ import {
     Filler,
     BarController,
     LineController,
+    ScatterController,
 } from 'chart.js';
 import annotationPlugin from 'chartjs-plugin-annotation';
 import ChartDataLabels from 'chartjs-plugin-datalabels';
@@ -32,6 +33,7 @@ ChartJS.register(
     Filler,
     BarController,
     LineController,
+    ScatterController,
     annotationPlugin,
     ChartDataLabels
 );
@@ -73,6 +75,15 @@ interface ModuleState {
     isFreeMode: boolean;
 }
 
+// 资金事件类型
+interface FinancialEvent {
+    day: number;           // 发生在第几天
+    type: 'deposit' | 'balance' | 'freight' | 'recall'; // 事件类型
+    batchIdx: number;      // 批次索引
+    amount: number;        // 金额 (RMB, 负数为支出)
+    label: string;         // 显示标签，如 "#1定 12/27"
+}
+
 interface SimulationResult {
     xMin: number;
     xMax: number;
@@ -93,6 +104,9 @@ interface SimulationResult {
     bePoint: { x: number; y: number } | null;
     profBePoint: { x: number; y: number } | null;
     totalStockoutDays: number;
+    beIdx: number | null;
+    profBeIdx: number | null;
+    financialEvents: FinancialEvent[];  // 资金事件数组
 }
 
 // ============ HELPERS ============
@@ -361,7 +375,10 @@ const calcSimulation = (batches: ReplenishmentBatch[], params: SimParams): Simul
         breakevenDate: beIdx !== null ? formatDateFromOffset(beIdx) : '未回本',
         profBeDateStr: profBeIdx !== null ? formatDateFromOffset(profBeIdx) : '未盈利',
         bePoint,
-        profBePoint
+        profBePoint,
+        beIdx,
+        profBeIdx,
+        financialEvents: [] // 默认空数组
     };
 };
 
@@ -386,8 +403,8 @@ const getDefaultState = (): ModuleState => ({
     shippingUSD: 0,
     profitUSD: 0,
     exchRate: 7.2,
-    ratioDeposit: 30,
-    ratioBalance: 70,
+    ratioDeposit: 0.3,
+    ratioBalance: 0.7,
     prodDays: 15,
     batches: [],
     isFreeMode: false,
@@ -699,6 +716,9 @@ const ReplenishmentAdvice: React.FC = () => {
     const [logCosts, setLogCosts] = useState<LogisticsCosts>({ sea: 0, air: 0, exp: 0 });
     const [actualSales, setActualSales] = useState<number[]>([]);
     const [simResult, setSimResult] = useState<SimulationResult | null>(null);
+    const [selectedEvent, setSelectedEvent] = useState<{ event: FinancialEvent; x: number; y: number } | null>(null);
+    const [hiddenEventTypes, setHiddenEventTypes] = useState<Set<string>>(new Set());
+    const [hiddenChartLines, setHiddenChartLines] = useState<Set<string>>(new Set());
 
     const ganttCanvasRef = useRef<HTMLCanvasElement>(null);
     const cashCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -777,6 +797,7 @@ const ReplenishmentAdvice: React.FC = () => {
     // ============ SIMULATION ENGINE ============
     const calcSimulation = useCallback((): SimulationResult => {
         const { batches, unitCost, exchRate, ratioDeposit, ratioBalance, seaDays, airDays, expDays, margins, prices } = state;
+        const initialStock = (state as any).initialStock || 0; // Support initial stock if added later
         const logDays = { sea: seaDays, air: airDays, exp: expDays };
         const logPrices = { sea: logCosts.sea, air: logCosts.air, exp: logCosts.exp };
         const maxSimDays = 500;
@@ -791,6 +812,10 @@ const ReplenishmentAdvice: React.FC = () => {
         const batchRevenueMap = new Array(batches.length).fill(0);
         const arrivalEvents: Record<number, any[]> = {};
         const salesPeriods = batches.map(() => ({ start: null as number | null, end: null as number | null, arrival: null as number | null }));
+
+        // 资金事件收集
+        const financialEvents: FinancialEvent[] = [];
+        const batchRecallMap: Record<number, { day: number; amount: number }[]> = {}; // 每批次的回款记录
 
         // 辅助函数：根据偏移天数获取当天的日销量（直接从月度日销量表获取）
         const getDailyDemand = (dayOffset: number): number => {
@@ -828,17 +853,53 @@ const ReplenishmentAdvice: React.FC = () => {
             ganttProd.push({ x: [t0, t1], y: yKey, batchIdx: i, cost: batchCost });
             ganttShip.push({ x: [t1, t2], y: yKey, batchIdx: i, freight: batchFreight });
 
-            if (t0 < maxSimDays) dailyChange[t0] -= batchCost * (ratioDeposit / 100);
-            if (t1 < maxSimDays) dailyChange[t1] -= batchCost * (ratioBalance / 100);
+            // 资金流出 + 事件收集 (单位: RMB)
+            // BatchCost is typically USD, so convert to RMB
+            // Ratios are in decimal (e.g. 0.3), so no need to divide by 100
+            const depositAmount = batchCost * state.ratioDeposit * state.exchRate;
+            const balanceAmount = batchCost * state.ratioBalance * state.exchRate;
+
+            if (t0 < maxSimDays) {
+                dailyChange[t0] -= depositAmount;
+                financialEvents.push({
+                    day: t0,
+                    type: 'deposit',
+                    batchIdx: i,
+                    amount: -depositAmount,
+                    label: `#${i + 1}定 ${getDateStr(t0)}`
+                });
+            }
+            if (t1 < maxSimDays) {
+                dailyChange[t1] -= balanceAmount;
+                financialEvents.push({
+                    day: t1,
+                    type: 'balance',
+                    batchIdx: i,
+                    amount: -balanceAmount,
+                    label: `#${i + 1}尾 ${getDateStr(t1)}`
+                });
+            }
             const freightDay = Math.floor(t2);
-            if (freightDay < maxSimDays) dailyChange[freightDay] -= batchFreight;
+            if (freightDay < maxSimDays) {
+                dailyChange[freightDay] -= batchFreight;
+                financialEvents.push({
+                    day: freightDay,
+                    type: 'freight',
+                    batchIdx: i,
+                    amount: -batchFreight,
+                    label: `#${i + 1}运 ${getDateStr(freightDay)}`
+                });
+            }
 
             if (!arrivalEvents[freightDay]) arrivalEvents[freightDay] = [];
             arrivalEvents[freightDay].push({ qty: finalQty, unitCost, unitFreight: lPrice, batchIdx: i, yLabel: getBatchLabel(i, b), arrivalTime: freightDay });
+
+            // 初始化批次回款记录
+            batchRecallMap[i] = [];
         });
 
         const inventoryQueue: any[] = [];
-        let currentInv = 0;
+        let currentInv = initialStock;
         let firstSaleDay: number | null = null;
 
         for (let d = 0; d < maxSimDays; d++) {
@@ -882,17 +943,39 @@ const ReplenishmentAdvice: React.FC = () => {
                     const take = Math.min(demand, batchObj.qty);
                     remainingDemand -= take;
 
-                    const marginPercent = margins[mIdx];
                     const price = prices[mIdx];
-                    const unitProfitUSD = price * (marginPercent / 100);
-                    const unitProfitRMB = unitProfitUSD * exchRate;
-                    const unitRecallRMB = batchObj.unitCost + batchObj.unitFreight + unitProfitRMB;
+
+                    // 精确计算回款：使用 computeFeeBreakdown 或回退到毛利率计算
+                    let unitRecallRMB: number;
+                    let unitProfitRMB: number;
+
+                    if (selectedStrategyId) {
+                        // 精确计算：售价 - 平台费用 = 回款
+                        const breakdown = computeFeeBreakdown(price, selectedStrategyId);
+                        unitRecallRMB = breakdown.recallUSD * exchRate;
+                        unitProfitRMB = breakdown.netProfit * exchRate;
+                    } else {
+                        // 回退：使用毛利率反推
+                        const marginPercent = margins[mIdx];
+                        const unitProfitUSD = price * (marginPercent / 100);
+                        unitProfitRMB = unitProfitUSD * exchRate;
+                        unitRecallRMB = batchObj.unitCost + batchObj.unitFreight + unitProfitRMB;
+                    }
+
                     const revenue = take * unitRecallRMB;
                     const profit = take * unitProfitRMB;
 
                     batchRevenueMap[batchObj.batchIdx] += revenue;
                     const payDay = d + 14;
                     if (payDay < maxSimDays) dailyChange[payDay] += revenue;
+
+                    // 记录批次回款
+                    const lastRecall = batchRecallMap[batchObj.batchIdx][batchRecallMap[batchObj.batchIdx].length - 1];
+                    if (lastRecall && lastRecall.day === payDay) {
+                        lastRecall.amount += revenue;
+                    } else if (payDay < maxSimDays) {
+                        batchRecallMap[batchObj.batchIdx].push({ day: payDay, amount: revenue });
+                    }
 
                     totalRevenue += revenue;
                     totalNetProfit += profit;
@@ -908,6 +991,48 @@ const ReplenishmentAdvice: React.FC = () => {
             if (firstSaleDay !== null && d >= firstSaleDay && remainingDemand > 0.01) dailyMissed[d] = true;
             dailyInv[d] = currentInv;
         }
+
+        // 处理回款事件（每14天聚合一次）
+        batches.forEach((b, i) => {
+            const recalls = batchRecallMap[i] || [];
+            if (recalls.length === 0) return;
+
+            // 按日期排序
+            recalls.sort((a, b) => a.day - b.day);
+
+            let chunkStartDay = recalls[0].day;
+            let chunkAmount = 0;
+
+            recalls.forEach(r => {
+                if (r.day - chunkStartDay > 14) {
+                    // 生成聚合回款事件
+                    if (chunkAmount > 100) { // 忽略微小金额
+                        const evtDay = chunkStartDay + 7; // 显示在区间中间
+                        financialEvents.push({
+                            day: evtDay,
+                            type: 'recall',
+                            batchIdx: i,
+                            amount: chunkAmount, // 正数表示收入
+                            label: `#${i + 1}回 ¥${Math.round(chunkAmount / 1000)}k`
+                        });
+                    }
+                    chunkStartDay = r.day;
+                    chunkAmount = 0;
+                }
+                chunkAmount += r.amount;
+            });
+            // 最后一笔
+            if (chunkAmount > 100) {
+                const evtDay = chunkStartDay + 7;
+                financialEvents.push({
+                    day: evtDay,
+                    type: 'recall',
+                    batchIdx: i,
+                    amount: chunkAmount,
+                    label: `#${i + 1}回 ¥${Math.round(chunkAmount / 1000)}k`
+                });
+            }
+        });
 
         salesPeriods.forEach((period, i) => {
             const b = batches[i];
@@ -955,6 +1080,11 @@ const ReplenishmentAdvice: React.FC = () => {
         let beIdx: number | null = null, bePoint: { x: number; y: number } | null = null;
         let profBeIdx: number | null = null, profBePoint: { x: number; y: number } | null = null;
 
+        // Determine truncation day based on last event
+        const lastFinDay = financialEvents.reduce((max, e) => Math.max(max, e.day), 0);
+        const lastSellDay = ganttSell.reduce((max, item) => Math.max(max, item.x[1]), 0);
+        const cutoffDay = Math.min(Math.max(lastFinDay, lastSellDay) + 14, maxSimDays - 1);
+
         for (let d = 0; d < dailyChange.length; d++) {
             const prevCash = runningCash, prevProf = runningProfit;
             runningCash += dailyChange[d];
@@ -962,7 +1092,7 @@ const ReplenishmentAdvice: React.FC = () => {
             if (runningCash < minCash) minCash = runningCash;
             if (beIdx === null && prevCash < 0 && runningCash >= 0 && d > 10) { beIdx = d; bePoint = { x: d, y: runningCash }; }
             if (profBeIdx === null && prevProf < 0 && runningProfit >= 0 && d > 10) { profBeIdx = d; profBePoint = { x: d, y: runningProfit }; }
-            if (d <= 360) {
+            if (d <= cutoffDay) {
                 cashPoints.push({ x: d, y: runningCash });
                 profitPoints.push({ x: d, y: runningProfit });
                 invPoints.push({ x: d, y: dailyInv[d] || 0 });
@@ -970,7 +1100,7 @@ const ReplenishmentAdvice: React.FC = () => {
         }
 
         return {
-            xMin: 0, xMax: 364,
+            xMin: 0, xMax: cutoffDay,
             cashPoints, invPoints, profitPoints,
             ganttProd, ganttShip, ganttHold, ganttSell, ganttStockout,
             totalStockoutDays: ganttStockout.reduce((sum, item) => sum + (item.gapDays || 0), 0),
@@ -978,8 +1108,10 @@ const ReplenishmentAdvice: React.FC = () => {
             breakevenDate: beIdx !== null ? getDateStr(beIdx) : '未回本',
             profBeDateStr: profBeIdx !== null ? getDateStr(profBeIdx) : '未盈利',
             bePoint, profBePoint,
+            beIdx, profBeIdx,
+            financialEvents,
         };
-    }, [state, logCosts]);
+    }, [state, logCosts, selectedStrategyId, computeFeeBreakdown]);
 
     // ============ RUN SIMULATION ============
     useEffect(() => {
@@ -1021,6 +1153,49 @@ const ReplenishmentAdvice: React.FC = () => {
     // 2. Logic Effect - Handles Create OR Update
     useEffect(() => {
         if (!simResult) return;
+
+        // Helper: 动态调整Y轴0点位置。如果有负数，抬高0点(15%)；全正数则沉底(0%)消灭空白。
+        const alignZeroHelper = (scale: any) => {
+            // 右轴(库存): 始终从0开始，不采用动态对齐，固定在底部
+            if (scale.id === 'y1') {
+                scale.min = 0;
+                scale.max = Math.max(10, scale.max);
+                return;
+            }
+
+            // 左轴(资金): 维持动态逻辑
+            const chart = scale.chart;
+            let hasNegative = false;
+            // Scan visible datasets for negative values
+            if (chart.data && chart.data.datasets) {
+                chart.data.datasets.forEach((d: any, i: number) => {
+                    const meta = chart.getDatasetMeta(i);
+                    // Match scale ID
+                    if (meta.yAxisID === scale.id && !meta.hidden && d.data && d.data.length > 0) {
+                        if (!hasNegative) {
+                            if (d.data.some((p: any) => (typeof p === 'object' ? p.y : p) < -0.01)) hasNegative = true;
+                        }
+                    }
+                });
+            }
+            const RATIO = hasNegative ? 0.15 : 0;
+            const dMin = scale.min;
+            const minRange = 1000;
+            const dMax = Math.max(minRange, scale.max);
+
+            if (RATIO === 0) {
+                scale.min = Math.min(dMin, 0);
+                scale.max = dMax * 1.05;
+            } else {
+                const k = (1 - RATIO) / RATIO;
+                const minNeeded = -dMax / k;
+                const finalMin = Math.min(dMin, minNeeded);
+                const finalMax = Math.max(dMax, -finalMin * k);
+                scale.min = finalMin;
+                scale.max = finalMax;
+            }
+        };
+
         const yLabels = state.batches.map((b, i) => `批次${i + 1}\n${b.qty}件`);
 
         const fmtDateAxis = (val: number) => {
@@ -1036,8 +1211,10 @@ const ReplenishmentAdvice: React.FC = () => {
             grid: { color: '#3f3f46', lineWidth: 1 },
             ticks: { color: '#fff', font: { weight: 'bold' as const, size: 11 }, stepSize: 14, callback: (v: any) => fmtDateAxis(v as number) },
         };
-        const yAxisWidth = 45;
-        const chartPadding = { left: 0, right: 20, top: 0, bottom: 0 };
+        const yAxisWidth = 60;
+        const chartPadding = { left: 0, right: 20, top: 45, bottom: 0 }; // Deprecated, kept for reference if needed
+        const ganttPadding = { left: 0, right: 20, top: 10, bottom: 0 };
+        const cashPadding = { left: 0, right: 20, top: 15, bottom: 0 };
 
 
         // --- GANTT CHART ---
@@ -1088,7 +1265,7 @@ const ReplenishmentAdvice: React.FC = () => {
                     responsive: true,
                     maintainAspectRatio: false,
                     animation: false,
-                    layout: { padding: chartPadding },
+                    layout: { padding: ganttPadding },
                     plugins: {
                         legend: { display: false },
                         datalabels: {
@@ -1134,6 +1311,8 @@ const ReplenishmentAdvice: React.FC = () => {
                                 }
                             }
                         },
+                        // 右边隐藏轴，用于对齐下方图表
+                        y1: { position: 'right', display: false, afterFit: (axis: any) => { axis.width = 65; } },
                     },
                 },
             });
@@ -1141,54 +1320,295 @@ const ReplenishmentAdvice: React.FC = () => {
 
         // --- CASH CHART ---
         if (cashChartRef.current) {
+            // Hot-fix: 如果现有实例没有 eventIcons 插件，则销毁重建
+            const plugins = cashChartRef.current.config.plugins as any[];
+            const hasPlugin = plugins?.find((p: any) => p.id === 'eventIcons');
+            if (!hasPlugin) {
+                cashChartRef.current.destroy();
+                cashChartRef.current = null;
+            }
+        }
+
+        if (cashChartRef.current) {
             // Update Existing
             const chart = cashChartRef.current;
+            (chart.config as any)._customData = { simResult, hiddenEventTypes, setSelectedEvent }; // Update data for plugin
             chart.data.datasets[0].data = simResult.cashPoints;
+            chart.data.datasets[0].hidden = hiddenChartLines.has('cash');
             chart.data.datasets[1].data = simResult.profitPoints;
+            chart.data.datasets[1].hidden = hiddenChartLines.has('profit');
             chart.data.datasets[2].data = simResult.invPoints;
+            chart.data.datasets[2].hidden = hiddenChartLines.has('inventory');
+
+            // 更新回本点和盈利点 scatter datasets - 如果对应线隐藏则也隐藏
+            chart.data.datasets[3].data = simResult.bePoint && !hiddenChartLines.has('cash') ? [simResult.bePoint] : [];
+            chart.data.datasets[4].data = simResult.profBePoint && !hiddenChartLines.has('profit') ? [simResult.profBePoint] : [];
+
+            // 动态更新 annotations - 根据隐藏状态
+            const annotations: any = {};
+            // 只有资金或利润线显示时才显示0线
+            if (!hiddenChartLines.has('cash') || !hiddenChartLines.has('profit')) {
+                annotations.zeroLine = { type: 'line', yMin: 0, yMax: 0, borderColor: '#52525b', borderWidth: 1.5, borderDash: [6, 4] };
+            }
+            // 资金线显示时才显示回本线
+            if (simResult.beIdx !== null && !hiddenChartLines.has('cash')) {
+                annotations.breakEvenLine = {
+                    type: 'line',
+                    xMin: simResult.beIdx,
+                    xMax: simResult.beIdx,
+                    borderColor: '#6366f1',
+                    borderWidth: 2,
+                    borderDash: [6, 4],
+                    label: {
+                        display: true,
+                        content: `回本 ${simResult.breakevenDate}`,
+                        position: 'start',
+                        backgroundColor: '#6366f1',
+                        color: '#fff',
+                        font: { size: 10, weight: 'bold' }
+                    }
+                };
+            }
+            // 利润线显示时才显示盈利线
+            if (simResult.profBeIdx !== null && !hiddenChartLines.has('profit')) {
+                annotations.profitLine = {
+                    type: 'line',
+                    xMin: simResult.profBeIdx,
+                    xMax: simResult.profBeIdx,
+                    borderColor: '#22c55e',
+                    borderWidth: 2,
+                    borderDash: [6, 4],
+                    label: {
+                        display: true,
+                        content: `盈利 ${simResult.profBeDateStr}`,
+                        position: 'end',
+                        backgroundColor: '#22c55e',
+                        color: '#fff',
+                        font: { size: 10, weight: 'bold' }
+                    }
+                };
+            }
+            if (chart.options.plugins?.annotation) {
+                (chart.options.plugins.annotation as any).annotations = annotations;
+            }
+
 
             // Critical: Update Scale Callback to reflect new simStart
             if (chart.options.scales?.x) {
                 chart.options.scales.x = { ...commonXScale, ticks: { ...commonXScale.ticks, display: false }, grid: { color: '#3f3f46', lineWidth: 1 } };
             }
+            // 设定Y轴：使用 helper 自动对齐0轴
+            if (chart.options.scales?.y1) {
+                (chart.options.scales.y1 as any).display = true;
+                (chart.options.scales.y1 as any).afterDataLimits = alignZeroHelper;
+                (chart.options.scales.y1 as any).ticks = { color: '#60a5fa', precision: 0, callback: (v: any) => v < 0 ? '' : v.toLocaleString() + '件' };
+            }
+            if (chart.options.scales?.y) {
+                (chart.options.scales.y as any).display = true;
+                (chart.options.scales.y as any).afterDataLimits = alignZeroHelper;
+                (chart.options.scales.y as any).ticks = {
+                    color: '#a1a1aa',
+                    precision: 0,
+                    callback: (v: number) => Math.abs(v) >= 1000 ? '¥' + (v / 1000).toFixed(0) + 'k' : '¥' + v
+                };
+            }
             chart.update('none');
         } else if (cashCanvasRef.current) {
             // Create New
             const ctx = cashCanvasRef.current.getContext('2d');
+            // 构建动态 annotations
+            const buildAnnotations = () => {
+                const annotations: any = {
+                    zeroLine: { type: 'line', yMin: 0, yMax: 0, borderColor: '#52525b', borderWidth: 1.5, borderDash: [6, 4] },
+                };
+                if (simResult.beIdx !== null) {
+                    annotations.breakEvenLine = {
+                        type: 'line',
+                        xMin: simResult.beIdx,
+                        xMax: simResult.beIdx,
+                        borderColor: '#6366f1',
+                        borderWidth: 2,
+                        borderDash: [6, 4],
+                        label: {
+                            display: true,
+                            content: `回本 ${simResult.breakevenDate}`,
+                            position: 'start',
+                            backgroundColor: '#6366f1',
+                            color: '#fff',
+                            font: { size: 10, weight: 'bold' }
+                        }
+                    };
+                }
+                if (simResult.profBeIdx !== null) {
+                    annotations.profitLine = {
+                        type: 'line',
+                        xMin: simResult.profBeIdx,
+                        xMax: simResult.profBeIdx,
+                        borderColor: '#22c55e',
+                        borderWidth: 2,
+                        borderDash: [6, 4],
+                        label: {
+                            display: true,
+                            content: `盈利 ${simResult.profBeDateStr}`,
+                            position: 'end',
+                            backgroundColor: '#22c55e',
+                            color: '#fff',
+                            font: { size: 10, weight: 'bold' }
+                        }
+                    };
+                }
+                return annotations;
+            };
+
             const gradient = ctx?.createLinearGradient(0, 0, 0, 250);
             gradient?.addColorStop(0, 'rgba(64, 158, 255, 0.4)');
             gradient?.addColorStop(1, 'rgba(64, 158, 255, 0)');
 
+
+            const eventIconsPlugin = {
+                id: 'eventIcons',
+                afterDatasetsDraw(chart: any) {
+                    const { ctx, scales: { x } } = chart;
+                    const { simResult: dSim, hiddenEventTypes: dHidden } = (chart.config as any)._customData || {};
+                    if (!dSim) return;
+
+                    const topY = chart.chartArea.top;
+
+                    dSim.financialEvents.forEach((e: any) => {
+                        if (dHidden && dHidden.has(e.type)) return;
+                        const xPos = x.getPixelForValue(e.day);
+                        if (xPos < chart.chartArea.left || xPos > chart.chartArea.right) return;
+
+                        let yOffset = 10;
+                        if (e.type === 'balance') yOffset = 22;
+                        else if (e.type === 'freight') yOffset = 34;
+                        else if (e.type === 'recall') yOffset = 46;
+
+                        const yPos = topY + yOffset;
+
+                        ctx.save();
+                        if (e.type === 'deposit') {
+                            ctx.fillStyle = '#22d3ee';
+                            ctx.beginPath();
+                            ctx.arc(xPos, yPos, 4, 0, Math.PI * 2);
+                            ctx.fill();
+                        } else if (e.type === 'balance') {
+                            ctx.fillStyle = '#ec4899';
+                            ctx.beginPath();
+                            ctx.arc(xPos, yPos, 4, 0, Math.PI * 2);
+                            ctx.fill();
+                        } else if (e.type === 'freight') {
+                            ctx.fillStyle = '#fbbf24';
+                            ctx.beginPath();
+                            ctx.moveTo(xPos, yPos - 4);
+                            ctx.lineTo(xPos - 4, yPos + 4);
+                            ctx.lineTo(xPos + 4, yPos + 4);
+                            ctx.fill();
+                        } else if (e.type === 'recall') {
+                            ctx.fillStyle = '#4ade80';
+                            ctx.font = '10px Arial';
+                            ctx.textAlign = 'center';
+                            ctx.textBaseline = 'middle';
+                            ctx.fillText('★', xPos, yPos);
+                        }
+                        ctx.restore();
+                    });
+                },
+                afterEvent(chart: any, args: any) {
+                    const { event } = args;
+                    if (event.type !== 'click') return;
+
+                    const { simResult: dSim, hiddenEventTypes: dHidden, setSelectedEvent: dSetSelected } = (chart.config as any)._customData || {};
+                    if (!dSim || !dSetSelected) return;
+
+                    const mouseX = event.x;
+                    const mouseY = event.y;
+                    const topY = chart.chartArea.top;
+
+                    const clickedEvent = dSim.financialEvents.slice().reverse().find((e: any) => {
+                        if (dHidden && dHidden.has(e.type)) return false;
+                        const xPos = chart.scales.x.getPixelForValue(e.day);
+                        if (xPos < chart.chartArea.left || xPos > chart.chartArea.right) return false;
+
+                        let yOffset = 10;
+                        if (e.type === 'balance') yOffset = 22;
+                        else if (e.type === 'freight') yOffset = 34;
+                        else if (e.type === 'recall') yOffset = 46;
+                        const yPos = topY + yOffset;
+
+                        return Math.pow(mouseX - xPos, 2) + Math.pow(mouseY - yPos, 2) <= 100; // 10px radius
+                    });
+
+                    if (clickedEvent) {
+                        const nativeEvent = event.native;
+                        dSetSelected({ event: clickedEvent, x: nativeEvent.clientX, y: nativeEvent.clientY });
+                        args.changed = true;
+                    }
+                }
+            };
+
             cashChartRef.current = new ChartJS(cashCanvasRef.current, {
                 type: 'line',
+                plugins: [eventIconsPlugin],
                 data: {
                     datasets: [
-                        { label: '资金', data: simResult.cashPoints, borderColor: '#f56c6c', backgroundColor: 'transparent', borderWidth: 2, fill: true, pointRadius: 0 },
-                        { label: '累计利润', data: simResult.profitPoints, borderColor: '#67c23a', borderWidth: 2, borderDash: [5, 5], fill: false, pointRadius: 0 },
-                        { label: '库存', data: simResult.invPoints, borderColor: '#409eff', backgroundColor: gradient, borderWidth: 1, fill: true, pointRadius: 0, yAxisID: 'y1' },
+                        { label: '资金', data: simResult.cashPoints, borderColor: '#f56c6c', backgroundColor: 'transparent', borderWidth: 2, fill: true, pointRadius: 0, yAxisID: 'y', hidden: hiddenChartLines.has('cash') },
+                        { label: '累计利润', data: simResult.profitPoints, borderColor: '#67c23a', borderWidth: 2, borderDash: [5, 5], fill: false, pointRadius: 0, yAxisID: 'y', hidden: hiddenChartLines.has('profit') },
+                        { label: '库存', data: simResult.invPoints, borderColor: '#409eff', backgroundColor: gradient, borderWidth: 1, fill: true, pointRadius: 0, yAxisID: 'y1', hidden: hiddenChartLines.has('inventory') },
+                        // 回本点散点
+                        {
+                            label: '回本点',
+                            type: 'scatter' as const,
+                            data: simResult.bePoint ? [simResult.bePoint] : [],
+                            backgroundColor: '#6366f1',
+                            borderColor: '#fff',
+                            borderWidth: 2,
+                            pointRadius: 8,
+                            pointHoverRadius: 10,
+                            yAxisID: 'y'
+                        },
+                        // 盈利点散点
+                        {
+                            label: '盈利点',
+                            type: 'scatter' as const,
+                            data: simResult.profBePoint ? [simResult.profBePoint] : [],
+                            backgroundColor: '#22c55e',
+                            borderColor: '#fff',
+                            borderWidth: 2,
+                            pointRadius: 8,
+                            pointHoverRadius: 10,
+                            yAxisID: 'y'
+                        },
                     ],
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
                     animation: false,
-                    layout: { padding: chartPadding },
+                    layout: { padding: cashPadding },
                     plugins: {
                         legend: { display: false },
                         datalabels: { display: false },
                         annotation: {
-                            annotations: {
-                                zeroLine: { type: 'line', yMin: 0, yMax: 0, borderColor: '#52525b', borderWidth: 1.5, borderDash: [6, 4] },
-                            },
+                            annotations: buildAnnotations(),
                         },
                         tooltip: {
                             mode: 'index',
                             intersect: false,
                             callbacks: {
+                                title: (items: any) => {
+                                    if (items.length > 0) {
+                                        const day = items[0].raw.x;
+                                        return `📅 第${day}天 (${fmtDateAxis(day)})`;
+                                    }
+                                    return '';
+                                },
                                 label: (c: any) => {
-                                    if (c.dataset.label === '库存') return `📦 库存: ${c.raw.y} 件`;
+                                    if (c.dataset.label === '库存') return `📦 库存: ${Math.round(c.raw.y).toLocaleString()} 件`;
                                     if (c.dataset.label === '资金') return `💸 资金: ¥${Math.round(c.raw.y).toLocaleString()}`;
                                     if (c.dataset.label === '累计利润') return `💰 利润: ¥${Math.round(c.raw.y).toLocaleString()}`;
+                                    if (c.dataset.label === '回本点') return `🎯 回本点: ${simResult.breakevenDate}`;
+                                    if (c.dataset.label === '盈利点') return `🎉 盈利点: ${simResult.profBeDateStr}`;
                                     return '';
                                 },
                             },
@@ -1196,13 +1616,31 @@ const ReplenishmentAdvice: React.FC = () => {
                     },
                     scales: {
                         x: { ...commonXScale, ticks: { ...commonXScale.ticks, display: false }, grid: { color: '#3f3f46', lineWidth: 1 } },
-                        y: { grid: { display: false }, afterFit: (axis: any) => { axis.width = yAxisWidth; }, ticks: { color: '#a1a1aa', callback: (v) => '¥' + (v as number) / 1000 + 'k' } },
-                        y1: { position: 'right', grid: { display: false }, display: false, min: 0 },
+                        y: {
+                            position: 'left',
+                            grid: { color: '#3f3f46', lineWidth: 0.5 },
+                            afterFit: (axis: any) => { axis.width = yAxisWidth; },
+                            ticks: {
+                                color: '#a1a1aa',
+                                precision: 0,
+                                callback: (v: number) => Math.abs(v) >= 1000 ? '¥' + (v / 1000).toFixed(0) + 'k' : '¥' + v
+                            },
+                            afterDataLimits: alignZeroHelper
+                        },
+                        y1: {
+                            position: 'right',
+                            grid: { display: false },
+                            display: true,
+                            afterFit: (axis: any) => { axis.width = 65; },
+                            ticks: { color: '#60a5fa', precision: 0, callback: (v: any) => v < 0 ? '' : v.toLocaleString() + '件' },
+                            afterDataLimits: alignZeroHelper
+                        },
                     },
                 },
             });
+            (cashChartRef.current.config as any)._customData = { simResult, hiddenEventTypes, setSelectedEvent };
         }
-    }, [simResult, state.batches, state.simStart]);
+    }, [simResult, state.batches, state.simStart, hiddenChartLines, hiddenEventTypes]);
 
     // ============ BATCH HANDLERS ============
     const addBatch = () => {
@@ -2164,12 +2602,93 @@ const ReplenishmentAdvice: React.FC = () => {
                         )}
                     </div>
 
-                    <div className="flex-1 flex flex-col overflow-hidden">
+                    <div className="flex-1 flex flex-col overflow-hidden" onClick={() => setSelectedEvent(null)}>
                         <div className="h-1/2 pl-1 pr-4 pt-4 pb-0 overflow-hidden">
                             <canvas ref={ganttCanvasRef} />
                         </div>
-                        <div className="h-1/2 pl-1 pr-4 pt-0 pb-4 overflow-hidden">
+                        <div className="h-1/2 pl-1 pr-4 pt-0 pb-4 overflow-hidden relative">
                             <canvas ref={cashCanvasRef} />
+                            {/* 资金事件时间轴 - 现金流图顶部显示 */}
+                            {/* 资金事件时间轴 - 已移至自定义插件绘制 */}
+                            {/* 事件详情弹窗 - 竖向布局 */}
+                            {selectedEvent && (
+                                <div
+                                    className="fixed z-50 bg-zinc-900/95 border border-zinc-600 rounded shadow-xl px-2.5 py-2 pointer-events-auto backdrop-blur-sm min-w-[80px]"
+                                    style={{
+                                        left: selectedEvent.x,
+                                        top: selectedEvent.y + 8,
+                                        transform: 'translateX(-50%)'
+                                    }}
+                                    onClick={(e) => e.stopPropagation()}
+                                >
+                                    <div className="flex flex-col gap-0.5 text-[11px]">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <span className="font-medium text-amber-400">批次{selectedEvent.event.batchIdx + 1}</span>
+                                            <button className="text-zinc-500 hover:text-white text-[10px]" onClick={() => setSelectedEvent(null)}>✕</button>
+                                        </div>
+                                        <span className="text-zinc-400">
+                                            {selectedEvent.event.type === 'deposit' && '定金'}
+                                            {selectedEvent.event.type === 'balance' && '尾款'}
+                                            {selectedEvent.event.type === 'freight' && '运费'}
+                                            {selectedEvent.event.type === 'recall' && '回款'}
+                                        </span>
+                                        <span className="font-bold text-white text-sm">{selectedEvent.event.amount < 0 ? '-' : ''}¥{Math.abs(Math.round(selectedEvent.event.amount)).toLocaleString()}</span>
+                                        <span className="text-zinc-500">{selectedEvent.event.label.split(' ')[1]}</span>
+                                    </div>
+                                </div>
+                            )}
+                            {/* 图例 - 可点击切换显示/隐藏 */}
+                            {/* 统一图例 - 底部居中悬浮 */}
+                            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-4 text-[9px] pointer-events-auto bg-zinc-900/90 px-3 py-1 rounded-full border border-zinc-800 shadow-lg backdrop-blur-sm z-10">
+                                {/* 事件类型 */}
+                                <div className="flex items-center gap-3 border-r border-zinc-700 pr-3">
+                                    <span
+                                        className={`flex items-center gap-1 cursor-pointer hover:opacity-80 transition-opacity ${hiddenEventTypes.has('deposit') ? 'opacity-40 line-through' : 'text-zinc-300'}`}
+                                        onClick={() => setHiddenEventTypes(prev => { const n = new Set(prev); n.has('deposit') ? n.delete('deposit') : n.add('deposit'); return n; })}
+                                    >
+                                        <span className="w-2 h-2 rounded-full bg-cyan-400"></span>定金
+                                    </span>
+                                    <span
+                                        className={`flex items-center gap-1 cursor-pointer hover:opacity-80 transition-opacity ${hiddenEventTypes.has('balance') ? 'opacity-40 line-through' : 'text-zinc-300'}`}
+                                        onClick={() => setHiddenEventTypes(prev => { const n = new Set(prev); n.has('balance') ? n.delete('balance') : n.add('balance'); return n; })}
+                                    >
+                                        <span className="w-2 h-2 rounded-full bg-pink-500"></span>尾款
+                                    </span>
+                                    <span
+                                        className={`flex items-center gap-1 cursor-pointer hover:opacity-80 transition-opacity ${hiddenEventTypes.has('freight') ? 'opacity-40 line-through' : 'text-zinc-300'}`}
+                                        onClick={() => setHiddenEventTypes(prev => { const n = new Set(prev); n.has('freight') ? n.delete('freight') : n.add('freight'); return n; })}
+                                    >
+                                        <span className="text-amber-400 text-[10px]">▲</span>运费
+                                    </span>
+                                    <span
+                                        className={`flex items-center gap-1 cursor-pointer hover:opacity-80 transition-opacity ${hiddenEventTypes.has('recall') ? 'opacity-40 line-through' : 'text-zinc-300'}`}
+                                        onClick={() => setHiddenEventTypes(prev => { const n = new Set(prev); n.has('recall') ? n.delete('recall') : n.add('recall'); return n; })}
+                                    >
+                                        <span className="text-green-400 text-[10px]">★</span>回款
+                                    </span>
+                                </div>
+                                {/* 图表线条 */}
+                                <div className="flex items-center gap-3">
+                                    <span
+                                        className={`flex items-center gap-1 cursor-pointer hover:opacity-80 transition-opacity ${hiddenChartLines.has('cash') ? 'opacity-40 line-through' : 'text-zinc-300'}`}
+                                        onClick={() => setHiddenChartLines(prev => { const n = new Set(prev); n.has('cash') ? n.delete('cash') : n.add('cash'); return n; })}
+                                    >
+                                        <span className="w-3 h-0.5 bg-red-400"></span>资金
+                                    </span>
+                                    <span
+                                        className={`flex items-center gap-1 cursor-pointer hover:opacity-80 transition-opacity ${hiddenChartLines.has('profit') ? 'opacity-40 line-through' : 'text-zinc-300'}`}
+                                        onClick={() => setHiddenChartLines(prev => { const n = new Set(prev); n.has('profit') ? n.delete('profit') : n.add('profit'); return n; })}
+                                    >
+                                        <span className="w-3 h-0.5 bg-green-400" style={{ borderTop: '1px dashed #67c23a' }}></span>利润
+                                    </span>
+                                    <span
+                                        className={`flex items-center gap-1 cursor-pointer hover:opacity-80 transition-opacity ${hiddenChartLines.has('inventory') ? 'opacity-40 line-through' : 'text-zinc-300'}`}
+                                        onClick={() => setHiddenChartLines(prev => { const n = new Set(prev); n.has('inventory') ? n.delete('inventory') : n.add('inventory'); return n; })}
+                                    >
+                                        <span className="w-3 h-2 bg-blue-400/40 border border-blue-400"></span>库存
+                                    </span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

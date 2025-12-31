@@ -192,8 +192,8 @@ export const LogisticsLibrary: React.FC = () => {
                                             key={t.id}
                                             onClick={() => setForm(f => ({ ...f, type: t.id as any }))}
                                             className={`py-2 px-3 rounded-lg border text-sm font-bold flex items-center justify-center gap-2 transition-all ${form.type === t.id
-                                                    ? 'bg-blue-600/20 border-blue-500 text-blue-400'
-                                                    : 'bg-[#0a0a0a] border-[#27272a] text-zinc-500 hover:bg-[#27272a]'
+                                                ? 'bg-blue-600/20 border-blue-500 text-blue-400'
+                                                : 'bg-[#0a0a0a] border-[#27272a] text-zinc-500 hover:bg-[#27272a]'
                                                 }`}
                                         >
                                             <span>{t.icon}</span> {t.label}
@@ -239,6 +239,16 @@ export const LogisticsLibrary: React.FC = () => {
                                                 onChange={e => setForm(f => ({ ...f, pricePerCbm: parseFloat(e.target.value) }))}
                                                 className={inputClass}
                                             />
+                                            <div className="mt-2">
+                                                <div className={labelClass}>海运费 (¥/KG) [可选]</div>
+                                                <input
+                                                    type="number"
+                                                    value={form.pricePerKg || ''}
+                                                    onChange={e => setForm(f => ({ ...f, pricePerKg: parseFloat(e.target.value) }))}
+                                                    placeholder="例如: 美森限时达"
+                                                    className={inputClass}
+                                                />
+                                            </div>
                                         </div>
                                     ) : (
                                         <div>

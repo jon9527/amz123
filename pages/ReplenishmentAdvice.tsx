@@ -51,7 +51,7 @@ const fmtMoney = (v: number) => `$${Math.round(v).toLocaleString()}`;
 const getDefaultState = (): ModuleState => ({
     boxL: 60, boxW: 40, boxH: 40, boxWgt: 15,
     pcsPerBox: 20,
-    seaPriceCbm: 450, seaDays: 35,
+    seaPriceCbm: 450, seaPriceKg: 10, seaDays: 35, seaUnit: 'cbm',
     airPriceKg: 42, airDays: 10,
     expPriceKg: 38, expDays: 5,
     // 默认选择的物流渠道
@@ -92,28 +92,50 @@ interface NumberStepperProps {
 const NumberStepper: React.FC<NumberStepperProps> = ({
     value, onChange, step = 1, min = -Infinity, max = Infinity, decimals = 0, readOnly = false, negative = false, className = ''
 }) => {
+    const [displayValue, setDisplayValue] = useState(value.toFixed(decimals));
+
+    useEffect(() => {
+        setDisplayValue(value.toFixed(decimals));
+    }, [value, decimals]);
+
     const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
         const val = e.target.value;
-        if (val === '' || val === '-') {
-            onChange(0);
-            return;
-        }
-        const num = parseFloat(val);
-        if (!isNaN(num)) {
-            onChange(Math.max(min, Math.min(max, num)));
+        setDisplayValue(val);
+    };
+
+    const commitChange = () => {
+        const num = parseFloat(displayValue);
+        if (isNaN(num)) {
+            setDisplayValue(value.toFixed(decimals));
+        } else {
+            const clamped = Math.max(min, Math.min(max, num));
+            setDisplayValue(clamped.toFixed(decimals));
+            if (clamped !== value) onChange(clamped);
         }
     };
 
-    const inc = () => onChange(Math.min(max, parseFloat((value + step).toFixed(decimals))));
-    const dec = () => onChange(Math.max(min, parseFloat((value - step).toFixed(decimals))));
+    const handleBlur = () => {
+        commitChange();
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter') {
+            (e.target as HTMLInputElement).blur();
+        }
+    };
+
+    const inc = () => onChange(Math.min(max, parseFloat((value + step).toFixed(decimals || 2))));
+    const dec = () => onChange(Math.max(min, parseFloat((value - step).toFixed(decimals || 2))));
 
     return (
         <div className={`relative group ${className}`}>
             <input
                 type="text"
                 inputMode="decimal"
-                value={decimals > 0 ? value.toFixed(decimals) : value}
+                value={displayValue}
                 onChange={handleInput}
+                onBlur={handleBlur}
+                onKeyDown={handleKeyDown}
                 readOnly={readOnly}
                 className={`w-full bg-zinc-800/50 border border-zinc-700 rounded-lg text-center font-mono font-bold py-0.5 text-xs focus:border-blue-500 outline-none transition-colors ${negative ? 'text-red-400' : 'text-white'} ${readOnly ? 'opacity-70 cursor-not-allowed' : ''}`}
             />
@@ -169,9 +191,14 @@ const ReplenishmentAdvice: React.FC = () => {
             // 规格与物流
             boxL: 60, boxW: 40, boxH: 40, boxWgt: 15,
             pcsPerBox: 30,
-            seaPriceCbm: 1000, seaDays: 35,
+            seaPriceCbm: 1000, seaPriceKg: 10, seaDays: 35, seaUnit: 'cbm',
             airPriceKg: 35, airDays: 10,
             expPriceKg: 45, expDays: 5,
+
+            // 默认物流
+            seaChannelId: '3',
+            airChannelId: '4',
+            expChannelId: '5',
 
             // 模拟参数
             simStart: new Date(new Date().getTime() + 8 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -398,29 +425,55 @@ const ReplenishmentAdvice: React.FC = () => {
 
     // ============ LOGISTICS CALC ============
     useEffect(() => {
-        const { boxL, boxW, boxH, boxWgt, pcsPerBox, seaPriceCbm, airPriceKg, expPriceKg, seaChannelId, airChannelId, expChannelId } = state;
+        const { boxL, boxW, boxH, boxWgt, pcsPerBox, seaPriceCbm, seaPriceKg, seaUnit, airPriceKg, expPriceKg, seaChannelId, airChannelId, expChannelId } = state;
         if (pcsPerBox === 0) return;
 
         const calcOne = (type: 'sea' | 'air' | 'exp', manualPrice: number, chanId?: string) => {
             const channel = channels.find(c => c.id === chanId);
-            const volDivisor = channel ? (channel.volDivisor || 0) : (type === 'sea' ? 0 : (type === 'air' ? 6000 : 5000));
-            const price = channel ? (type === 'sea' ? (channel.pricePerCbm || 0) : (channel.pricePerKg || 0)) : manualPrice;
+
+            // 确定是否按KG计费
+            // 海运：如果选了渠道且渠道有KG报价，优先用KG；否则看手动模式的setup
+            // 空/快：默认KG
+            let useKg = type !== 'sea';
+            if (type === 'sea') {
+                if (channel) {
+                    useKg = !!channel.pricePerKg && channel.pricePerKg > 0;
+                } else {
+                    useKg = seaUnit === 'kg';
+                }
+            }
+
+            const volDivisor = channel ? (channel.volDivisor || 0) : (type === 'sea' ? 6000 : (type === 'air' ? 6000 : 5000));
+            // Price Selection
+            let price = 0;
+            if (channel) {
+                price = useKg ? (channel.pricePerKg || 0) : (channel.pricePerCbm || 0);
+            } else {
+                price = (type === 'sea' && useKg) ? seaPriceKg : manualPrice;
+            }
 
             // Volumetric Weight (kg)
-            // If divisor is 0, use 0 (pure weight)
             const dimVol = (boxL * boxW * boxH); // cm3
-            const volWgt = volDivisor > 0 ? dimVol / volDivisor : 0;
+            // 海运默认也是 6000 (1:167)
+            const divisor = volDivisor > 0 ? volDivisor : 6000;
+            const volWgt = dimVol / divisor;
             const chgWgt = Math.max(boxWgt, volWgt);
 
             if (type === 'sea') {
-                // 海运也需要比较体积重和实重，取较大值
-                // 体积重 = CBM * 167 (1立方米 = 167kg体积重)
-                // 计费重 = max(实重, 体积重)，然后按 ¥/CBM 换算
-                const cbm = dimVol / 1000000;
-                const volWgtSea = cbm * 167; // 体积重 kg
-                const chgWgtSea = Math.max(boxWgt, volWgtSea); // 计费重 kg
-                const chgCbm = chgWgtSea / 167; // 换算回CBM计费
-                return (chgCbm * price) / pcsPerBox;
+                // 海运逻辑: 
+                // 如果按KG计费: chgWgt * price
+                // 如果按CBM计费: (chgWgt / 167) * price  (因为 1 CBM = 167 KG, chgWgt 是基于1:167算的)
+                if (useKg) {
+                    return (chgWgt * price) / pcsPerBox;
+                } else {
+                    // CBM Mode
+                    // Re-verify standard: CBM = dimVol / 1,000,000. 
+                    // Verify if chgWgt logic holds. 
+                    // dimVol/6000 / 167 ≈ dimVol / 1,000,000. Yes.
+                    // But if Heavy Goods (Weight > Vol), chgWgt is Weight. 
+                    // CBM equivalent = Weight / 167. Correct.
+                    return ((chgWgt / 167) * price) / pcsPerBox;
+                }
             } else {
                 // Air/Exp is Weight based
                 return (chgWgt * price) / pcsPerBox;
@@ -433,7 +486,7 @@ const ReplenishmentAdvice: React.FC = () => {
             exp: calcOne('exp', expPriceKg, expChannelId),
         });
     }, [state.boxL, state.boxW, state.boxH, state.boxWgt, state.pcsPerBox,
-    state.seaPriceCbm, state.airPriceKg, state.expPriceKg,
+    state.seaPriceCbm, state.seaPriceKg, state.seaUnit, state.airPriceKg, state.expPriceKg,
     state.seaChannelId, state.airChannelId, state.expChannelId,
         channels]);
 
@@ -670,6 +723,15 @@ const ReplenishmentAdvice: React.FC = () => {
             }
         }
 
+
+        // Calculate Safety Stock Points (14 Days)
+        const safetyPoints = simResult.invPoints.map(p => {
+            const date = new Date(state.simStart);
+            date.setDate(date.getDate() + p.x);
+            const demand = state.monthlyDailySales[date.getMonth()] || 50;
+            return { x: p.x, y: demand * 14 };
+        });
+
         if (cashChartRef.current) {
             // Update Existing
             const chart = cashChartRef.current;
@@ -680,6 +742,12 @@ const ReplenishmentAdvice: React.FC = () => {
             chart.data.datasets[1].hidden = hiddenChartLines.has('profit');
             chart.data.datasets[2].data = simResult.invPoints;
             chart.data.datasets[2].hidden = hiddenChartLines.has('inventory');
+
+            // Safety Stock
+            if (chart.data.datasets[5]) {
+                chart.data.datasets[5].data = safetyPoints;
+                chart.data.datasets[5].hidden = hiddenChartLines.has('inventory'); // Hide with inventory
+            }
 
             // 更新回本点和盈利点 scatter datasets - 如果对应线隐藏则也隐藏
             chart.data.datasets[3].data = simResult.bePoint && !hiddenChartLines.has('cash') ? [simResult.bePoint] : [];
@@ -920,6 +988,18 @@ const ReplenishmentAdvice: React.FC = () => {
                             pointHoverRadius: 10,
                             yAxisID: 'y'
                         },
+                        // 安全库存线
+                        {
+                            label: '安全库存',
+                            data: safetyPoints,
+                            borderColor: '#94a3b8', // Slate 400 - Distinct Ref Line
+                            borderWidth: 1.5,
+                            borderDash: [4, 4],
+                            fill: false,
+                            pointRadius: 0,
+                            yAxisID: 'y1',
+                            hidden: hiddenChartLines.has('inventory')
+                        },
                     ],
                 },
                 options: {
@@ -946,6 +1026,7 @@ const ReplenishmentAdvice: React.FC = () => {
                                 },
                                 label: (c: any) => {
                                     if (c.dataset.label === '库存') return `📦 库存: ${Math.round(c.raw.y).toLocaleString()} 件`;
+                                    if (c.dataset.label === '安全库存') return `⚠️ 安全: ${Math.round(c.raw.y).toLocaleString()} 件`;
                                     if (c.dataset.label === '资金') return `💸 资金: $${Math.round(c.raw.y).toLocaleString()}`;
                                     if (c.dataset.label === '累计利润') return `💰 利润: $${Math.round(c.raw.y).toLocaleString()}`;
                                     if (c.dataset.label === '回本点') return `🎯 回本点: ${simResult.breakevenDate}`;
@@ -1254,21 +1335,39 @@ const ReplenishmentAdvice: React.FC = () => {
                                         </div>
                                         <h3 className="text-sm font-bold text-white">财务核心指标</h3>
                                     </div>
-                                    <div className="grid grid-cols-2 gap-3">
-                                        {[
-                                            { label: '资金最大占用', val: fmtMoney(Math.abs(simResult.minCash)), color: 'text-red-400', sub: '需准备本金' },
-                                            { label: 'ROI', val: (simResult.minCash !== 0 ? (Math.abs(simResult.totalNetProfit / simResult.minCash) * 100).toFixed(1) : 0) + '%', color: 'text-green-400', sub: '总利润 / 占用' },
-                                            { label: '周转率', val: (simResult.minCash !== 0 ? (simResult.totalRevenue / Math.abs(simResult.minCash)).toFixed(2) : 0), color: 'text-blue-400', sub: '销售额 / 占用' },
-                                            { label: '净利率', val: (simResult.totalRevenue !== 0 ? (simResult.totalNetProfit / simResult.totalRevenue * 100).toFixed(1) : 0) + '%', color: 'text-emerald-400', sub: '总利润 / 销售额' }
-                                        ].map((item, i) => (
-                                            <div key={i}>
-                                                <div className="text-[10px] text-zinc-500 uppercase font-bold mb-1">{item.label}</div>
-                                                <div className="bg-[#18181b] border border-[#27272a] rounded-md px-3 py-2">
-                                                    <span className={`text-lg font-black ${item.color} font-mono block truncate`}>{item.val}</span>
+                                    <div className="grid grid-cols-3 gap-3">
+                                        {(() => {
+                                            // Calculate New Metrics
+                                            const duration = simResult.xMax || 365;
+                                            const roi = simResult.minCash !== 0 ? Math.abs(simResult.totalNetProfit / simResult.minCash) : 0;
+                                            const annualRoi = (roi / duration) * 365;
+
+                                            // Avg Inventory
+                                            const sumInv = simResult.invPoints.reduce((acc, p) => acc + p.y, 0);
+                                            const avgInv = duration > 0 ? sumInv / duration : 0;
+                                            // Turnover Ratio = Sold Qty / Avg Inv
+                                            const invTurnoverRatio = avgInv > 0 ? simResult.totalSoldQty / avgInv : 0;
+                                            const turnDays = invTurnoverRatio > 0 ? 365 / invTurnoverRatio : 0;
+
+                                            const metrics = [
+                                                { label: '资金最大占用', val: fmtMoney(Math.abs(simResult.minCash)), color: 'text-red-400', sub: '需准备本金' },
+                                                { label: 'ROI', val: (roi * 100).toFixed(1) + '%', color: 'text-green-400', sub: '总利润 / 占用' },
+                                                { label: '年化回报率', val: (annualRoi * 100).toFixed(1) + '%', color: 'text-orange-400', sub: '年化复利参考' },
+                                                { label: '资金周转率', val: (simResult.minCash !== 0 ? (simResult.totalGMV / Math.abs(simResult.minCash)).toFixed(2) : 0), color: 'text-blue-400', sub: 'GMV / 占用' },
+                                                { label: '净利率', val: (simResult.totalGMV !== 0 ? (simResult.totalNetProfit / simResult.totalGMV * 100).toFixed(1) : 0) + '%', color: 'text-emerald-400', sub: '总利润 / GMV' },
+                                                { label: '库存周转天数', val: turnDays.toFixed(0) + '天', color: 'text-purple-400', sub: '平均售罄周期' }
+                                            ];
+
+                                            return metrics.map((item, i) => (
+                                                <div key={i}>
+                                                    <div className="text-[10px] text-zinc-500 uppercase font-bold mb-1">{item.label}</div>
+                                                    <div className="bg-[#18181b] border border-[#27272a] rounded-md px-3 py-2">
+                                                        <span className={`text-lg font-black ${item.color} font-mono block truncate`}>{item.val}</span>
+                                                    </div>
+                                                    <div className="text-[9px] text-zinc-600 mt-1">{item.sub}</div>
                                                 </div>
-                                                <div className="text-[9px] text-zinc-600 mt-1">{item.sub}</div>
-                                            </div>
-                                        ))}
+                                            ));
+                                        })()}
                                     </div>
                                 </div>
                             )}
@@ -1284,7 +1383,7 @@ const ReplenishmentAdvice: React.FC = () => {
                                     </div>
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
-                                            <div className="text-[10px] text-zinc-500 uppercase font-bold mb-1">回本日期 (CASH &gt; 0)</div>
+                                            <div className="text-[10px] text-zinc-500 uppercase font-bold mb-1 truncate" title="回本日期 (CASH > 0)">回本日期</div>
                                             <div className="bg-[#18181b] border border-[#27272a] rounded-md px-3 py-2">
                                                 <span className="text-lg font-black text-blue-400 font-mono">{simResult.breakevenDate}</span>
                                             </div>
@@ -1314,38 +1413,80 @@ const ReplenishmentAdvice: React.FC = () => {
                                         { emoji: '🚀', name: '快递', priceKey: 'expPriceKg', daysKey: 'expDays', channelKey: 'expChannelId', type: 'exp' as const },
                                     ].map(({ emoji, name, priceKey, daysKey, channelKey, type }) => {
                                         const currentChanId = (state as any)[channelKey];
-                                        const availChans = channels.filter(c => c.type === type && c.status === 'active');
+                                        const channel = channels.find(c => c.id === currentChanId);
                                         const costUSD = logCosts[type] / state.exchRate;
+
+                                        // 判定海运当前模式
+                                        const isSea = type === 'sea';
+                                        let useKg = !isSea;
+                                        if (isSea) {
+                                            if (channel) useKg = !!channel.pricePerKg && channel.pricePerKg > 0;
+                                            else useKg = state.seaUnit === 'kg';
+                                        }
+
+                                        // 决定显示的价格值
+                                        let displayPrice = 0;
+                                        if (channel) {
+                                            displayPrice = useKg ? (channel.pricePerKg || 0) : (channel.pricePerCbm || 0);
+                                        } else {
+                                            displayPrice = (isSea && useKg) ? state.seaPriceKg : (state as any)[priceKey];
+                                        }
 
                                         return (
                                             <div key={type} className={`rounded-lg border p-3 flex flex-col transition-colors overflow-hidden ${currentChanId ? 'bg-blue-900/10 border-blue-500/30' : 'bg-[#18181b]/30 border-[#27272a]/50'}`}>
-                                                <div className="flex items-center gap-2 mb-3">
-                                                    <span className="text-xl">{emoji}</span>
-                                                    <span className="text-sm font-bold text-zinc-300">{name}</span>
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-xl">{emoji}</span>
+                                                        <span className="text-sm font-bold text-zinc-300">{name}</span>
+                                                    </div>
+                                                    {/* 海运手动模式切换单位 */}
+                                                    {isSea && !currentChanId && (
+                                                        <button
+                                                            onClick={() => setState(s => ({ ...s, seaUnit: s.seaUnit === 'cbm' ? 'kg' : 'cbm' }))}
+                                                            className="text-[10px] bg-zinc-800 px-1.5 py-0.5 rounded text-zinc-400 hover:text-white border border-zinc-700"
+                                                        >
+                                                            {useKg ? '按KG' : '按CBM'}
+                                                        </button>
+                                                    )}
                                                 </div>
+
+                                                {/* 渠道选择 */}
                                                 <select
                                                     value={currentChanId || ''}
                                                     onChange={(e) => {
                                                         const newId = e.target.value;
                                                         const ch = channels.find(c => c.id === newId);
-                                                        setState(s => ({
-                                                            ...s,
-                                                            [channelKey]: newId,
-                                                            [priceKey]: ch ? (type === 'sea' ? ch.pricePerCbm : ch.pricePerKg) : s[priceKey],
-                                                            [daysKey]: ch ? ch.deliveryDays : s[daysKey]
-                                                        }));
+                                                        // 切换渠道时自动更新Days
+                                                        const updates: any = { [channelKey]: newId };
+                                                        if (ch) updates[daysKey] = ch.deliveryDays;
+                                                        setState(s => ({ ...s, ...updates }));
                                                     }}
-                                                    className="w-full bg-[#0a0a0a] border border-[#27272a] rounded text-xs text-white py-1.5 px-2 mb-3 focus:outline-none focus:border-blue-500"
+                                                    className={`w-full bg-[#0a0a0a] border rounded text-xs text-white py-1.5 px-2 mb-3 focus:outline-none focus:border-blue-500 ${!currentChanId ? 'border-red-500/50' : 'border-[#27272a]'}`}
                                                 >
-                                                    <option value="">📌 手动</option>
-                                                    {availChans.map(c => (
-                                                        <option key={c.id} value={c.id}>{c.name.slice(0, 4)}</option>
+                                                    <option value="" disabled>🚫 请选择渠道</option>
+                                                    {channels.filter(c => c.type === type && c.status === 'active').map(c => (
+                                                        <option key={c.id} value={c.id}>{c.name.slice(0, 8)}</option>
                                                     ))}
                                                 </select>
-                                                <div className="text-center flex-1 flex flex-col justify-center">
-                                                    <div className="text-base font-black text-emerald-400 font-mono whitespace-nowrap">${costUSD.toFixed(2)}/个</div>
-                                                    <div className="text-xs text-zinc-400 font-mono">${(logCosts[type] / state.exchRate).toFixed(2)}</div>
-                                                    <div className="text-[10px] text-zinc-500 mt-1">{(state as any)[daysKey]}天到货</div>
+
+                                                {/* 价格展示 (只读) */}
+                                                <div className="text-center mb-2 h-[20px] flex items-center justify-center">
+                                                    {channel ? (
+                                                        <span className="text-xs text-zinc-400">
+                                                            {useKg ? `¥${channel.pricePerKg}/kg` : `¥${channel.pricePerCbm}/m³`}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-[10px] text-zinc-600">-- 未选择 --</span>
+                                                    )}
+                                                </div>
+
+                                                <div className="text-center flex-1 flex flex-col justify-center border-t border-zinc-800 pt-2">
+                                                    <div className="text-base font-black text-emerald-400 font-mono whitespace-nowrap">
+                                                        {costUSD > 0 ? `$${costUSD.toFixed(2)}` : '--'}/个
+                                                    </div>
+                                                    <div className="text-[10px] text-zinc-500 mt-0.5">
+                                                        {(state as any)[daysKey]}天到货
+                                                    </div>
                                                 </div>
                                             </div>
                                         );

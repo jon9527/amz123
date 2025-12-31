@@ -9,7 +9,7 @@ export interface LogisticsCosts {
 export interface ModuleState {
     boxL: number; boxW: number; boxH: number; boxWgt: number;
     pcsPerBox: number;
-    seaPriceCbm: number; seaDays: number;
+    seaPriceCbm: number; seaPriceKg: number; seaDays: number; seaUnit: 'cbm' | 'kg';
     airPriceKg: number; airDays: number;
     expPriceKg: number; expDays: number;
     simStart: string;
@@ -60,6 +60,8 @@ export interface SimulationResult {
     finalCash: number;
     totalNetProfit: number;
     totalRevenue: number;
+    totalGMV: number;
+    totalSoldQty: number;
     breakevenDate: string;
     profBeDateStr: string;
     bePoint: { x: number; y: number } | null;

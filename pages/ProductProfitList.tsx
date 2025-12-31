@@ -418,7 +418,7 @@ const ProductProfitList: React.FC = () => {
                   {/* 佣金 Group */}
                   <th colSpan={2} className="px-2 py-1 text-center border-r border-[#334155] bg-orange-500/15 text-orange-300">佣金</th>
                   {/* 广告 Group */}
-                  <th colSpan={2} className="px-2 py-1 text-center border-r border-[#334155] bg-purple-500/15 text-purple-300">广告</th>
+                  <th colSpan={2} className="px-2 py-1 text-center border-r border-[#334155] bg-purple-500/15 text-purple-300">广告(TACOS)</th>
                   {/* 盈亏平衡 */}
                   <th rowSpan={2} className="px-1 py-2 text-center border-r border-[#334155] bg-slate-600/20 text-slate-300 leading-tight" style={{ width: '50px' }}>
                     <div>盈亏</div><div>平衡</div>

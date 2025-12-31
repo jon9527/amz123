@@ -28,7 +28,7 @@ export const runSimulation = (
     const dailyMissed = new Array(maxSimDays).fill(false);
 
     const ganttProd: any[] = [], ganttShip: any[] = [], ganttHold: any[] = [], ganttSell: any[] = [], ganttStockout: any[] = [];
-    let totalRevenue = 0, totalNetProfit = 0;
+    let totalRevenue = 0, totalNetProfit = 0, totalGMV = 0, totalSoldQty = 0;
     const batchRevenueMap = new Array(batches.length).fill(0);
     const arrivalEvents: Record<number, any[]> = {};
     const salesPeriods = batches.map(() => ({ start: null as number | null, end: null as number | null, arrival: null as number | null }));
@@ -200,6 +200,8 @@ export const runSimulation = (
                     }
                 }
 
+                totalGMV += take * price;
+                totalSoldQty += take;
                 totalRevenue += revenue;
                 totalNetProfit += profit;
                 // 利润曲线：销售日计入回款收入 (USD)
@@ -320,7 +322,7 @@ export const runSimulation = (
         cashPoints, invPoints, profitPoints,
         ganttProd, ganttShip, ganttHold, ganttSell, ganttStockout,
         totalStockoutDays: ganttStockout.reduce((sum, item) => sum + (item.gapDays || 0), 0),
-        minCash, finalCash: runningCash, totalNetProfit, totalRevenue,
+        minCash, finalCash: runningCash, totalNetProfit, totalRevenue, totalGMV, totalSoldQty,
         breakevenDate: beIdx !== null ? getDateStr(beIdx) : '未回本',
         profBeDateStr: profBeIdx !== null ? getDateStr(profBeIdx) : '未盈利',
         bePoint, profBePoint,

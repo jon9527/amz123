@@ -1,8 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ReplenishmentBatch, ProductSpec, SavedProfitModel } from '../types';
+import { ReplenishmentBatch, SavedProfitModel } from '../types';
+import { runSimulation, fmtDate } from './ReplenishmentEngine';
+import { ModuleState, SimulationResult, FinancialEvent, LogisticsCosts } from './ReplenishmentTypes';
 import { useProducts } from '../ProductContext';
 import { useLogistics } from '../LogisticsContext';
 import { ProfitModelService } from '../services/profitModelService';
+
+
 import {
     Chart as ChartJS,
     CategoryScale,
@@ -38,349 +42,11 @@ ChartJS.register(
     ChartDataLabels
 );
 
-// ============ TYPES ============
-interface LogisticsCosts {
-    sea: number;
-    air: number;
-    exp: number;
-}
-
-interface ModuleState {
-    boxL: number; boxW: number; boxH: number; boxWgt: number;
-    pcsPerBox: number;
-    seaPriceCbm: number; seaDays: number;
-    airPriceKg: number; airDays: number;
-    expPriceKg: number; expDays: number;
-    simStart: string;
-    monthlyDailySales: number[]; // 12个月的预期日销量（1-12月）
-    seasonality: number[]; // 保留用于向后兼容
-    baseSales: number[]; // 保留用于向后兼容
-    prices: number[];
-    margins: number[];
-    unitCost: number;
-    sellCost: number; // 总成本(无广) from strategy
-    shippingUSD: number; // 头程USD from strategy
-    profitUSD: number; // 净利润USD from strategy
-
-    // 物流渠道选择
-    seaChannelId?: string;
-    airChannelId?: string;
-    expChannelId?: string;
-
-    exchRate: number;
-    ratioDeposit: number;
-    ratioBalance: number;
-    prodDays: number;
-    batches: ReplenishmentBatch[];
-    isFreeMode: boolean;
-}
-
-// 资金事件类型
-interface FinancialEvent {
-    day: number;           // 发生在第几天
-    type: 'deposit' | 'balance' | 'freight' | 'recall'; // 事件类型
-    batchIdx: number;      // 批次索引
-    amount: number;        // 金额 (RMB, 负数为支出)
-    label: string;         // 显示标签，如 "#1定 12/27"
-}
-
-interface SimulationResult {
-    xMin: number;
-    xMax: number;
-    cashPoints: { x: number; y: number }[];
-    invPoints: { x: number; y: number }[];
-    profitPoints: { x: number; y: number }[];
-    ganttProd: any[];
-    ganttShip: any[];
-    ganttHold: any[];
-    ganttSell: any[];
-    ganttStockout: any[];
-    minCash: number;
-    finalCash: number;
-    totalNetProfit: number;
-    totalRevenue: number;
-    breakevenDate: string;
-    profBeDateStr: string;
-    bePoint: { x: number; y: number } | null;
-    profBePoint: { x: number; y: number } | null;
-    totalStockoutDays: number;
-    beIdx: number | null;
-    profBeIdx: number | null;
-    financialEvents: FinancialEvent[];  // 资金事件数组
-}
-
 // ============ HELPERS ============
-const fmtDate = (date: Date) => {
-    if (isNaN(date.getTime())) return '--/--';
-    return `${date.getMonth() + 1}/${date.getDate()}`;
-};
-const fmtMoney = (v: number) => `¥${Math.round(v).toLocaleString()}`;
+// fmtDate is imported from ReplenishmentEngine
 
-// ============ 模拟引擎 (FIFO销售+资金流) ============
-interface SimParams {
-    simStart: string;
-    prodDays: number;
-    unitCostRMB: number;  // 采购成本(人民币)
-    exchRate: number;
-    ratioDeposit: number; // 0.3
-    ratioBalance: number; // 0.7
-    monthlySales: number[];  // 6个月预估日销量
-    monthlyPrices: number[]; // 6个月售价USD
-    monthlyMargins: number[]; // 6个月净利%
-    logistics: {
-        sea: { days: number; costPerPcs: number };
-        air: { days: number; costPerPcs: number };
-        exp: { days: number; costPerPcs: number };
-    };
-}
+const fmtMoney = (v: number) => `$${Math.round(v).toLocaleString()}`;
 
-const calcSimulation = (batches: ReplenishmentBatch[], params: SimParams): SimulationResult => {
-    const MAX_DAYS = 400;
-    const { prodDays, unitCostRMB, exchRate, ratioDeposit, ratioBalance, monthlySales, monthlyPrices, monthlyMargins, logistics } = params;
-
-    // 每日资金变化/利润变化/库存
-    const dailyCashChange = new Array(MAX_DAYS).fill(0);
-    const dailyProfitChange = new Array(MAX_DAYS).fill(0);
-    const dailyInventory = new Array(MAX_DAYS).fill(0);
-    const dailyMissed = new Array(MAX_DAYS).fill(false);
-
-    // 甘特图数据
-    const ganttProd: any[] = [];
-    const ganttShip: any[] = [];
-    const ganttHold: any[] = [];
-    const ganttSell: any[] = [];
-    const ganttStockout: any[] = [];
-
-    // 到货事件队列
-    const arrivalEvents: { [day: number]: any[] } = {};
-    const batchRevenueMap = new Array(batches.length).fill(0);
-    const salesPeriods = batches.map(() => ({ start: null as number | null, end: null as number | null, arrival: null as number | null }));
-
-    // 处理每个批次
-    batches.forEach((b, i) => {
-        const log = logistics[b.type];
-        const t0 = b.offset;                    // 下单日
-        const t1 = t0 + prodDays;               // 发货日
-        const t2 = t1 + log.days;               // 到货日
-
-        const batchCostRMB = b.qty * unitCostRMB;
-        const batchFreightRMB = b.qty * log.costPerPcs;
-        const rowLabel = `#${i + 1} ${b.name} (${b.qty})`;
-
-        // 甘特图数据 - 生产阶段
-        ganttProd.push({ x: [t0, t1], y: rowLabel, batchIdx: i, cost: batchCostRMB });
-        // 甘特图数据 - 运输阶段
-        ganttShip.push({ x: [t1, t2], y: rowLabel, batchIdx: i, freight: batchFreightRMB });
-
-        // 资金流出
-        if (t0 < MAX_DAYS) dailyCashChange[t0] -= batchCostRMB * ratioDeposit;  // 定金
-        if (t1 < MAX_DAYS) dailyCashChange[t1] -= batchCostRMB * ratioBalance;  // 尾款
-        if (t2 < MAX_DAYS) dailyCashChange[t2] -= batchFreightRMB;              // 运费
-
-        // 记录到货事件
-        if (!arrivalEvents[t2]) arrivalEvents[t2] = [];
-        arrivalEvents[t2].push({
-            qty: b.qty,
-            unitCostRMB,
-            unitFreightRMB: log.costPerPcs,
-            batchIdx: i,
-            rowLabel,
-            arrivalTime: t2
-        });
-    });
-
-    // FIFO销售模拟
-    let inventoryQueue: any[] = [];
-    let currentInv = 0;
-    let firstSaleDay: number | null = null;
-    let totalRevenue = 0;
-    let totalNetProfit = 0;
-
-    for (let d = 0; d < MAX_DAYS; d++) {
-        // 处理到货
-        if (arrivalEvents[d]) {
-            arrivalEvents[d].forEach(batch => {
-                inventoryQueue.push({ ...batch });
-                currentInv += batch.qty;
-                salesPeriods[batch.batchIdx].arrival = d;
-            });
-            inventoryQueue.sort((a, b) => a.arrivalTime - b.arrivalTime || a.batchIdx - b.batchIdx);
-        }
-
-        // 计算当日需求
-        let mIdx = 0;
-        if (firstSaleDay !== null) {
-            mIdx = Math.min(5, Math.floor((d - firstSaleDay) / 30));
-        }
-        let demand = monthlySales[mIdx] || 0;
-        let remainingDemand = demand;
-
-        // 销售
-        if (currentInv > 0 && demand > 0) {
-            if (firstSaleDay === null) firstSaleDay = d;
-
-            while (demand > 0 && inventoryQueue.length > 0) {
-                const batchObj = inventoryQueue[0];
-                if (salesPeriods[batchObj.batchIdx].start === null) {
-                    salesPeriods[batchObj.batchIdx].start = d;
-                }
-                salesPeriods[batchObj.batchIdx].end = d + 1;
-
-                const take = Math.min(demand, batchObj.qty);
-                remainingDemand -= take;
-
-                // 计算回款
-                const price = monthlyPrices[mIdx] || 0;
-                const margin = monthlyMargins[mIdx] || 0;
-                const unitProfitUSD = price * (margin / 100);
-                const unitProfitRMB = unitProfitUSD * exchRate;
-                const unitRecallRMB = unitCostRMB + batchObj.unitFreightRMB + unitProfitRMB;
-
-                const revenue = take * unitRecallRMB;
-                const profit = take * unitProfitRMB;
-
-                batchRevenueMap[batchObj.batchIdx] += revenue;
-
-                // 14天后回款
-                const payDay = d + 14;
-                if (payDay < MAX_DAYS) dailyCashChange[payDay] += revenue;
-
-                totalRevenue += revenue;
-                totalNetProfit += profit;
-                dailyProfitChange[d] += profit;
-
-                batchObj.qty -= take;
-                currentInv -= take;
-                demand -= take;
-
-                if (batchObj.qty <= 0) inventoryQueue.shift();
-            }
-        }
-
-        // 记录断货
-        if (firstSaleDay !== null && d >= firstSaleDay && remainingDemand > 0.01) {
-            dailyMissed[d] = true;
-        }
-
-        dailyInventory[d] = currentInv;
-    }
-
-    // 生成销售期甘特图
-    salesPeriods.forEach((period, i) => {
-        const b = batches[i];
-        const label = `#${i + 1} ${b.name} (${b.qty})`;
-        if (period.start !== null && period.end !== null) {
-            ganttSell.push({
-                x: [period.start, period.end],
-                y: label,
-                batchIdx: i,
-                revenue: batchRevenueMap[i]
-            });
-
-            // 库存积压期
-            if (period.arrival !== null && period.start > period.arrival) {
-                ganttHold.push({
-                    x: [period.arrival, period.start],
-                    y: label,
-                    batchIdx: i,
-                    duration: period.start - period.arrival
-                });
-            }
-        }
-    });
-
-    // 检测断货期
-    let stockoutStart = -1;
-    if (firstSaleDay !== null) {
-        for (let d = firstSaleDay; d < 360; d++) {
-            if (dailyMissed[d]) {
-                if (stockoutStart === -1) stockoutStart = d;
-            } else {
-                if (stockoutStart !== -1 && d - stockoutStart > 0) {
-                    ganttStockout.push({
-                        x: [stockoutStart, d],
-                        y: batches.length > 0 ? `#${batches.length} ${batches[batches.length - 1].name} (${batches[batches.length - 1].qty})` : 'N/A',
-                        gapDays: d - stockoutStart
-                    });
-                    stockoutStart = -1;
-                }
-            }
-        }
-    }
-
-    // 累计资金/利润曲线
-    const cashPoints: { x: number; y: number }[] = [];
-    const profitPoints: { x: number; y: number }[] = [];
-    const invPoints: { x: number; y: number }[] = [];
-
-    let runningCash = 0;
-    let runningProfit = 0;
-    let minCash = 0;
-    let beIdx: number | null = null;
-    let bePoint: { x: number; y: number } | null = null;
-    let profBeIdx: number | null = null;
-    let profBePoint: { x: number; y: number } | null = null;
-
-    for (let d = 0; d < MAX_DAYS; d++) {
-        const prevCash = runningCash;
-        const prevProf = runningProfit;
-
-        runningCash += dailyCashChange[d];
-        runningProfit += dailyProfitChange[d];
-
-        if (runningCash < minCash) minCash = runningCash;
-
-        // 回本点
-        if (beIdx === null && prevCash < 0 && runningCash >= 0 && d > 10) {
-            beIdx = d;
-            bePoint = { x: d, y: runningCash };
-        }
-        // 盈利点
-        if (profBeIdx === null && prevProf < 0 && runningProfit >= 0 && d > 10) {
-            profBeIdx = d;
-            profBePoint = { x: d, y: runningProfit };
-        }
-
-        if (d <= 360) {
-            cashPoints.push({ x: d, y: runningCash });
-            profitPoints.push({ x: d, y: runningProfit });
-            invPoints.push({ x: d, y: dailyInventory[d] || 0 });
-        }
-    }
-
-    // 格式化日期
-    const formatDateFromOffset = (offset: number | null): string => {
-        if (offset === null) return '--';
-        const start = new Date(params.simStart);
-        start.setDate(start.getDate() + offset);
-        return `${start.getMonth() + 1}/${start.getDate()}`;
-    };
-
-    return {
-        xMin: 0,
-        xMax: 360,
-        cashPoints,
-        invPoints,
-        profitPoints,
-        ganttProd,
-        ganttShip,
-        ganttHold,
-        ganttSell,
-        ganttStockout,
-        minCash,
-        finalCash: runningCash,
-        totalNetProfit,
-        totalStockoutDays: ganttStockout.reduce((sum, item) => sum + (item.gapDays || 0), 0),
-        totalRevenue,
-        breakevenDate: beIdx !== null ? formatDateFromOffset(beIdx) : '未回本',
-        profBeDateStr: profBeIdx !== null ? formatDateFromOffset(profBeIdx) : '未盈利',
-        bePoint,
-        profBePoint,
-        beIdx,
-        profBeIdx,
-        financialEvents: [] // 默认空数组
-    };
-};
 
 const getDefaultState = (): ModuleState => ({
     boxL: 60, boxW: 40, boxH: 40, boxWgt: 15,
@@ -714,7 +380,9 @@ const ReplenishmentAdvice: React.FC = () => {
     const selectedProduct = products.find(p => p.id === selectedProductId);
     const [activeTab, setActiveTab] = useState<'spec' | 'pricing' | 'batch' | 'boss'>('spec');
     const [logCosts, setLogCosts] = useState<LogisticsCosts>({ sea: 0, air: 0, exp: 0 });
-    const [actualSales, setActualSales] = useState<number[]>([]);
+
+
+
     const [simResult, setSimResult] = useState<SimulationResult | null>(null);
     const [selectedEvent, setSelectedEvent] = useState<{ event: FinancialEvent; x: number; y: number } | null>(null);
     const [hiddenEventTypes, setHiddenEventTypes] = useState<Set<string>>(new Set());
@@ -769,20 +437,7 @@ const ReplenishmentAdvice: React.FC = () => {
     state.seaChannelId, state.airChannelId, state.expChannelId,
         channels]);
 
-    // ============ SEASONALITY & ACTUAL SALES (保留用于兼容) ============
-    useEffect(() => {
-        // 为了向后兼容，actualSales 仍然计算，但模拟引擎已不再使用
-        const startDate = new Date(state.simStart);
-        const newActual: number[] = [];
-        for (let m = 0; m < 6; m++) {
-            // 直接使用 monthlyDailySales
-            const arrivalDay = 50 + m * 30; // 大约估算
-            const arrivalDate = new Date(startDate);
-            arrivalDate.setDate(startDate.getDate() + arrivalDay);
-            newActual.push(state.monthlyDailySales[arrivalDate.getMonth()] || 50);
-        }
-        setActualSales(newActual);
-    }, [state.simStart, state.monthlyDailySales]);
+
 
     // ============ AUTO INIT ============
     const hasAutoAligned = useRef(false);
@@ -796,321 +451,7 @@ const ReplenishmentAdvice: React.FC = () => {
 
     // ============ SIMULATION ENGINE ============
     const calcSimulation = useCallback((): SimulationResult => {
-        const { batches, unitCost, exchRate, ratioDeposit, ratioBalance, seaDays, airDays, expDays, margins, prices } = state;
-        const initialStock = (state as any).initialStock || 0; // Support initial stock if added later
-        const logDays = { sea: seaDays, air: airDays, exp: expDays };
-        const logPrices = { sea: logCosts.sea, air: logCosts.air, exp: logCosts.exp };
-        const maxSimDays = 500;
-
-        const dailyChange = new Array(maxSimDays).fill(0);
-        const dailyProfitChange = new Array(maxSimDays).fill(0);
-        const dailyInv = new Array(maxSimDays).fill(0);
-        const dailyMissed = new Array(maxSimDays).fill(false);
-
-        const ganttProd: any[] = [], ganttShip: any[] = [], ganttHold: any[] = [], ganttSell: any[] = [], ganttStockout: any[] = [];
-        let totalRevenue = 0, totalNetProfit = 0;
-        const batchRevenueMap = new Array(batches.length).fill(0);
-        const arrivalEvents: Record<number, any[]> = {};
-        const salesPeriods = batches.map(() => ({ start: null as number | null, end: null as number | null, arrival: null as number | null }));
-
-        // 资金事件收集
-        const financialEvents: FinancialEvent[] = [];
-        const batchRecallMap: Record<number, { day: number; amount: number }[]> = {}; // 每批次的回款记录
-
-        // 辅助函数：根据偏移天数获取当天的日销量（直接从月度日销量表获取）
-        const getDailyDemand = (dayOffset: number): number => {
-            // 计算实际日历日期
-            const currentDate = new Date(state.simStart);
-            currentDate.setDate(currentDate.getDate() + dayOffset);
-            const calendarMonth = currentDate.getMonth(); // 0-11 对应 1-12月
-
-            // 直接返回该月的日销量
-            return state.monthlyDailySales[calendarMonth] || 50;
-        };
-
-        const getBatchLabel = (i: number, b: ReplenishmentBatch) => {
-            const finalQty = Math.round(b.qty * (1 + (b.extraPercent || 0) / 100));
-            return `批次${i + 1}\n${finalQty}件`;
-        };
-        const getDateStr = (offset: number) => {
-            const d = new Date(state.simStart);
-            d.setDate(d.getDate() + offset);
-            return fmtDate(d);
-        };
-
-        batches.forEach((b, i) => {
-            const lDays = logDays[b.type];
-            const lPrice = logPrices[b.type];
-            const t0 = b.offset;
-            const t1 = t0 + (b.prodDays || 15);
-            const t2 = t1 + lDays;
-            // 计算最终数量（包含加量百分比）
-            const finalQty = Math.round(b.qty * (1 + (b.extraPercent || 0) / 100));
-            const batchCost = finalQty * unitCost;
-            const batchFreight = finalQty * lPrice;
-            const yKey = i.toString(); // 使用索引作为Y轴Key，确保排序稳定
-
-            ganttProd.push({ x: [t0, t1], y: yKey, batchIdx: i, cost: batchCost });
-            ganttShip.push({ x: [t1, t2], y: yKey, batchIdx: i, freight: batchFreight });
-
-            // 资金流出 + 事件收集 (单位: RMB)
-            // BatchCost is typically USD, so convert to RMB
-            // Ratios are in decimal (e.g. 0.3), so no need to divide by 100
-            const depositAmount = batchCost * state.ratioDeposit * state.exchRate;
-            const balanceAmount = batchCost * state.ratioBalance * state.exchRate;
-
-            if (t0 < maxSimDays) {
-                dailyChange[t0] -= depositAmount;
-                financialEvents.push({
-                    day: t0,
-                    type: 'deposit',
-                    batchIdx: i,
-                    amount: -depositAmount,
-                    label: `#${i + 1}定 ${getDateStr(t0)}`
-                });
-            }
-            if (t1 < maxSimDays) {
-                dailyChange[t1] -= balanceAmount;
-                financialEvents.push({
-                    day: t1,
-                    type: 'balance',
-                    batchIdx: i,
-                    amount: -balanceAmount,
-                    label: `#${i + 1}尾 ${getDateStr(t1)}`
-                });
-            }
-            const freightDay = Math.floor(t2);
-            if (freightDay < maxSimDays) {
-                dailyChange[freightDay] -= batchFreight;
-                financialEvents.push({
-                    day: freightDay,
-                    type: 'freight',
-                    batchIdx: i,
-                    amount: -batchFreight,
-                    label: `#${i + 1}运 ${getDateStr(freightDay)}`
-                });
-            }
-
-            if (!arrivalEvents[freightDay]) arrivalEvents[freightDay] = [];
-            arrivalEvents[freightDay].push({ qty: finalQty, unitCost, unitFreight: lPrice, batchIdx: i, yLabel: getBatchLabel(i, b), arrivalTime: freightDay });
-
-            // 初始化批次回款记录
-            batchRecallMap[i] = [];
-        });
-
-        const inventoryQueue: any[] = [];
-        let currentInv = initialStock;
-        let firstSaleDay: number | null = null;
-
-        for (let d = 0; d < maxSimDays; d++) {
-            if (arrivalEvents[d]) {
-                arrivalEvents[d].forEach((batch) => {
-                    inventoryQueue.push(batch);
-                    currentInv += batch.qty;
-                    salesPeriods[batch.batchIdx].arrival = d;
-                });
-                inventoryQueue.sort((a, b) => a.arrivalTime - b.arrivalTime || a.batchIdx - b.batchIdx);
-            }
-
-            // 使用日历日期计算当天需求（替代固定30天周期）
-            let demand = getDailyDemand(d);
-            let remainingDemand = demand;
-
-            // 计算销售月份索引 (用于价格/利润率)
-            let mIdx = 0;
-            if (firstSaleDay !== null) {
-                const currentDate = new Date(state.simStart);
-                currentDate.setDate(currentDate.getDate() + d);
-                const firstSaleDate = new Date(state.simStart);
-                firstSaleDate.setDate(firstSaleDate.getDate() + firstSaleDay);
-                const yearsDiff = currentDate.getFullYear() - firstSaleDate.getFullYear();
-                const monthsDiff = currentDate.getMonth() - firstSaleDate.getMonth();
-                mIdx = yearsDiff * 12 + monthsDiff;
-                if (currentDate.getDate() < firstSaleDate.getDate()) {
-                    mIdx = Math.max(0, mIdx - 1);
-                }
-                mIdx = Math.min(5, mIdx);
-            }
-
-            if (currentInv > 0 && demand > 0) {
-                if (firstSaleDay === null) firstSaleDay = d;
-
-                while (demand > 0 && inventoryQueue.length > 0) {
-                    const batchObj = inventoryQueue[0];
-                    if (salesPeriods[batchObj.batchIdx].start === null) salesPeriods[batchObj.batchIdx].start = d;
-                    salesPeriods[batchObj.batchIdx].end = d + 1;
-
-                    const take = Math.min(demand, batchObj.qty);
-                    remainingDemand -= take;
-
-                    const price = prices[mIdx];
-
-                    // 精确计算回款：使用 computeFeeBreakdown 或回退到毛利率计算
-                    let unitRecallRMB: number;
-                    let unitProfitRMB: number;
-
-                    if (selectedStrategyId) {
-                        // 精确计算：售价 - 平台费用 = 回款
-                        const breakdown = computeFeeBreakdown(price, selectedStrategyId);
-                        unitRecallRMB = breakdown.recallUSD * exchRate;
-                        unitProfitRMB = breakdown.netProfit * exchRate;
-                    } else {
-                        // 回退：使用毛利率反推
-                        const marginPercent = margins[mIdx];
-                        const unitProfitUSD = price * (marginPercent / 100);
-                        unitProfitRMB = unitProfitUSD * exchRate;
-                        unitRecallRMB = batchObj.unitCost + batchObj.unitFreight + unitProfitRMB;
-                    }
-
-                    const revenue = take * unitRecallRMB;
-                    const profit = take * unitProfitRMB;
-
-                    batchRevenueMap[batchObj.batchIdx] += revenue;
-                    const payDay = d + 14;
-                    if (payDay < maxSimDays) dailyChange[payDay] += revenue;
-
-                    // 记录批次回款
-                    const lastRecall = batchRecallMap[batchObj.batchIdx][batchRecallMap[batchObj.batchIdx].length - 1];
-                    if (lastRecall && lastRecall.day === payDay) {
-                        lastRecall.amount += revenue;
-                    } else if (payDay < maxSimDays) {
-                        batchRecallMap[batchObj.batchIdx].push({ day: payDay, amount: revenue });
-                    }
-
-                    totalRevenue += revenue;
-                    totalNetProfit += profit;
-                    dailyProfitChange[d] += profit;
-
-                    batchObj.qty -= take;
-                    currentInv -= take;
-                    demand -= take;
-
-                    if (batchObj.qty <= 0) inventoryQueue.shift();
-                }
-            }
-            if (firstSaleDay !== null && d >= firstSaleDay && remainingDemand > 0.01) dailyMissed[d] = true;
-            dailyInv[d] = currentInv;
-        }
-
-        // 处理回款事件（每14天聚合一次）
-        batches.forEach((b, i) => {
-            const recalls = batchRecallMap[i] || [];
-            if (recalls.length === 0) return;
-
-            // 按日期排序
-            recalls.sort((a, b) => a.day - b.day);
-
-            let chunkStartDay = recalls[0].day;
-            let chunkAmount = 0;
-
-            recalls.forEach(r => {
-                if (r.day - chunkStartDay > 14) {
-                    // 生成聚合回款事件
-                    if (chunkAmount > 100) { // 忽略微小金额
-                        const evtDay = chunkStartDay + 7; // 显示在区间中间
-                        financialEvents.push({
-                            day: evtDay,
-                            type: 'recall',
-                            batchIdx: i,
-                            amount: chunkAmount, // 正数表示收入
-                            label: `#${i + 1}回 ¥${Math.round(chunkAmount / 1000)}k`
-                        });
-                    }
-                    chunkStartDay = r.day;
-                    chunkAmount = 0;
-                }
-                chunkAmount += r.amount;
-            });
-            // 最后一笔
-            if (chunkAmount > 100) {
-                const evtDay = chunkStartDay + 7;
-                financialEvents.push({
-                    day: evtDay,
-                    type: 'recall',
-                    batchIdx: i,
-                    amount: chunkAmount,
-                    label: `#${i + 1}回 ¥${Math.round(chunkAmount / 1000)}k`
-                });
-            }
-        });
-
-        salesPeriods.forEach((period, i) => {
-            const b = batches[i];
-            const yKey = i.toString();
-            if (period.start !== null && period.end !== null) {
-                ganttSell.push({ x: [period.start, period.end], y: yKey, batchIdx: i, revenue: batchRevenueMap[i] });
-                if (period.arrival !== null && period.start > period.arrival) {
-                    ganttHold.push({ x: [period.arrival, period.start], y: yKey, batchIdx: i, duration: period.start - period.arrival });
-                }
-            }
-        });
-
-        // Stockout detection
-        let stockoutStart = -1;
-        if (firstSaleDay !== null) {
-            for (let d = firstSaleDay; d < 360; d++) {
-                if (dailyMissed[d]) {
-                    if (stockoutStart === -1) stockoutStart = d;
-                } else {
-                    if (stockoutStart !== -1) {
-                        if (d - stockoutStart > 0.5) {
-                            let prevBatchIdx = 0;
-                            let maxEnd = -1;
-                            // Find the batch that finished selling most recently before this stockout
-                            for (let k = 0; k < salesPeriods.length; k++) {
-                                const end = salesPeriods[k].end;
-                                // Allow for partial overlap: if batch ended on the same day stockout started (end <= stockoutStart + 1)
-                                if (end !== null && end <= stockoutStart + 1) {
-                                    if (end > maxEnd) {
-                                        maxEnd = end;
-                                        prevBatchIdx = k;
-                                    }
-                                }
-                            }
-                            ganttStockout.push({ x: [stockoutStart, d], y: prevBatchIdx.toString(), gapDays: d - stockoutStart });
-                        }
-                        stockoutStart = -1;
-                    }
-                }
-            }
-        }
-
-        const cashPoints: { x: number; y: number }[] = [], profitPoints: { x: number; y: number }[] = [], invPoints: { x: number; y: number }[] = [];
-        let runningCash = 0, runningProfit = 0, minCash = 0;
-        let beIdx: number | null = null, bePoint: { x: number; y: number } | null = null;
-        let profBeIdx: number | null = null, profBePoint: { x: number; y: number } | null = null;
-
-        // Determine truncation day based on last event
-        const lastFinDay = financialEvents.reduce((max, e) => Math.max(max, e.day), 0);
-        const lastSellDay = ganttSell.reduce((max, item) => Math.max(max, item.x[1]), 0);
-        const cutoffDay = Math.min(Math.max(lastFinDay, lastSellDay) + 14, maxSimDays - 1);
-
-        for (let d = 0; d < dailyChange.length; d++) {
-            const prevCash = runningCash, prevProf = runningProfit;
-            runningCash += dailyChange[d];
-            runningProfit += dailyProfitChange[d];
-            if (runningCash < minCash) minCash = runningCash;
-            if (beIdx === null && prevCash < 0 && runningCash >= 0 && d > 10) { beIdx = d; bePoint = { x: d, y: runningCash }; }
-            if (profBeIdx === null && prevProf < 0 && runningProfit >= 0 && d > 10) { profBeIdx = d; profBePoint = { x: d, y: runningProfit }; }
-            if (d <= cutoffDay) {
-                cashPoints.push({ x: d, y: runningCash });
-                profitPoints.push({ x: d, y: runningProfit });
-                invPoints.push({ x: d, y: dailyInv[d] || 0 });
-            }
-        }
-
-        return {
-            xMin: 0, xMax: cutoffDay,
-            cashPoints, invPoints, profitPoints,
-            ganttProd, ganttShip, ganttHold, ganttSell, ganttStockout,
-            totalStockoutDays: ganttStockout.reduce((sum, item) => sum + (item.gapDays || 0), 0),
-            minCash, finalCash: runningCash, totalNetProfit, totalRevenue,
-            breakevenDate: beIdx !== null ? getDateStr(beIdx) : '未回本',
-            profBeDateStr: profBeIdx !== null ? getDateStr(profBeIdx) : '未盈利',
-            bePoint, profBePoint,
-            beIdx, profBeIdx,
-            financialEvents,
-        };
+        return runSimulation(state, logCosts, selectedStrategyId, computeFeeBreakdown);
     }, [state, logCosts, selectedStrategyId, computeFeeBreakdown]);
 
     // ============ RUN SIMULATION ============
@@ -1283,9 +624,9 @@ const ReplenishmentAdvice: React.FC = () => {
                                     const start = fmtDateAxis(ctx.raw.x[0]);
                                     const end = fmtDateAxis(ctx.raw.x[1]);
                                     const d = ctx.raw;
-                                    if (ctx.dataset.label === '产') return [`🗓️ ${start} - ${end}`, `💰 成本: ¥${Math.round(d.cost).toLocaleString()}`];
-                                    if (ctx.dataset.label === '运') return [`🗓️ ${start} - ${end}`, `🚚 运费: ¥${Math.round(d.freight).toLocaleString()}`];
-                                    if (ctx.dataset.label === '销') return [`🗓️ ${start} - ${end}`, `💵 回款: ¥${Math.round(d.revenue).toLocaleString()}`];
+                                    if (ctx.dataset.label === '产') return [`🗓️ ${start} - ${end}`, `💰 成本: $${Math.round(d.cost).toLocaleString()}`];
+                                    if (ctx.dataset.label === '运') return [`🗓️ ${start} - ${end}`, `🚚 运费: $${Math.round(d.freight).toLocaleString()}`];
+                                    if (ctx.dataset.label === '销') return [`🗓️ ${start} - ${end}`, `💵 回款: $${Math.round(d.revenue).toLocaleString()}`];
                                     return `${ctx.dataset.label}: ${start} - ${end}`;
                                 },
                             },
@@ -1381,7 +722,7 @@ const ReplenishmentAdvice: React.FC = () => {
                     label: {
                         display: true,
                         content: `盈利 ${simResult.profBeDateStr}`,
-                        position: 'end',
+                        position: 'center',
                         backgroundColor: '#22c55e',
                         color: '#fff',
                         font: { size: 10, weight: 'bold' }
@@ -1409,7 +750,7 @@ const ReplenishmentAdvice: React.FC = () => {
                 (chart.options.scales.y as any).ticks = {
                     color: '#a1a1aa',
                     precision: 0,
-                    callback: (v: number) => Math.abs(v) >= 1000 ? '¥' + (v / 1000).toFixed(0) + 'k' : '¥' + v
+                    callback: (v: number) => Math.abs(v) >= 1000 ? '$' + (v / 1000).toFixed(0) + 'k' : '$' + v
                 };
             }
             chart.update('none');
@@ -1450,7 +791,7 @@ const ReplenishmentAdvice: React.FC = () => {
                         label: {
                             display: true,
                             content: `盈利 ${simResult.profBeDateStr}`,
-                            position: 'end',
+                            position: 'center',
                             backgroundColor: '#22c55e',
                             color: '#fff',
                             font: { size: 10, weight: 'bold' }
@@ -1605,8 +946,8 @@ const ReplenishmentAdvice: React.FC = () => {
                                 },
                                 label: (c: any) => {
                                     if (c.dataset.label === '库存') return `📦 库存: ${Math.round(c.raw.y).toLocaleString()} 件`;
-                                    if (c.dataset.label === '资金') return `💸 资金: ¥${Math.round(c.raw.y).toLocaleString()}`;
-                                    if (c.dataset.label === '累计利润') return `💰 利润: ¥${Math.round(c.raw.y).toLocaleString()}`;
+                                    if (c.dataset.label === '资金') return `💸 资金: $${Math.round(c.raw.y).toLocaleString()}`;
+                                    if (c.dataset.label === '累计利润') return `💰 利润: $${Math.round(c.raw.y).toLocaleString()}`;
                                     if (c.dataset.label === '回本点') return `🎯 回本点: ${simResult.breakevenDate}`;
                                     if (c.dataset.label === '盈利点') return `🎉 盈利点: ${simResult.profBeDateStr}`;
                                     return '';
@@ -1623,7 +964,7 @@ const ReplenishmentAdvice: React.FC = () => {
                             ticks: {
                                 color: '#a1a1aa',
                                 precision: 0,
-                                callback: (v: number) => Math.abs(v) >= 1000 ? '¥' + (v / 1000).toFixed(0) + 'k' : '¥' + v
+                                callback: (v: number) => Math.abs(v) >= 1000 ? '$' + (v / 1000).toFixed(0) + 'k' : '$' + v
                             },
                             afterDataLimits: alignZeroHelper
                         },
@@ -2003,7 +1344,7 @@ const ReplenishmentAdvice: React.FC = () => {
                                                 </select>
                                                 <div className="text-center flex-1 flex flex-col justify-center">
                                                     <div className="text-base font-black text-emerald-400 font-mono whitespace-nowrap">${costUSD.toFixed(2)}/个</div>
-                                                    <div className="text-xs text-zinc-400 font-mono">¥{logCosts[type].toFixed(1)}</div>
+                                                    <div className="text-xs text-zinc-400 font-mono">${(logCosts[type] / state.exchRate).toFixed(2)}</div>
                                                     <div className="text-[10px] text-zinc-500 mt-1">{(state as any)[daysKey]}天到货</div>
                                                 </div>
                                             </div>
@@ -2336,7 +1677,7 @@ const ReplenishmentAdvice: React.FC = () => {
                                                 return (
                                                     <td key={i} className="py-3 px-1 text-center">
                                                         <div className={`font-bold text-xs ${isNegative ? 'text-red-400' : 'text-green-400'}`}>${recallUSD.toFixed(2)}</div>
-                                                        <div className="text-zinc-500 text-[10px]">¥{recallRMB.toFixed(1)}</div>
+                                                        <div className="text-zinc-500 text-[10px]">¥{(recallUSD * state.exchRate).toFixed(1)}</div>
                                                     </td>
                                                 );
                                             })}
@@ -2451,7 +1792,7 @@ const ReplenishmentAdvice: React.FC = () => {
                                                     </div>
                                                 </div>
 
-                                                <span className="text-[10px] text-zinc-500 font-medium">{typeLabel} <span className="text-zinc-300 font-bold ml-1">¥{freightCost.toFixed(2)}</span></span>
+                                                <span className="text-[10px] text-zinc-500 font-medium">{typeLabel} <span className="text-zinc-300 font-bold ml-1">${(freightCost / state.exchRate).toFixed(2)}</span></span>
                                             </div>
 
                                             {/* Body */}
@@ -2514,41 +1855,30 @@ const ReplenishmentAdvice: React.FC = () => {
             {/* Main Content */}
             <main className="flex-1 flex flex-col overflow-hidden">
                 {/* KPI Bar with Product Selector */}
-                <div className="h-14 px-6 flex items-center gap-6 border-b border-[#27272a] bg-[#0a0a0a] flex-shrink-0">
+                <div className="h-14 px-6 flex items-center gap-4 border-b border-[#27272a] bg-[#0a0a0a] flex-shrink-0 overflow-hidden">
                     {/* KPI Metrics */}
-                    <div>
-                        <div className="text-xs text-zinc-500 uppercase font-bold">资金最大占用</div>
-                        <div className="text-lg font-black text-red-400">{simResult ? fmtMoney(Math.abs(simResult.minCash)) : '¥0'}</div>
+                    <div className="w-28 shrink-0">
+                        <div className="text-[10px] text-zinc-500 uppercase font-bold">资金最大占用</div>
+                        <div className="text-base font-black text-red-400">{simResult ? fmtMoney(Math.abs(simResult.minCash)) : '$0'}</div>
                     </div>
-                    <div>
-                        <div className="text-xs text-zinc-500 uppercase font-bold">累计净利润</div>
-                        <div className="text-lg font-black text-green-400">{simResult ? fmtMoney(simResult.totalNetProfit) : '¥0'}</div>
+                    <div className="w-28 shrink-0">
+                        <div className="text-[10px] text-zinc-500 uppercase font-bold">累计净利润</div>
+                        <div className="text-base font-black text-green-400">{simResult ? fmtMoney(simResult.totalNetProfit) : '$0'}</div>
                     </div>
-                    <div>
-                        <div className="text-xs text-zinc-500 uppercase font-bold">回本日期</div>
-                        <div className="text-lg font-black text-blue-400">{simResult?.breakevenDate || '--'}</div>
-                    </div>
-
-                    {/* Spacer to push selectors to right */}
-                    <div className="flex-1"></div>
-
-                    {/* 推演起始日期 - 顶部栏 */}
-                    <div className="flex items-center gap-2">
-                        <span className="text-zinc-500 text-xs font-bold hidden xl:block">推演起始日期</span>
-                        <input
-                            type="date"
-                            value={state.simStart}
-                            onChange={(e) => setState((s) => ({ ...s, simStart: e.target.value }))}
-                            className="bg-[#18181b] hover:bg-[#1f1f23] border border-[#27272a] hover:border-zinc-600 text-zinc-300 text-xs font-bold py-1.5 px-3 rounded-lg transition-all focus:outline-none focus:ring-2 focus:ring-blue-500/50 font-mono"
-                        />
+                    <div className="w-20 shrink-0">
+                        <div className="text-[10px] text-zinc-500 uppercase font-bold whitespace-nowrap">回本日期</div>
+                        <div className="text-base font-black text-blue-400">{simResult?.breakevenDate || '--'}</div>
                     </div>
 
-                    {/* 产品选择器 - 始终显示 */}
-                    <div className="relative">
+                    {/* Spacer to push rest to right */}
+                    <div className="flex-1 min-w-0"></div>
+
+                    {/* 产品选择器 */}
+                    <div className="relative shrink-0">
                         <select
                             value={selectedProductId || ''}
                             onChange={(e) => handleProductSelect(e.target.value)}
-                            className="appearance-none bg-[#18181b] hover:bg-[#1f1f23] border border-[#27272a] hover:border-zinc-600 text-zinc-300 text-xs font-bold py-2 pl-3 pr-8 rounded-lg transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/50 min-w-[160px]"
+                            className="appearance-none bg-[#18181b] hover:bg-[#1f1f23] border border-[#27272a] hover:border-zinc-600 text-zinc-300 text-xs font-bold py-2 pl-3 pr-8 rounded-lg transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/50 w-[140px]"
                         >
                             <option value="">📦 选择产品</option>
                             {products.map(p => (<option key={p.id} value={p.id}>{p.name} ({p.sku || 'SKU'})</option>))}
@@ -2558,13 +1888,13 @@ const ReplenishmentAdvice: React.FC = () => {
                         </div>
                     </div>
 
-                    {/* 策略选择器 - 始终显示 */}
-                    <div className="relative">
+                    {/* 策略选择器 */}
+                    <div className="relative shrink-0">
                         <select
                             value={selectedStrategyId}
                             onChange={(e) => handleStrategySelect(e.target.value)}
                             disabled={strategies.length === 0}
-                            className={`appearance-none border text-xs font-bold py-2 pl-3 pr-8 rounded-lg transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-500/50 min-w-[120px] ${strategies.length > 0
+                            className={`appearance-none border text-xs font-bold py-2 pl-3 pr-8 rounded-lg transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-500/50 w-[180px] ${strategies.length > 0
                                 ? 'bg-amber-900/30 hover:bg-amber-900/50 border-amber-500/30 hover:border-amber-500/50 text-amber-100'
                                 : 'bg-[#18181b] border-[#27272a] text-zinc-500 cursor-not-allowed'
                                 }`}
@@ -2582,6 +1912,18 @@ const ReplenishmentAdvice: React.FC = () => {
                         <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
                             <span className={`material-symbols-outlined text-[16px] ${strategies.length > 0 ? 'text-amber-400' : 'text-zinc-600'}`}>expand_more</span>
                         </div>
+                    </div>
+
+
+                    {/* 推演起始日期 */}
+                    <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-zinc-500 text-xs font-bold hidden xl:block whitespace-nowrap">推演起始日期</span>
+                        <input
+                            type="date"
+                            value={state.simStart}
+                            onChange={(e) => setState((s) => ({ ...s, simStart: e.target.value }))}
+                            className="bg-[#18181b] hover:bg-[#1f1f23] border border-[#27272a] hover:border-zinc-600 text-zinc-300 text-xs font-bold py-1.5 px-3 rounded-lg transition-all focus:outline-none focus:ring-2 focus:ring-blue-500/50 font-mono w-[130px]"
+                        />
                     </div>
                 </div>
 
@@ -2632,7 +1974,7 @@ const ReplenishmentAdvice: React.FC = () => {
                                             {selectedEvent.event.type === 'freight' && '运费'}
                                             {selectedEvent.event.type === 'recall' && '回款'}
                                         </span>
-                                        <span className="font-bold text-white text-sm">{selectedEvent.event.amount < 0 ? '-' : ''}¥{Math.abs(Math.round(selectedEvent.event.amount)).toLocaleString()}</span>
+                                        <span className="font-bold text-white text-sm">{selectedEvent.event.amount < 0 ? '-' : ''}${Math.abs(Math.round(selectedEvent.event.amount)).toLocaleString()}</span>
                                         <span className="text-zinc-500">{selectedEvent.event.label.split(' ')[1]}</span>
                                     </div>
                                 </div>

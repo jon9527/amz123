@@ -1,5 +1,7 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 import { ProfitModelService } from '../services/profitModelService';
 import { SavedProfitModel } from '../types';
 import PromotionProfitChart from '../components/PromotionProfitChart';
@@ -102,6 +104,12 @@ const PromotionDeduction: React.FC = () => {
     // --- State: Data Source ---
     const [savedModels, setSavedModels] = useState<SavedProfitModel[]>([]);
     const [selectedModelId, setSelectedModelId] = useState<string>('');
+    const contentRef = useRef<HTMLDivElement>(null);
+    const [isExporting, setIsExporting] = useState(false);
+
+    // Dropdown State
+    const [showDropdown, setShowDropdown] = useState(false);
+    const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
     // --- State: Dynamic Months ---
     const [months, setMonths] = useState<MonthConfig[]>(DEFAULT_MONTHS.slice(0, 3));
@@ -115,7 +123,7 @@ const PromotionDeduction: React.FC = () => {
 
     // --- State: Base Data ---
     const [baseData, setBaseData] = useState({
-        prod: 2.82, log: 0.90, fba: 5.69,
+        prod: 2.82, firstMile: 0.90, misc: 0, fba: 5.69, storage: 0,
         retRate: 0.1, unsellable: 0.2, retProc: 2.62, retRem: 2.24,
         planBProfit: 2.50, productName: 'Manual Mock'
     });
@@ -129,19 +137,39 @@ const PromotionDeduction: React.FC = () => {
         }
     }, []);
 
+    // Group models by product name
+    const groupedModels = useMemo(() => {
+        const groups: Record<string, SavedProfitModel[]> = {};
+        savedModels.forEach(m => {
+            const key = m.productName || '未分类';
+            if (!groups[key]) groups[key] = [];
+            groups[key].push(m);
+        });
+        return groups;
+    }, [savedModels]);
+
+    // Toggle group expand/collapse
+    const toggleGroup = useCallback((groupName: string) => {
+        setExpandedGroups(prev => ({ ...prev, [groupName]: !prev[groupName] }));
+    }, []);
+
+    // Get selected model for display
+    const selectedModel = savedModels.find(m => m.id === selectedModelId);
+
     // --- Auto-fill ---
     useEffect(() => {
         const model = savedModels.find(m => m.id === selectedModelId);
         if (model) {
             const p = model.inputs;
-            const rate = p.exchangeRate || 7.1;
-            const prodCostUSD = p.purchaseRMB / rate;
-            const logCostUSD = p.shippingUSD + p.miscFee;
+            // 使用已保存的costProdUSD，确保汇率一致性
+            const prodCostUSD = model.results.costProdUSD;
 
             setBaseData({
                 prod: prodCostUSD,
-                log: logCostUSD,
+                firstMile: p.shippingUSD,
+                misc: p.miscFee,
                 fba: p.fbaFee,
+                storage: p.storageFee,
                 retRate: p.returnRate / 100,
                 unsellable: p.unsellableRate / 100,
                 retProc: p.retProcFee,
@@ -204,7 +232,7 @@ const PromotionDeduction: React.FC = () => {
     const getReturnCost = (price: number, comm: number) => {
         const adminFee = Math.min(5.00, comm * 0.20);
         const lossSellable = baseData.retProc + adminFee + baseData.fba;
-        const lossUnsellable = lossSellable + baseData.prod + baseData.log + baseData.retRem;
+        const lossUnsellable = lossSellable + baseData.prod + baseData.firstMile + baseData.retRem;
         const weightedLoss = (lossSellable * (1 - baseData.unsellable)) + (lossUnsellable * baseData.unsellable);
         return weightedLoss * baseData.retRate;
     };
@@ -219,7 +247,7 @@ const PromotionDeduction: React.FC = () => {
         // Dynamic Unit Economics
         const mComm = m.price * getCommRate(m.price);
         const mRet = getReturnCost(m.price, mComm);
-        const mTotalCOGS = baseData.prod + baseData.log + baseData.fba + mComm + mRet;
+        const mTotalCOGS = baseData.prod + baseData.firstMile + baseData.misc + baseData.fba + baseData.storage + mComm + mRet;
         const mGrossOrganic = m.price - mTotalCOGS;
         const mCpa = (m.cvr > 0) ? m.cpc / (m.cvr / 100) : 0;
         const mNetAd = mGrossOrganic - mCpa;
@@ -235,8 +263,8 @@ const PromotionDeduction: React.FC = () => {
             res: {
                 totalUnits, adUnits, revenue, spend, totalProfit, tacos,
                 unit: {
-                    price: m.price, prod: baseData.prod, log: baseData.log,
-                    fba: baseData.fba, comm: mComm, ret: mRet, cpa: mCpa,
+                    price: m.price, prod: baseData.prod, firstMile: baseData.firstMile, misc: baseData.misc,
+                    fba: baseData.fba, storage: baseData.storage, comm: mComm, ret: mRet, cpa: mCpa,
                     grossOrganic: mGrossOrganic, netAd: mNetAd
                 }
             }
@@ -295,7 +323,7 @@ const PromotionDeduction: React.FC = () => {
         : 0;
 
     // Total and capital
-    const landedCost = baseData.prod + baseData.log;
+    const landedCost = baseData.prod + baseData.firstMile + baseData.misc;
     const firstShipmentCapital = firstShipment * landedCost;
     const maxCapitalExposure = firstShipmentCapital + (totalPromoPeriod.profit < 0 ? Math.abs(totalPromoPeriod.profit) : 0);
 
@@ -318,34 +346,266 @@ const PromotionDeduction: React.FC = () => {
     // Ad spend efficiency
     const avgCPA = totalPromoPeriod.units > 0 ? totalPromoPeriod.spend / (totalPromoPeriod.units * (evaluatedMonths.reduce((sum, m) => sum + m.adShare, 0) / evaluatedMonths.length / 100)) : 0;
 
+    // Export PDF - 使用 onclone 修复 input 渲染问题
+    const handleExportPDF = async () => {
+        if (!contentRef.current || isExporting) return;
+        setIsExporting(true);
+        try {
+            const element = contentRef.current;
+
+            // 临时保存原始样式
+            const originalStyle = element.style.cssText;
+            const originalOverflow = document.body.style.overflow;
+
+            // 临时移除高度限制，确保完整捕获
+            element.style.overflow = 'visible';
+            element.style.height = 'auto';
+            element.style.maxHeight = 'none';
+            document.body.style.overflow = 'visible';
+
+            // 等待重新渲染
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            const canvas = await html2canvas(element, {
+                backgroundColor: '#0a0a0b',
+                scale: 2,
+                useCORS: true,
+                logging: false,
+                allowTaint: true,
+                foreignObjectRendering: false,
+                onclone: (clonedDoc) => {
+                    // 1. 添加全局样式修复
+                    const style = clonedDoc.createElement('style');
+                    style.innerHTML = `
+                        /* 禁用动画 */
+                        * {
+                            animation: none !important;
+                            transition: none !important;
+                        }
+                        /* 隐藏导出/导入按钮 */
+                        .export-actions {
+                            display: none !important;
+                        }
+                        /* 隐藏呼吸灯动画 */
+                        .animate-ping {
+                            display: none !important;
+                        }
+                        /* 隐藏 stepper 按钮 */
+                        .group > div[class*="absolute"] {
+                            display: none !important;
+                        }
+                    `;
+                    clonedDoc.head.appendChild(style);
+
+                    // 2. 将所有 input 替换为纯文本 - 不使用负 margin
+                    const inputs = clonedDoc.querySelectorAll('input');
+                    inputs.forEach((input) => {
+                        const value = input.value || '';
+                        const container = input.parentElement;
+
+                        if (container instanceof HTMLElement) {
+                            // 设置容器为 flex 居中
+                            container.style.display = 'flex';
+                            container.style.alignItems = 'center';
+                            container.style.justifyContent = 'center';
+                            container.style.overflow = 'visible';
+                            // 用 padding-bottom 实现视觉上移（增加到 6px）
+                            container.style.paddingBottom = '6px';
+
+                            // 创建替换文本
+                            const textSpan = clonedDoc.createElement('span');
+                            textSpan.textContent = value;
+                            textSpan.style.cssText = `
+                                font-size: 11px;
+                                font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+                                font-weight: 900;
+                                color: #ffffff;
+                                line-height: 1;
+                            `;
+
+                            // 替换 input
+                            container.replaceChild(textSpan, input);
+                        }
+                    });
+
+                    // 3. 修复 label - 确保完全可见
+                    const labels = clonedDoc.querySelectorAll('label');
+                    labels.forEach((label) => {
+                        if (label instanceof HTMLElement) {
+                            label.style.overflow = 'visible';
+                            label.style.lineHeight = '1.3';
+                            // 用 padding-bottom 实现视觉上移（增加到 5px）
+                            label.style.paddingBottom = '5px';
+                            // 确保父容器也可见
+                            if (label.parentElement instanceof HTMLElement) {
+                                label.parentElement.style.overflow = 'visible';
+                            }
+                        }
+                    });
+
+                    // 4. 修复阶段标签（启动、成长、稳定、延续等）- 小圆角标签
+                    const badgeSpans = clonedDoc.querySelectorAll('span[class*="rounded"]');
+                    badgeSpans.forEach((badge) => {
+                        if (badge instanceof HTMLElement) {
+                            badge.style.paddingBottom = '8px';
+                        }
+                    });
+                }
+            });
+
+            // 恢复原始样式
+            element.style.cssText = originalStyle;
+            document.body.style.overflow = originalOverflow;
+
+            const imgData = canvas.toDataURL('image/jpeg', 0.9);
+
+            // 使用原始 canvas 尺寸
+            const imgWidth = canvas.width;
+            const imgHeight = canvas.height;
+
+            const pdf = new jsPDF({
+                orientation: imgWidth > imgHeight ? 'landscape' : 'portrait',
+                unit: 'px',
+                format: [imgWidth, imgHeight],
+                compress: true
+            });
+
+            pdf.addImage(imgData, 'JPEG', 0, 0, imgWidth, imgHeight);
+            const model = savedModels.find(m => m.id === selectedModelId);
+            const fileName = `推广推演_${model?.productName || 'export'}_${new Date().toLocaleDateString()}.pdf`;
+            pdf.save(fileName);
+        } catch (err) {
+            console.error('PDF export failed:', err);
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
     return (
-        <div className="p-8 space-y-8 max-w-[1600px] mx-auto animate-in fade-in duration-500">
+        <div ref={contentRef} className="p-8 space-y-8 max-w-[1600px] mx-auto animate-in fade-in duration-500">
 
             {/* Header */}
             <div className="flex flex-col gap-1">
-                <h2 className="text-3xl font-black tracking-tight text-white">推广策略推演</h2>
-                <div className="flex justify-between items-end">
-                    <p className="text-zinc-500 text-sm font-bold uppercase tracking-widest">Dynamic Traffic & Budget Simulation</p>
+                <h2 className="text-2xl font-black tracking-tight text-white">推广策略推演</h2>
+                <div className="flex justify-between items-center">
+                    <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest">Dynamic Traffic & Budget Simulation</p>
 
-                    {/* Model Selector */}
-                    <div className="flex items-center gap-3 bg-[#111111] p-1.5 rounded-lg border border-zinc-800">
-                        <span className="text-[10px] text-zinc-500 font-bold uppercase px-2">加载基础成本模型:</span>
-                        <select
-                            value={selectedModelId}
-                            onChange={(e) => setSelectedModelId(e.target.value)}
-                            className="bg-zinc-900 text-white text-xs font-bold py-1.5 px-3 rounded border-none outline-none hover:bg-zinc-800 transition-colors"
-                        >
-                            {savedModels.map(m => (
-                                <option key={m.id} value={m.id}>{m.productName} - ${m.inputs.actualPrice}</option>
-                            ))}
-                            {!savedModels.length && <option value="">无已保存模型</option>}
-                        </select>
+                    {/* Current Model Indicator + Data Source Selector */}
+                    <div className="flex items-center gap-3">
+                        {/* Current Model Indicator with breathing light */}
+                        {selectedModel && (
+                            <div className="flex items-center gap-2.5 bg-zinc-900/80 border border-zinc-700/50 rounded-xl px-4 py-2">
+                                <span className="relative flex h-2.5 w-2.5">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-500"></span>
+                                </span>
+                                <span className="text-xs text-zinc-400">当前方案:</span>
+                                <span className="text-sm font-bold text-white">{selectedModel.productName}</span>
+                                <span className="text-[10px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-1.5 py-0.5 rounded font-medium">
+                                    {selectedModel.label || '无标签'}
+                                </span>
+                                <span className="text-sm font-black font-mono text-zinc-300">${selectedModel.inputs.actualPrice}</span>
+                                <span className={`text-[10px] font-bold flex items-center gap-0.5 ${(selectedModel.results?.planB?.margin ?? 0) * 100 >= 20 ? 'text-emerald-400' : (selectedModel.results?.planB?.margin ?? 0) * 100 >= 10 ? 'text-yellow-400' : 'text-red-400'}`}>
+                                    <span className="material-symbols-outlined text-[12px]">trending_up</span>
+                                    {((selectedModel.results?.planB?.margin ?? 0) * 100).toFixed(1)}%
+                                </span>
+                            </div>
+                        )}
+
+                        <div className="export-actions flex items-center gap-3">
+                            {/* Export PDF Button */}
+                            <button
+                                onClick={handleExportPDF}
+                                disabled={isExporting}
+                                className="flex items-center gap-2 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-400 rounded-xl px-4 py-2.5 shadow-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                <span className="material-symbols-outlined text-lg">picture_as_pdf</span>
+                                <span className="text-sm font-bold">导出 PDF</span>
+                            </button>
+
+                            {/* Data Source Selector - Custom Grouped Dropdown */}
+                            <div className="relative">
+                                <button
+                                    onClick={() => setShowDropdown(!showDropdown)}
+                                    className="flex items-center gap-3 bg-[#0c0c0e] border border-zinc-800 hover:border-zinc-700 rounded-xl px-4 py-2.5 shadow-lg transition-colors"
+                                >
+                                    <span className="material-symbols-outlined text-blue-500 text-lg">description</span>
+                                    <span className="text-sm font-bold text-white">导入数据</span>
+                                    <span className="material-symbols-outlined text-zinc-500 text-sm">{showDropdown ? 'expand_less' : 'expand_more'}</span>
+                                </button>
+                                {/* Dropdown Panel */}
+                                {showDropdown && (
+                                    <div
+                                        className="absolute right-0 mt-2 w-[320px] bg-[#111111] border border-zinc-800 rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+                                        onMouseLeave={() => setShowDropdown(false)}
+                                    >
+                                        <div className="max-h-[360px] overflow-y-auto [&::-webkit-scrollbar]:hidden">
+                                            {!savedModels.length && (
+                                                <div className="px-4 py-3 text-sm text-zinc-500">无已保存模型</div>
+                                            )}
+
+                                            {Object.keys(groupedModels).map(groupName => {
+                                                const groupItems = groupedModels[groupName];
+                                                const isExpanded = expandedGroups[groupName];
+
+                                                return (
+                                                    <div key={groupName} className="border-b border-zinc-800/50 last:border-0">
+                                                        {/* Group Header */}
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); toggleGroup(groupName); }}
+                                                            className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-zinc-800/50 transition-colors group"
+                                                        >
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-[10px] text-zinc-500 material-symbols-outlined transition-transform duration-200" style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>chevron_right</span>
+                                                                <span className="text-xs font-bold text-zinc-300 group-hover:text-white">{groupName}</span>
+                                                                <span className="text-[10px] text-zinc-600 bg-zinc-800 px-1.5 rounded-full">{groupItems.length}</span>
+                                                            </div>
+                                                        </button>
+
+                                                        {/* Group Content */}
+                                                        {isExpanded && (
+                                                            <div className="bg-zinc-900/30 pb-1">
+                                                                {groupItems.map(model => {
+                                                                    const marginPct = (model.results?.planB?.margin ?? 0) * 100;
+                                                                    const marginColor = marginPct >= 20 ? 'text-emerald-400' : marginPct >= 10 ? 'text-yellow-400' : 'text-red-400';
+                                                                    const isSelected = model.id === selectedModelId;
+
+                                                                    return (
+                                                                        <button
+                                                                            key={model.id}
+                                                                            className={`w-full text-left pl-9 pr-4 py-2 hover:bg-zinc-800 transition-colors flex items-center justify-between border-l-2 ml-1 ${isSelected ? 'bg-blue-900/20 border-blue-500' : 'border-transparent hover:border-blue-500/50'}`}
+                                                                            onClick={() => { setSelectedModelId(model.id); setShowDropdown(false); }}
+                                                                        >
+                                                                            <span className={`text-[10px] ${isSelected ? 'bg-blue-500/30 text-blue-300' : 'bg-blue-500/15 text-blue-400'} border border-blue-500/20 px-1.5 py-0.5 rounded font-medium truncate max-w-[110px]`}>
+                                                                                {model.label || '无标签'}
+                                                                            </span>
+                                                                            <div className="flex items-center gap-4">
+                                                                                <span className="text-sm font-black font-mono text-zinc-300 w-16 text-right">
+                                                                                    ${model.inputs.actualPrice}
+                                                                                </span>
+                                                                                <span className={`text-[10px] font-bold ${marginColor} flex items-center gap-0.5 w-14`}>
+                                                                                    <span className="material-symbols-outlined text-[12px]">trending_up</span>
+                                                                                    {marginPct.toFixed(1)}%
+                                                                                </span>
+                                                                            </div>
+                                                                        </button>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
 
             <div className="grid grid-cols-1 gap-8">
-
                 {/* --- MAIN SECTION --- */}
                 <div className="flex flex-col gap-8">
                     <div className="space-y-6">
@@ -442,19 +702,27 @@ const PromotionDeduction: React.FC = () => {
                                                 <span>{fmtUSD(m.res.unit.prod)}</span>
                                             </div>
                                             <div className="flex justify-between items-center text-[10px] text-zinc-500">
-                                                <span>- 物流/杂费</span>
-                                                <span>{fmtUSD(m.res.unit.log)}</span>
+                                                <span>- 头程</span>
+                                                <span>{fmtUSD(m.res.unit.firstMile)}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center text-[10px] text-zinc-500">
+                                                <span>- 杂费</span>
+                                                <span>{fmtUSD(m.res.unit.misc)}</span>
                                             </div>
                                             <div className="flex justify-between items-center text-[10px] text-zinc-500">
                                                 <span>- FBA配送</span>
                                                 <span>{fmtUSD(m.res.unit.fba)}</span>
                                             </div>
                                             <div className="flex justify-between items-center text-[10px] text-zinc-500">
-                                                <span>- 平台佣金</span>
+                                                <span>- 仓储费</span>
+                                                <span>{fmtUSD(m.res.unit.storage)}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center text-[10px] text-zinc-500">
+                                                <span>- 销售佣金</span>
                                                 <span>{fmtUSD(m.res.unit.comm)}</span>
                                             </div>
                                             <div className="flex justify-between items-center text-[10px] text-zinc-500">
-                                                <span>- 退货均摊</span>
+                                                <span>- 退货损耗</span>
                                                 <span>{fmtUSD(m.res.unit.ret)}</span>
                                             </div>
                                             <div className="flex justify-between items-center text-[10px] text-orange-500 font-bold">
@@ -498,11 +766,19 @@ const PromotionDeduction: React.FC = () => {
                                 { l: '总销售额 (Revenue)', v: fmtUSD(totalPromoPeriod.revenue), c: 'text-white' },
                                 { l: '总广告费 (Spend)', v: fmtUSD(totalPromoPeriod.spend), c: 'text-orange-400' },
                                 { l: '推广期总盈亏', v: fmtUSD(totalPromoPeriod.profit), c: totalPromoPeriod.profit >= 0 ? 'text-emerald-500' : 'text-red-500', big: true },
-                                { l: '综合 ROI', v: (totalPromoPeriod.spend > 0 ? (totalPromoPeriod.profit / totalPromoPeriod.spend).toFixed(2) : '0.00'), c: 'text-blue-400' }
+                                {
+                                    l: '综合 ROI',
+                                    v: (totalPromoPeriod.spend > 0 ? (totalPromoPeriod.profit / totalPromoPeriod.spend).toFixed(2) : '0.00'),
+                                    c: (totalPromoPeriod.spend > 0 && totalPromoPeriod.profit > 0) ? 'text-emerald-500' : (totalPromoPeriod.spend > 0 && totalPromoPeriod.profit < 0) ? 'text-red-500' : 'text-zinc-400',
+                                    sub: (totalPromoPeriod.spend > 0 && totalPromoPeriod.profit > 0) ? '盈利' : (totalPromoPeriod.spend > 0 && totalPromoPeriod.profit < 0) ? '亏损' : '持平'
+                                }
                             ].map((item, i) => (
                                 <div key={i} className="flex flex-col items-center text-center">
                                     <span className="text-[10px] uppercase font-bold text-zinc-500 mb-1">{item.l}</span>
-                                    <span className={`font-mono font-black ${item.c} ${item.big ? 'text-2xl' : 'text-xl'} `}>{item.v}</span>
+                                    <div className="flex items-center gap-2">
+                                        <span className={`font-mono font-black ${item.c} ${item.big ? 'text-2xl' : 'text-xl'} `}>{item.v}</span>
+                                        {item.sub && <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${item.c.replace('text-', 'bg-')}/10 ${item.c}`}>{item.sub}</span>}
+                                    </div>
                                 </div>
                             ))}
                         </div>

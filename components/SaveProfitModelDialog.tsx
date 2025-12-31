@@ -30,7 +30,20 @@ const SaveProfitModelDialog: React.FC<SaveProfitModelDialogProps> = ({ isOpen, o
     const [forceUpdateId, setForceUpdateId] = useState<string | null>(null);
 
     // 实际的 UI 显示模式：初始更新模式 OR 强制更新模式
+    // 实际的 UI 显示模式：初始更新模式 OR 强制更新模式
     const isUpdateMode = (initialIsUpdate || !!forceUpdateId) && !saveAsNew;
+
+    // Focus ref for label input
+    const labelInputRef = React.useRef<HTMLInputElement>(null);
+
+    React.useEffect(() => {
+        if (isOpen) {
+            // Delay slightly to ensure render, then focus without scrolling
+            setTimeout(() => {
+                labelInputRef.current?.focus({ preventScroll: true });
+            }, 50);
+        }
+    }, [isOpen]);
 
     React.useEffect(() => {
         if (isOpen) {
@@ -223,12 +236,12 @@ const SaveProfitModelDialog: React.FC<SaveProfitModelDialogProps> = ({ isOpen, o
                         </div>
 
                         <input
+                            ref={labelInputRef}
                             type="text"
                             value={label}
                             onChange={(e) => setLabel(e.target.value)}
                             placeholder="例如: 促销价 @ 19.99"
                             className={`w-full bg-[#111111] border ${errors.label ? 'border-red-500' : 'border-[#27272a]'} rounded-xl px-4 py-2.5 text-sm text-white focus:border-blue-500 outline-none transition-all`}
-                            autoFocus
                         />
                         {errors.label && (
                             <p className="text-xs text-red-500 mt-1.5 font-bold">{errors.label}</p>

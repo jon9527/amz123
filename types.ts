@@ -10,7 +10,8 @@ export enum AppView {
   TOOLBOX = 'TOOLBOX',
   DEDUCTION = 'DEDUCTION',
   REPLENISHMENT = 'REPLENISHMENT',
-  PRODUCT_LIBRARY = 'PRODUCT_LIBRARY'
+  PRODUCT_LIBRARY = 'PRODUCT_LIBRARY',
+  LOGISTICS_LIBRARY = 'LOGISTICS_LIBRARY'
 }
 
 // ============ 产品库类型 ============
@@ -41,12 +42,34 @@ export interface ProductSpec {
   updatedAt: number;
 }
 
+// ============ 物流库类型 ============
+export interface LogisticsChannel {
+  id: string;
+  name: string;
+  type: 'sea' | 'air' | 'exp';
+  carrier?: string; // e.g. "Matson", "UPS"
+  status: 'active' | 'disabled';
+
+  // 计费规则
+  pricePerKg?: number;     // 空/快 核心
+  pricePerCbm?: number;    // 海运 核心
+  volDivisor?: number;     // 5000, 6000
+  minWeight?: number;      // 起运重 (kg)
+  taxRate?: number;        // 关税率 (%)
+
+  // 时效
+  deliveryDays: number;    // 预计时效
+  slowDays?: number;       // 最慢时效(用于风险提示)
+}
+
 export interface ReplenishmentBatch {
   id: number;
   name: string;
   type: 'sea' | 'air' | 'exp';
   qty: number;
   offset: number;
+  prodDays: number;
+  extraPercent?: number; // 加量百分比，默认0
 }
 
 export interface ProductData {
@@ -111,6 +134,12 @@ export interface ProfitModelResults {
     commRate: number;
     commVal: number;
     ret: number;
+    ganttHold: { x: [number, number]; y: string; batchIdx: number; duration: number }[];
+    ganttSell: { x: [number, number]; y: string; batchIdx: number; revenue: number }[];
+    ganttStockout: { x: [number, number]; y: string; gapDays: number }[];
+    totalStockoutDays: number;
+    minCash: number;
+    finalCash: number;
     adsVal: number;
     sellCost: number;
     profit: number;
@@ -122,6 +151,12 @@ export interface ProfitModelResults {
     commRate: number;
     commVal: number;
     ret: number;
+    ganttHold: { x: [number, number]; y: string; batchIdx: number; duration: number }[];
+    ganttSell: { x: [number, number]; y: string; batchIdx: number; revenue: number }[];
+    ganttStockout: { x: [number, number]; y: string; gapDays: number }[];
+    totalStockoutDays: number;
+    minCash: number;
+    finalCash: number;
     adsVal: number;
     sellCost: number;
     profit: number;

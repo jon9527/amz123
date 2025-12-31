@@ -386,11 +386,12 @@ const ProductProfitList: React.FC = () => {
           </div>
 
           <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-320px)] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:none]">
-            <table className="w-full text-left border-collapse min-w-[1400px]" style={{ tableLayout: 'fixed' }}>
+            <table className="w-full text-left border-collapse min-w-[1250px]" style={{ tableLayout: 'fixed' }}>
               <thead className="sticky top-0 z-20">
-                <tr className="bg-[#1e293b] border-b border-[#334155] text-[13px] uppercase tracking-wider text-slate-400 font-bold">
-                  {/* Checkbox column */}
-                  <th rowSpan={2} className="px-2 py-3 text-center bg-[#1e293b] border-r border-[#334155]" style={{ width: '40px' }}>
+                {/* Row 1: Group Headers */}
+                <tr className="bg-[#1e293b] border-b border-[#334155] text-[11px] uppercase tracking-wider text-slate-400 font-bold">
+                  {/* Checkbox */}
+                  <th rowSpan={2} className="px-2 py-2 text-center bg-[#1e293b] border-r border-[#334155]" style={{ width: '40px' }}>
                     <input
                       type="checkbox"
                       checked={selectedIds.size === filteredModels.length && filteredModels.length > 0}
@@ -398,64 +399,61 @@ const ProductProfitList: React.FC = () => {
                       className="w-4 h-4 rounded border-slate-600 bg-slate-900 text-blue-500 focus:ring-blue-500/50 cursor-pointer"
                     />
                   </th>
-                  {/* Group 1: Product Info (Sticky) */}
-                  <th rowSpan={2} className="px-3 py-3 text-center bg-[#1e293b] text-slate-300 sticky left-0 z-10 shadow-[4px_0_12px_rgba(0,0,0,0.25)] border-r border-[#334155]" style={{ width: '150px' }}>
+                  {/* 产品信息 */}
+                  <th rowSpan={2} className="px-3 py-2 text-center bg-[#1e293b] text-slate-300 sticky left-0 z-10 shadow-[4px_0_12px_rgba(0,0,0,0.25)] border-r border-[#334155]" style={{ width: '130px' }}>
                     产品信息
                   </th>
-
-                  {/* Group 2: Selling Price */}
-                  <th className="px-2 py-2 text-center border-r border-[#334155] bg-[#1e293b]" rowSpan={2} style={{ width: '80px' }}>售价 $</th>
-
-                  {/* Group 3: Product Cost - Blue */}
-                  <th colSpan={2} className="px-2 py-1 text-center border-r border-[#334155] bg-blue-500/15 text-blue-300">产品成本</th>
-
-                  {/* Group 4: Logistics - Cyan */}
-                  <th colSpan={4} className="px-2 py-1 text-center border-r border-[#334155] bg-cyan-500/15 text-cyan-300">物流仓储</th>
-
-                  {/* Group 5: Returns - Rose */}
-                  <th colSpan={5} className="px-2 py-1 text-center border-r border-[#334155] bg-rose-500/15 text-rose-300">退货损耗</th>
-
-                  {/* Group 6: Fees & Marketing - Purple */}
-                  <th colSpan={4} className="px-2 py-1 text-center border-r border-[#334155] bg-purple-500/15 text-purple-300">费用 & 广告</th>
-
-                  {/* Group 7: Profit Results - Emerald */}
-                  <th colSpan={5} className="px-2 py-1 text-center bg-emerald-500/15 text-emerald-300 border-l border-emerald-500/30">
-                    核心利润指标
+                  {/* 售价 */}
+                  <th rowSpan={2} className="px-2 py-2 text-center border-r border-[#334155] bg-[#1e293b]" style={{ width: '75px' }}>售价</th>
+                  {/* 采购成本 */}
+                  <th rowSpan={2} className="px-2 py-2 text-center border-r border-[#334155] bg-blue-500/10 text-blue-300" style={{ width: '65px' }}>采购成本</th>
+                  {/* 头程 - 单独 */}
+                  <th rowSpan={2} className="px-2 py-2 text-center border-r border-[#334155] bg-sky-500/10 text-sky-300" style={{ width: '55px' }}>头程</th>
+                  {/* 运费仓储 Group (FBA配送/杂费/仓储费) */}
+                  <th colSpan={3} className="px-2 py-1 text-center border-r border-[#334155] bg-cyan-500/15 text-cyan-300">运费仓储</th>
+                  {/* 退货损耗 */}
+                  <th rowSpan={2} className="px-1 py-2 text-center border-r border-[#334155] bg-rose-500/10 text-rose-300 leading-tight" style={{ width: '50px' }}>
+                    <div>退货</div><div>损耗</div>
                   </th>
-
-                  {/* Group 8: Actions */}
-                  <th rowSpan={2} className="px-2 py-1 text-center bg-[#1e293b] border-l border-[#334155]">操作</th>
+                  {/* 佣金 Group */}
+                  <th colSpan={2} className="px-2 py-1 text-center border-r border-[#334155] bg-orange-500/15 text-orange-300">佣金</th>
+                  {/* 广告 Group */}
+                  <th colSpan={2} className="px-2 py-1 text-center border-r border-[#334155] bg-purple-500/15 text-purple-300">广告</th>
+                  {/* 盈亏平衡 */}
+                  <th rowSpan={2} className="px-1 py-2 text-center border-r border-[#334155] bg-slate-600/20 text-slate-300 leading-tight" style={{ width: '50px' }}>
+                    <div>盈亏</div><div>平衡</div>
+                  </th>
+                  {/* 回款 Group */}
+                  <th colSpan={2} className="px-2 py-1 text-center border-r border-[#334155] bg-green-500/15 text-green-300">回款</th>
+                  {/* 售卖成本 Group - 新增 */}
+                  <th colSpan={2} className="px-2 py-1 text-center border-r border-[#334155] bg-amber-500/15 text-amber-300">售卖成本</th>
+                  {/* 利润 Group */}
+                  <th colSpan={3} className="px-2 py-1 text-center border-r border-[#334155] bg-emerald-500/15 text-emerald-300">利润</th>
+                  {/* 操作 */}
+                  <th rowSpan={2} className="px-2 py-2 text-center bg-[#1e293b]" style={{ width: '45px' }}>操作</th>
                 </tr>
-                <tr className="bg-[#1e293b] border-b border-[#334155] text-[11px] uppercase tracking-tight text-slate-500 font-bold">
-                  {/* Product Cost Sub-headers - Blue */}
-                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-blue-500/10">采购 ¥</th>
-                  <th className="px-2 py-2 text-center border-r border-[#334155] bg-blue-500/10">汇率</th>
-
-                  {/* Logistics Sub-headers - Cyan */}
-                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-cyan-500/10">头程 $</th>
-                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-cyan-500/10">FBA $</th>
-                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-cyan-500/10">杂费 $</th>
-                  <th className="px-2 py-2 text-center border-r border-[#334155] bg-cyan-500/10">仓储 $</th>
-
-                  {/* Returns Sub-headers - Rose */}
-                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-rose-500/10">退货 %</th>
-                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-rose-500/10">不可售 %</th>
-                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-rose-500/10">处理费 $</th>
-                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-rose-500/10">管理费 $</th>
-                  <th className="px-2 py-2 text-center border-r border-[#334155] bg-rose-500/10">移除费 $</th>
-
-                  {/* Fees & Ads Sub-headers - Purple */}
-                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-purple-500/10">佣金 %</th>
-                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-purple-500/10">佣金 $</th>
-                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-purple-500/10 text-purple-400">TACOS %</th>
-                  <th className="px-2 py-2 text-center border-r border-[#334155] bg-purple-500/10">广告费 $</th>
-
-                  {/* Results Sub-headers - Emerald */}
-                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-emerald-500/10 text-amber-400">总成本 <br /><span className="text-[9px] opacity-60 font-normal">(无广)</span></th>
-                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-emerald-500/10">盈亏平衡</th>
-                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-emerald-500/10">目标利润 %</th>
-                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-emerald-500/10 text-emerald-400">净利率 %</th>
-                  <th className="px-2 py-2 text-center bg-emerald-500/10 text-emerald-400 font-bold">净利润 $</th>
+                {/* Row 2: Sub-headers */}
+                <tr className="bg-[#1e293b] border-b border-[#334155] text-[10px] uppercase tracking-tight text-slate-500 font-bold">
+                  {/* 运费仓储 Sub-headers */}
+                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-cyan-500/10" style={{ width: '50px' }}>FBA配送</th>
+                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-cyan-500/10" style={{ width: '45px' }}>杂费</th>
+                  <th className="px-2 py-2 text-center border-r border-[#334155] bg-cyan-500/10" style={{ width: '45px' }}>仓储费</th>
+                  {/* 佣金 Sub-headers */}
+                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-orange-500/10" style={{ width: '45px' }}>占比</th>
+                  <th className="px-2 py-2 text-center border-r border-[#334155] bg-orange-500/10" style={{ width: '50px' }}>金额</th>
+                  {/* 广告 Sub-headers */}
+                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-purple-500/10" style={{ width: '45px' }}>占比</th>
+                  <th className="px-2 py-2 text-center border-r border-[#334155] bg-purple-500/10" style={{ width: '50px' }}>金额</th>
+                  {/* 回款 Sub-headers */}
+                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-green-500/10" style={{ width: '45px' }}>回款率</th>
+                  <th className="px-2 py-2 text-center border-r border-[#334155] bg-green-500/10" style={{ width: '55px' }}>金额</th>
+                  {/* 售卖成本 Sub-headers - 新增 */}
+                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-amber-500/10" style={{ width: '45px' }}>占比</th>
+                  <th className="px-2 py-2 text-center border-r border-[#334155] bg-amber-500/10" style={{ width: '55px' }}>金额</th>
+                  {/* 利润 Sub-headers */}
+                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-emerald-500/10 text-slate-400" style={{ width: '50px' }}>目标率</th>
+                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-emerald-500/10 text-emerald-400" style={{ width: '45px' }}>净利率</th>
+                  <th className="px-2 py-2 text-center border-r border-[#334155] bg-emerald-500/10 text-emerald-400 font-bold" style={{ width: '55px' }}>净利润</th>
                 </tr>
               </thead>
               <tbody className="text-[11px] text-slate-300">
@@ -477,12 +475,12 @@ const ProductProfitList: React.FC = () => {
 
                         return (
                           <tr
-                            className="bg-[#1e293b]/80 border-b border-[#334155] cursor-pointer hover:bg-[#1e293b] transition-colors"
+                            className="bg-[#1e293b] border-b border-[#334155] cursor-pointer hover:bg-[#334155] transition-colors group"
                             onClick={() => toggleGroup(groupName)}
                           >
                             <td
                               colSpan={22}
-                              className="px-3 py-2.5 sticky left-0 z-10 bg-[#1e293b]/95"
+                              className="px-3 py-2.5 sticky left-0 z-10 bg-[#1e293b] group-hover:bg-[#334155] transition-colors"
                             >
                               <div className="flex items-center gap-3">
                                 <span
@@ -513,11 +511,9 @@ const ProductProfitList: React.FC = () => {
                       {/* Group Items */}
                       {isExpanded && groupItems.map((model) => {
                         const res = model.results.planB;
-                        const adminFee = (res.price * res.commRate * 0.20).toFixed(2);
-                        const totalCostExclAds = res.sellCost.toFixed(2);
 
                         return (
-                          <tr key={model.id} className="hover:bg-[#1e293b]/50 transition-colors border-b border-[#334155]/30 group">
+                          <tr key={model.id} className="bg-[#0f172a] hover:bg-[#1e293b] transition-colors border-b border-[#334155]/30 group">
                             {/* Checkbox */}
                             <td className="px-2 py-2 text-center border-r border-[#334155]/30">
                               <input
@@ -529,7 +525,7 @@ const ProductProfitList: React.FC = () => {
                               />
                             </td>
                             {/* 1. Product Info (Sticky) - Shows multiple tags */}
-                            <td className="px-3 py-2 text-left bg-[#0f172a] sticky left-0 z-10 shadow-[4px_0_12px_rgba(0,0,0,0.25)] border-r border-[#334155]">
+                            <td className="px-3 py-2 text-left bg-[#0f172a] group-hover:bg-[#1e293b] transition-colors sticky left-0 z-10 shadow-[4px_0_12px_rgba(0,0,0,0.25)] border-r border-[#334155]">
                               <div className="flex flex-col gap-1" onClick={e => e.stopPropagation()}>
                                 {/* Display existing tags - include old label if exists */}
                                 {(() => {
@@ -623,43 +619,66 @@ const ProductProfitList: React.FC = () => {
                               </div>
                             </td>
 
-                            {/* 2. Selling Price */}
+                            {/* 2. 售价 */}
                             <td className="px-2 py-3 text-center border-r border-[#334155]">
                               <span className="font-bold text-white text-sm bg-[#1e293b]/50 px-2 py-1 rounded">${res.price.toFixed(2)}</span>
                             </td>
 
-                            {/* 3. Product Cost - Blue */}
-                            <td className="px-2 py-3 text-center text-slate-400 border-r border-[#334155]/30 bg-blue-500/5">¥{model.inputs.purchaseRMB}</td>
-                            <td className="px-2 py-3 text-center text-slate-500 border-r border-[#334155] bg-blue-500/5">{model.inputs.exchangeRate}</td>
+                            {/* 3. 采购成本 (USD) - Blue */}
+                            <td className="px-2 py-3 text-center text-blue-300 border-r border-[#334155] bg-blue-500/5">${model.results.costProdUSD.toFixed(2)}</td>
 
-                            {/* 4. Logistics - Cyan */}
-                            <td className="px-2 py-3 text-center text-slate-400 border-r border-[#334155]/30 bg-cyan-500/5">${model.inputs.shippingUSD}</td>
-                            <td className="px-2 py-3 text-center text-slate-400 border-r border-[#334155]/30 bg-cyan-500/5">${model.inputs.fbaFee}</td>
+                            {/* 4. 头程 - Sky (单独) */}
+                            <td className="px-2 py-3 text-center text-sky-300 border-r border-[#334155] bg-sky-500/5">${model.inputs.shippingUSD}</td>
+
+                            {/* 仓配组: FBA/杂费/仓储 - Cyan */}
+                            <td className="px-2 py-3 text-center text-cyan-300 border-r border-[#334155]/30 bg-cyan-500/5">${model.inputs.fbaFee}</td>
                             <td className="px-2 py-3 text-center text-slate-500 border-r border-[#334155]/30 bg-cyan-500/5">${model.inputs.miscFee}</td>
                             <td className="px-2 py-3 text-center text-slate-500 border-r border-[#334155] bg-cyan-500/5">${model.inputs.storageFee}</td>
 
-                            {/* 5. Returns - Rose */}
-                            <td className="px-2 py-3 text-center text-slate-500 border-r border-[#334155]/30 bg-rose-500/5">{model.inputs.returnRate}%</td>
-                            <td className="px-2 py-3 text-center text-slate-500 border-r border-[#334155]/30 bg-rose-500/5">{model.inputs.unsellableRate}%</td>
-                            <td className="px-2 py-3 text-center text-slate-500 border-r border-[#334155]/30 bg-rose-500/5">${model.inputs.retProcFee}</td>
-                            <td className="px-2 py-3 text-center text-slate-500 border-r border-[#334155]/30 bg-rose-500/5">${adminFee}</td>
-                            <td className="px-2 py-3 text-center text-slate-500 border-r border-[#334155] bg-rose-500/5">${model.inputs.retRemFee}</td>
+                            {/* 退货损耗 (合计) - Rose */}
+                            <td className="px-1 py-3 text-center text-rose-400 text-xs font-bold border-r border-[#334155] bg-rose-500/5">${res.ret.toFixed(2)}</td>
 
-                            {/* 6. Fees & Ads - Purple */}
-                            <td className="px-2 py-3 text-center text-slate-400 border-r border-[#334155]/30 bg-purple-500/5">{(res.commRate * 100).toFixed(0)}%</td>
-                            <td className="px-2 py-3 text-center text-slate-400 border-r border-[#334155]/30 bg-purple-500/5">${res.commVal}</td>
+                            {/* 佣金组: 占比/金额 - Orange */}
+                            <td className="px-2 py-3 text-center text-orange-400 border-r border-[#334155]/30 bg-orange-500/5">{(res.commRate * 100).toFixed(0)}%</td>
+                            <td className="px-2 py-3 text-center text-orange-300 border-r border-[#334155] bg-orange-500/5">${res.commVal}</td>
+
+                            {/* 广告组: 占比/金额 - Purple */}
                             <td className="px-2 py-3 text-center text-purple-400 font-medium border-r border-[#334155]/30 bg-purple-500/5">{model.inputs.targetAcos}%</td>
-                            <td className="px-2 py-3 text-center text-slate-400 border-r border-[#334155] bg-purple-500/5">${res.adsVal}</td>
+                            <td className="px-2 py-3 text-center text-purple-300 border-r border-[#334155] bg-purple-500/5">${res.adsVal}</td>
 
-                            {/* 7. Results - Emerald */}
-                            <td className="px-2 py-3 text-center text-amber-400 font-medium border-r border-[#334155]/30 bg-emerald-500/5">${totalCostExclAds}</td>
-                            <td className="px-2 py-3 text-center text-slate-400 border-r border-[#334155]/30 bg-emerald-500/5">${res.be}</td>
+                            {/* 盈亏平衡 */}
+                            <td className="px-1 py-3 text-center text-slate-300 text-xs font-bold border-r border-[#334155] bg-slate-600/5">${res.be}</td>
+
+                            {/* 回款组: 回款率/金额 - Green */}
+                            {(() => {
+                              const recall = res.price - res.commVal - model.inputs.fbaFee - res.adsVal - res.ret - model.inputs.storageFee;
+                              const recallRate = res.price > 0 ? (recall / res.price) * 100 : 0;
+                              return (
+                                <>
+                                  <td className="px-2 py-3 text-center text-green-400 border-r border-[#334155]/30 bg-green-500/5">{recallRate.toFixed(1)}%</td>
+                                  <td className="px-2 py-3 text-center text-green-300 font-medium border-r border-[#334155] bg-green-500/5">${recall.toFixed(2)}</td>
+                                </>
+                              );
+                            })()}
+
+                            {/* 售卖成本组: 占比/金额 - Amber (新增) */}
+                            {(() => {
+                              const sellCostRatio = res.price > 0 ? (res.sellCost / res.price) * 100 : 0;
+                              return (
+                                <>
+                                  <td className="px-2 py-3 text-center text-amber-400 border-r border-[#334155]/30 bg-amber-500/5">{sellCostRatio.toFixed(1)}%</td>
+                                  <td className="px-2 py-3 text-center text-amber-300 font-medium border-r border-[#334155] bg-amber-500/5">${res.sellCost.toFixed(2)}</td>
+                                </>
+                              );
+                            })()}
+
+                            {/* 利润组: 目标/利率/净利 - Emerald */}
                             <td className="px-2 py-3 text-center text-slate-500 border-r border-[#334155]/30 bg-emerald-500/5">{model.inputs.targetMargin}%</td>
                             <td className="px-2 py-3 text-center text-emerald-400 font-bold border-r border-[#334155]/30 bg-emerald-500/10">{(res.margin * 100).toFixed(1)}%</td>
                             <td className="px-2 py-3 text-center text-emerald-400 font-black text-sm bg-emerald-500/10">${res.profit}</td>
 
-                            {/* 8. Actions */}
-                            <td className="px-2 py-3 text-center border-l border-[#334155]/30">
+                            {/* 操作 */}
+                            <td className="px-2 py-3 text-center">
                               <button
                                 onClick={(e) => { e.stopPropagation(); handleDelete([model.id]); }}
                                 className="p-1.5 text-slate-600 hover:text-rose-500 transition-colors rounded hover:bg-[#334155]/50"

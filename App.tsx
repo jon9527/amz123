@@ -9,7 +9,9 @@ import ProductProfitList from './pages/ProductProfitList';
 import PromotionDeduction from './pages/PromotionDeduction';
 import ReplenishmentAdvice from './pages/ReplenishmentAdvice';
 import ProductLibrary from './pages/ProductLibrary';
+import { LogisticsLibrary } from './pages/LogisticsLibrary';
 import { ProductProvider } from './ProductContext';
+import { LogisticsProvider } from './LogisticsContext';
 import { NAVIGATION_ITEMS } from './constants';
 
 const App: React.FC = () => {
@@ -21,6 +23,8 @@ const App: React.FC = () => {
         return <Dashboard />;
       case AppView.PRODUCT_LIBRARY:
         return <ProductLibrary />;
+      case AppView.LOGISTICS_LIBRARY:
+        return <LogisticsLibrary />;
       case AppView.PROFIT:
         return <ProfitCalculator />;
       case AppView.ADS:
@@ -55,9 +59,11 @@ const App: React.FC = () => {
 
   return (
     <ProductProvider>
-      <Layout currentView={currentView} onViewChange={setCurrentView}>
-        {renderContent()}
-      </Layout>
+      <LogisticsProvider>
+        <Layout currentView={currentView} onViewChange={setCurrentView}>
+          {renderContent()}
+        </Layout>
+      </LogisticsProvider>
     </ProductProvider>
   );
 };

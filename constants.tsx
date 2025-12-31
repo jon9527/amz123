@@ -4,6 +4,7 @@ import { AppView, KPI, CampaignData, ProductData } from './types';
 export const NAVIGATION_ITEMS = [
   { view: AppView.DASHBOARD, label: '总览面板', icon: 'dashboard' },
   { view: AppView.PRODUCT_LIBRARY, label: '产品库', icon: 'inventory_2' },
+  { view: AppView.LOGISTICS_LIBRARY, label: '物流渠道库', icon: 'forklift' },
   { view: AppView.PROFIT, label: '利润计算器', icon: 'attach_money' },
   { view: AppView.SIMULATION, label: '利润模型', icon: 'analytics' },
   { view: AppView.PROMOTION, label: '盈亏沙盘', icon: 'trending_up' },

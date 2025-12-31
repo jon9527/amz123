@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useDeferredValue } from 'react';
+import React, { useState, useEffect, useMemo, useDeferredValue, useCallback } from 'react';
 import { MOCK_KPIS, MOCK_CAMPAIGNS } from '../constants';
 import { AdvertisingAnalysisPanel } from '../components/AdvertisingAnalysisPanel';
 import { SensitivityMatrix } from '../components/SensitivityMatrix';
@@ -13,7 +13,7 @@ const AdsAnalysis: React.FC = () => {
   const [activeTab, setActiveTab] = useState('广告系列');
 
   // --- Simulation State (Shared) ---
-  const [simBudget, setSimBudget] = useState<number>(10);
+  const [simBudget, setSimBudget] = useState<number>(100);
   const [simCpc, setSimCpc] = useState<number>(0.54);
   const [simCvr, setSimCvr] = useState<number>(10);
 
@@ -27,13 +27,16 @@ const AdsAnalysis: React.FC = () => {
   const [savedModels, setSavedModels] = useState<SavedProfitModel[]>([]);
   const [selectedModelId, setSelectedModelId] = useState<string>('');
 
+  // Dropdown State
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+
   // Manual Inputs (Used if no model selected)
   const [manualPrice, setManualPrice] = useState<number>(29.99);
   const [manualCost, setManualCost] = useState<number>(18.50);
 
   // Load Saved Models on mount
   useEffect(() => {
-    // Determine strict sorting/loading - only once on mount
     const models = ProfitModelService.getAll().sort((a, b) => b.timestamp - a.timestamp);
     setSavedModels(models);
     if (models.length > 0) {
@@ -41,22 +44,43 @@ const AdsAnalysis: React.FC = () => {
     }
   }, []);
 
+  // Group models by product name
+  const groupedModels = useMemo(() => {
+    const groups: Record<string, SavedProfitModel[]> = {};
+    savedModels.forEach(m => {
+      const key = m.productName || '未分类';
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(m);
+    });
+    return groups;
+  }, [savedModels]);
+
+  // Toggle group expand/collapse
+  const toggleGroup = useCallback((groupName: string) => {
+    setExpandedGroups(prev => ({ ...prev, [groupName]: !prev[groupName] }));
+  }, []);
+
+  // Get selected model for display
+  const selectedModel = savedModels.find(m => m.id === selectedModelId);
+
   // Determine Current Context for Simulator
   const context = useMemo(() => {
     const selectedModel = savedModels.find(m => m.id === selectedModelId);
 
     if (selectedModel) {
       const pb = selectedModel.results.planB;
-      const totalDerivedCost = pb.price - pb.profit - (pb.adsVal || 0);
-
+      // 直接使用模型中的数据
+      // grossProfit = 广告前毛利 = 净利润 + 广告费
+      const grossProfit = pb.profit + (pb.adsVal || 0);
       const commRate = pb.commRate || 0.15;
-      const commVal = pb.price * commRate;
-      const fixedCost = totalDerivedCost - commVal;
+      // fixedCost = sellCost - 佣金 (用于 SensitivityMatrix)
+      const fixedCost = pb.sellCost - (pb.price * commRate);
 
       return {
         price: pb.price,
-        cost: totalDerivedCost,
-        fixedCost,
+        cost: pb.sellCost,        // 包含所有成本
+        grossProfit,              // 广告前毛利
+        fixedCost,                // 不含佣金的成本
         commRate,
         name: selectedModel.productName,
         label: selectedModel.label
@@ -65,12 +89,13 @@ const AdsAnalysis: React.FC = () => {
 
     // Manual Fallback
     const commRate = 0.15;
-    const commVal = manualPrice * commRate;
-    const fixedCost = manualCost - commVal;
+    const grossProfit = manualPrice - manualCost;
+    const fixedCost = manualCost - (manualPrice * commRate);
 
     return {
       price: manualPrice,
       cost: manualCost,
+      grossProfit,
       fixedCost,
       commRate,
       name: '自定义模拟',
@@ -78,23 +103,26 @@ const AdsAnalysis: React.FC = () => {
     };
   }, [selectedModelId, savedModels, manualPrice, manualCost]);
 
+  // 当切换模型时，自动将 simCpc 设置为盈亏平衡 CPC
+  // 盈亏 CPC = 广告前毛利 × 转化率%
+  useEffect(() => {
+    const breakEvenCpc = context.grossProfit * (simCvr / 100);
+    if (breakEvenCpc > 0) {
+      setSimCpc(parseFloat(breakEvenCpc.toFixed(2)));
+    }
+  }, [selectedModelId, context.grossProfit]);
+
   return (
     // OPTIMIZATION: Removed heavy 'animate-in' slide classes that cause layout thrashing on mount for large DOMs
-    <div className="p-8 space-y-12 max-w-[1600px] mx-auto">
+    <div className="p-6 space-y-6 max-w-[1600px] mx-auto">
 
-      <div className="flex flex-col gap-1">
-        <h2 className="text-3xl font-black tracking-tight text-white">广告投放模拟</h2>
-        <div className="flex justify-between items-center mt-2">
-          <p className="text-zinc-500 text-sm">Real-time Advertising Simulation & Performance Analysis</p>
-          <button className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all shadow-lg shadow-blue-600/20">
-            <span className="material-symbols-outlined text-[20px]">download</span>
-            导出分析报告
-          </button>
-        </div>
+      <div className="flex flex-col gap-0.5">
+        <h2 className="text-2xl font-black tracking-tight text-white">广告投放模拟</h2>
+        <p className="text-zinc-500 text-xs">Real-time Advertising Simulation & Performance Analysis</p>
       </div>
 
       {/* --- Module 1: Advertising Simulator --- */}
-      <section className="space-y-6">
+      <section className="space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="bg-purple-600/10 p-2.5 rounded-xl border border-purple-600/20">
@@ -103,32 +131,122 @@ const AdsAnalysis: React.FC = () => {
             <h3 className="text-xl font-black text-white">投放模拟器</h3>
           </div>
 
-          {/* Data Source Selector */}
-          <div className="flex items-center gap-4 bg-[#111111] border border-zinc-800 rounded-lg p-1.5 px-3">
-            <span className="text-[11px] font-bold text-zinc-500 uppercase">数据源:</span>
-            <select
-              value={selectedModelId}
-              onChange={(e) => setSelectedModelId(e.target.value)}
-              className="bg-zinc-900 border-none text-xs font-bold text-white rounded outline-none w-48 py-1"
-            >
-              <option value="">-- 手动输入 --</option>
-              {savedModels.map(m => (
-                <option key={m.id} value={m.id}>
-                  {m.productName} ({new Date(m.timestamp).toLocaleDateString()}) - ${m.results.planB.price}
-                </option>
-              ))}
-            </select>
+          {/* Current Model Indicator + Data Source Selector */}
+          <div className="flex items-center gap-3">
+            {/* Current Model Indicator with breathing light */}
+            {selectedModel && (
+              <div className="flex items-center gap-2.5 bg-zinc-900/80 border border-zinc-700/50 rounded-xl px-4 py-2">
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-purple-500"></span>
+                </span>
+                <span className="text-xs text-zinc-400">当前方案:</span>
+                <span className="text-sm font-bold text-white">{selectedModel.productName}</span>
+                <span className="text-[10px] bg-purple-500/20 text-purple-400 border border-purple-500/30 px-1.5 py-0.5 rounded font-medium">
+                  {selectedModel.label || '无标签'}
+                </span>
+                <span className="text-sm font-black font-mono text-zinc-300">${selectedModel.inputs.actualPrice}</span>
+                <span className={`text-[10px] font-bold flex items-center gap-0.5 ${(selectedModel.results?.planB?.margin ?? 0) * 100 >= 20 ? 'text-emerald-400' : (selectedModel.results?.planB?.margin ?? 0) * 100 >= 10 ? 'text-yellow-400' : 'text-red-400'}`}>
+                  <span className="material-symbols-outlined text-[12px]">trending_up</span>
+                  {((selectedModel.results?.planB?.margin ?? 0) * 100).toFixed(1)}%
+                </span>
+              </div>
+            )}
+
+            {/* Data Source Selector - Custom Grouped Dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setShowDropdown(!showDropdown)}
+                className="flex items-center gap-3 bg-[#0c0c0e] border border-zinc-800 hover:border-zinc-700 rounded-xl px-4 py-2.5 shadow-lg transition-colors"
+              >
+                <span className="material-symbols-outlined text-purple-500 text-lg">description</span>
+                <span className="text-sm font-bold text-white">导入数据</span>
+                <span className="material-symbols-outlined text-zinc-500 text-sm">{showDropdown ? 'expand_less' : 'expand_more'}</span>
+              </button>
+
+              {/* Dropdown Panel */}
+              {showDropdown && (
+                <div
+                  className="absolute right-0 mt-2 w-[320px] bg-[#111111] border border-zinc-800 rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+                  onMouseLeave={() => setShowDropdown(false)}
+                >
+                  <div className="max-h-[360px] overflow-y-auto [&::-webkit-scrollbar]:hidden">
+                    {/* Manual Mode Option */}
+                    <button
+                      className={`w-full text-left px-4 py-2.5 hover:bg-zinc-800 transition-colors flex items-center gap-2 border-b border-zinc-800 ${!selectedModelId ? 'bg-purple-900/20' : ''}`}
+                      onClick={() => { setSelectedModelId(''); setShowDropdown(false); }}
+                    >
+                      <span className="material-symbols-outlined text-zinc-500 text-sm">edit</span>
+                      <span className="text-sm font-bold text-zinc-300">-- 手动输入 --</span>
+                    </button>
+
+                    {Object.keys(groupedModels).map(groupName => {
+                      const groupItems = groupedModels[groupName];
+                      const isExpanded = expandedGroups[groupName];
+
+                      return (
+                        <div key={groupName} className="border-b border-zinc-800/50 last:border-0">
+                          {/* Group Header */}
+                          <button
+                            onClick={(e) => { e.stopPropagation(); toggleGroup(groupName); }}
+                            className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-zinc-800/50 transition-colors group"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] text-zinc-500 material-symbols-outlined transition-transform duration-200" style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>chevron_right</span>
+                              <span className="text-xs font-bold text-zinc-300 group-hover:text-white">{groupName}</span>
+                              <span className="text-[10px] text-zinc-600 bg-zinc-800 px-1.5 rounded-full">{groupItems.length}</span>
+                            </div>
+                          </button>
+
+                          {/* Group Content */}
+                          {isExpanded && (
+                            <div className="bg-zinc-900/30 pb-1">
+                              {groupItems.map(model => {
+                                const marginPct = (model.results?.planB?.margin ?? 0) * 100;
+                                const marginColor = marginPct >= 20 ? 'text-emerald-400' : marginPct >= 10 ? 'text-yellow-400' : 'text-red-400';
+                                const isSelected = model.id === selectedModelId;
+
+                                return (
+                                  <button
+                                    key={model.id}
+                                    className={`w-full text-left pl-9 pr-4 py-2 hover:bg-zinc-800 transition-colors flex items-center justify-between border-l-2 ml-1 ${isSelected ? 'bg-purple-900/20 border-purple-500' : 'border-transparent hover:border-purple-500/50'}`}
+                                    onClick={() => { setSelectedModelId(model.id); setShowDropdown(false); }}
+                                  >
+                                    <span className={`text-[10px] ${isSelected ? 'bg-purple-500/30 text-purple-300' : 'bg-purple-500/15 text-purple-400'} border border-purple-500/20 px-1.5 py-0.5 rounded font-medium truncate max-w-[110px]`}>
+                                      {model.label || '无标签'}
+                                    </span>
+                                    <div className="flex items-center gap-4">
+                                      <span className="text-sm font-black font-mono text-zinc-300 w-16 text-right">
+                                        ${model.inputs.actualPrice}
+                                      </span>
+                                      <span className={`text-[10px] font-bold ${marginColor} flex items-center gap-0.5 w-14`}>
+                                        <span className="material-symbols-outlined text-[12px]">trending_up</span>
+                                        {marginPct.toFixed(1)}%
+                                      </span>
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Manual Inputs (only show if no model selected) */}
             {!selectedModelId && (
-              <div className="flex items-center gap-3 pl-3 border-l border-zinc-700">
+              <div className="flex items-center gap-3 bg-zinc-900/50 border border-zinc-700/50 rounded-xl px-3 py-2">
                 <div className="flex items-center gap-1">
                   <span className="text-[10px] text-zinc-500">售价 $</span>
                   <input
                     type="number"
                     value={manualPrice}
                     onChange={e => setManualPrice(Number(e.target.value))}
-                    className="w-16 bg-zinc-800 border-none rounded text-xs font-bold text-white text-center py-1"
+                    className="w-16 bg-zinc-800 border border-zinc-700 rounded text-xs font-bold text-white text-center py-1"
                   />
                 </div>
                 <div className="flex items-center gap-1">
@@ -137,7 +255,7 @@ const AdsAnalysis: React.FC = () => {
                     type="number"
                     value={manualCost}
                     onChange={e => setManualCost(Number(e.target.value))}
-                    className="w-16 bg-zinc-800 border-none rounded text-xs font-bold text-white text-center py-1"
+                    className="w-16 bg-zinc-800 border border-zinc-700 rounded text-xs font-bold text-white text-center py-1"
                   />
                 </div>
               </div>
@@ -151,7 +269,7 @@ const AdsAnalysis: React.FC = () => {
           <div className="w-full">
             <MemoizedAdPanel
               sellingPrice={context.price}
-              productCost={context.cost}
+              productCost={context.price - context.grossProfit} // Panel 内部用 price - cost = grossProfit
               // Direct State (Immediate Response)
               budget={simBudget}
               onBudgetChange={setSimBudget}

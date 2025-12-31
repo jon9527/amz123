@@ -198,12 +198,11 @@ const PromotionAnalysis: React.FC = () => {
         // Use pre-calculated USD cost from results if available, otherwise calc from inputs
         const purchaseCost = model.results.costProdUSD;
 
-        // 3. Logistics (Ship + Misc + Storage)
-        const logisticsBase = inputs.shippingUSD + inputs.miscFee;
+        // 3. First Mile (头程) - Separated
+        const firstMile = inputs.shippingUSD;
+        // Logistics (FBA + Misc) - Combined as 物流杂费
+        const logistics = inputs.fbaFee + inputs.miscFee;
         const storageFee = inputs.storageFee || 0;
-
-        // 4. FBA (Fixed)
-        const fbaFee = inputs.fbaFee;
 
         // 5. Commission (Dynamic)
         // Use saved rate or default 15%
@@ -220,10 +219,10 @@ const PromotionAnalysis: React.FC = () => {
         const adminFee = Math.min(5.00, commission * 0.20);
 
         // Loss if Sellable (Customer returns, we just pay fees)
-        const lossSellable = retProcFee + adminFee + fbaFee;
+        const lossSellable = retProcFee + adminFee + inputs.fbaFee;
 
-        // Loss if Unsellable (We lost the item + fees + removal fee)
-        const lossUnsellable = lossSellable + purchaseCost + logisticsBase + storageFee + retRemFee;
+        // Loss if Unsellable (We lost the item + fees + removal fee) - 与ProfitCalculator一致
+        const lossUnsellable = lossSellable + purchaseCost + firstMile + retRemFee;
 
         // Weighted Average Return Cost
         const returnsCost = ((lossSellable * (1 - unsellRate / 100)) + (lossUnsellable * (unsellRate / 100))) * (retRate / 100);
@@ -232,7 +231,7 @@ const PromotionAnalysis: React.FC = () => {
         const adSpend = totalSales * (simTacos / 100);
 
         // 8. Total Cost
-        const totalCost = purchaseCost + logisticsBase + storageFee + fbaFee + returnsCost + commission + adSpend;
+        const totalCost = purchaseCost + firstMile + logistics + storageFee + returnsCost + commission + adSpend;
 
         // 9. Net Profit
         const netProfit = totalSales - totalCost;
@@ -242,9 +241,9 @@ const PromotionAnalysis: React.FC = () => {
         const vol = targetVolume;
         const vTotalSales = totalSales * vol;
         const vPurchase = purchaseCost * vol;
-        const vLogisticsBase = logisticsBase * vol;
+        const vFirstMile = firstMile * vol;
+        const vLogistics = logistics * vol;
         const vStorage = storageFee * vol;
-        const vFBA = fbaFee * vol;
         const vCommission = commission * vol;
         const vReturns = returnsCost * vol;
         const vAds = adSpend * vol;
@@ -254,9 +253,9 @@ const PromotionAnalysis: React.FC = () => {
         // *** Waterfall Data Preparation (Consistent with ProfitCalculator.tsx) ***
         const p1 = vTotalSales;
         const p2 = r2(p1 - vPurchase);
-        const p3 = r2(p2 - vLogisticsBase);
-        const p4 = r2(p3 - vStorage);
-        const p5 = r2(p4 - vFBA);
+        const p3 = r2(p2 - vFirstMile);
+        const p4 = r2(p3 - vLogistics);
+        const p5 = r2(p4 - vStorage);
         const p6 = r2(p5 - vCommission);
         const p7 = r2(p6 - vReturns);
         const p8 = r2(p7 - vAds);
@@ -265,9 +264,9 @@ const PromotionAnalysis: React.FC = () => {
         const waterfallData = [
             { name: '销售总额', val: vTotalSales, range: [0, p1], color: '#334155' },
             { name: '采购成本', val: -vPurchase, range: [p2, p1], color: '#3b82f6' },
-            { name: '物流杂费', val: -vLogisticsBase, range: [p3, p2], color: '#a855f7' },
-            { name: '月仓储费', val: -vStorage, range: [p4, p3], color: '#6366f1' },
-            { name: 'FBA 配送', val: -vFBA, range: [p5, p4], color: '#71717a' },
+            { name: '头程', val: -vFirstMile, range: [p3, p2], color: '#0ea5e9' },
+            { name: '物流杂费', val: -vLogistics, range: [p4, p3], color: '#a855f7' },
+            { name: '月仓储费', val: -vStorage, range: [p5, p4], color: '#6366f1' },
             { name: '销售佣金', val: -vCommission, range: [p6, p5], color: '#f59e0b' },
             { name: '退货损耗', val: -vReturns, range: [p7, p6], color: '#ef4444' },
             { name: '广告成本', val: -vAds, range: [p8, p7], color: '#eab308' },
@@ -278,25 +277,25 @@ const PromotionAnalysis: React.FC = () => {
             unit: {
                 totalSales,
                 purchaseCost,
-                logisticsBase,
+                firstMile,
+                logistics,
                 storageFee,
-                fbaFee,
                 returnsCost,
                 commission,
                 adSpend,
                 totalCost,
                 netProfit,
                 netMargin,
-                baseCostPerUnit: purchaseCost + logisticsBase + storageFee + fbaFee + returnsCost, // EXCLUDE commission (matches HTML fixedCost logic: Product+Log+Storage+FBA+Returns)
-                commissionRate: commRate, // NEW: pass commission rate separately
+                baseCostPerUnit: purchaseCost + firstMile + logistics + storageFee + returnsCost, // EXCLUDE commission
+                commissionRate: commRate,
                 breakEvenCpc: (totalSales - (totalCost - adSpend)) * (simCvr / 100)
             },
             volume: {
                 totalSales: vTotalSales,
                 purchaseCost: vPurchase,
-                logisticsBase: vLogisticsBase,
+                firstMile: vFirstMile,
+                logistics: vLogistics,
                 storageFee: vStorage,
-                fbaFee: vFBA,
                 returnsCost: vReturns,
                 commission: vCommission,
                 adSpend: vAds,
@@ -340,6 +339,7 @@ const PromotionAnalysis: React.FC = () => {
         const colorStyles: any = {
             slate: 'border-slate-800 bg-slate-900/50 text-slate-400',
             blue: 'border-blue-900/50 bg-blue-900/20 text-blue-400',
+            sky: 'border-sky-900/50 bg-sky-900/20 text-sky-400',
             orange: 'border-orange-900/50 bg-orange-900/20 text-orange-400',
             purple: 'border-purple-900/50 bg-purple-900/20 text-purple-400',
             indigo: 'border-indigo-900/50 bg-indigo-900/20 text-indigo-400',
@@ -411,8 +411,8 @@ const PromotionAnalysis: React.FC = () => {
                         disabled={isExporting}
                         className="flex items-center gap-2 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-400 rounded-xl px-4 py-2.5 shadow-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                        <span className="material-symbols-outlined text-lg">{isExporting ? 'hourglass_empty' : 'picture_as_pdf'}</span>
-                        <span className="text-sm font-bold">{isExporting ? '导出中...' : '导出 PDF'}</span>
+                        <span className="material-symbols-outlined text-lg">picture_as_pdf</span>
+                        <span className="text-sm font-bold">导出 PDF</span>
                     </button>
 
                     {/* Data Source Selector - Custom Grouped Dropdown */}
@@ -507,12 +507,12 @@ const PromotionAnalysis: React.FC = () => {
                         <div className="grid grid-cols-1 md:grid-cols-9 gap-4 w-full">
                             <CostCard label="① 总销售额" value={calc.unit.totalSales} subValue={'100%'} color="slate" exchangeRate={savedModels.find(m => m.id === selectedModelId)?.inputs.exchangeRate} />
                             <CostCard label="② 采购成本" value={calc.unit.purchaseCost} subValue={`${((calc.unit.purchaseCost / calc.unit.totalSales) * 100).toFixed(1)}%`} color="blue" exchangeRate={savedModels.find(m => m.id === selectedModelId)?.inputs.exchangeRate} />
-                            <CostCard label="③ 物流杂费" value={calc.unit.logisticsBase} subValue={`${((calc.unit.logisticsBase / calc.unit.totalSales) * 100).toFixed(1)}%`} color="purple" exchangeRate={savedModels.find(m => m.id === selectedModelId)?.inputs.exchangeRate} />
-                            <CostCard label="④ 月仓储费" value={calc.unit.storageFee} subValue={`${((calc.unit.storageFee / calc.unit.totalSales) * 100).toFixed(1)}%`} color="indigo" exchangeRate={savedModels.find(m => m.id === selectedModelId)?.inputs.exchangeRate} />
-                            <CostCard label="⑤ FBA配送" value={calc.unit.fbaFee} subValue={`${((calc.unit.fbaFee / calc.unit.totalSales) * 100).toFixed(1)}%`} color="zinc" exchangeRate={savedModels.find(m => m.id === selectedModelId)?.inputs.exchangeRate} />
-                            <CostCard label="⑥ 平台佣金" value={calc.unit.commission} subValue={`${((calc.unit.commission / calc.unit.totalSales) * 100).toFixed(1)}%`} color="orange" exchangeRate={savedModels.find(m => m.id === selectedModelId)?.inputs.exchangeRate} />
+                            <CostCard label="③ 头程" value={calc.unit.firstMile} subValue={`${((calc.unit.firstMile / calc.unit.totalSales) * 100).toFixed(1)}%`} color="sky" exchangeRate={savedModels.find(m => m.id === selectedModelId)?.inputs.exchangeRate} />
+                            <CostCard label="④ 物流杂费" value={calc.unit.logistics} subValue={`${((calc.unit.logistics / calc.unit.totalSales) * 100).toFixed(1)}%`} color="purple" exchangeRate={savedModels.find(m => m.id === selectedModelId)?.inputs.exchangeRate} />
+                            <CostCard label="⑤ 月仓储费" value={calc.unit.storageFee} subValue={`${((calc.unit.storageFee / calc.unit.totalSales) * 100).toFixed(1)}%`} color="indigo" exchangeRate={savedModels.find(m => m.id === selectedModelId)?.inputs.exchangeRate} />
+                            <CostCard label="⑥ 销售佣金" value={calc.unit.commission} subValue={`${((calc.unit.commission / calc.unit.totalSales) * 100).toFixed(1)}%`} color="orange" exchangeRate={savedModels.find(m => m.id === selectedModelId)?.inputs.exchangeRate} />
                             <CostCard label="⑦ 退货损耗" value={calc.unit.returnsCost} subValue={`${((calc.unit.returnsCost / calc.unit.totalSales) * 100).toFixed(1)}%`} color="rose" exchangeRate={savedModels.find(m => m.id === selectedModelId)?.inputs.exchangeRate} />
-                            <CostCard label="⑧ 广告花费" value={calc.unit.adSpend} subValue={`${simTacos.toFixed(1)}%`} color="yellow" exchangeRate={savedModels.find(m => m.id === selectedModelId)?.inputs.exchangeRate} />
+                            <CostCard label="⑧ 广告成本" value={calc.unit.adSpend} subValue={`${simTacos.toFixed(1)}%`} color="yellow" exchangeRate={savedModels.find(m => m.id === selectedModelId)?.inputs.exchangeRate} />
 
                             {/* Profit as 9th Card */}
                             <div className={`p-4 rounded-xl border flex flex-col justify-between h-[130px] min-w-0 flex-1 items-center ${calc.unit.netProfit >= 0 ? 'bg-emerald-900/20 border-emerald-500/50' : 'bg-red-900/20 border-red-500/50'}`}>
@@ -554,12 +554,12 @@ const PromotionAnalysis: React.FC = () => {
                         <div className="grid grid-cols-1 md:grid-cols-9 gap-4 w-full opacity-90">
                             <CostCard label="① 总销售额" value={calc.volume.totalSales} subValue={'100%'} color="slate" exchangeRate={savedModels.find(m => m.id === selectedModelId)?.inputs.exchangeRate} />
                             <CostCard label="② 采购成本" value={calc.volume.purchaseCost} subValue={`${((calc.volume.purchaseCost / calc.volume.totalSales) * 100).toFixed(1)}%`} color="blue" exchangeRate={savedModels.find(m => m.id === selectedModelId)?.inputs.exchangeRate} />
-                            <CostCard label="③ 物流杂费" value={calc.volume.logisticsBase} subValue={`${((calc.volume.logisticsBase / calc.volume.totalSales) * 100).toFixed(1)}%`} color="purple" exchangeRate={savedModels.find(m => m.id === selectedModelId)?.inputs.exchangeRate} />
-                            <CostCard label="④ 月仓储费" value={calc.volume.storageFee} subValue={`${((calc.volume.storageFee / calc.volume.totalSales) * 100).toFixed(1)}%`} color="indigo" exchangeRate={savedModels.find(m => m.id === selectedModelId)?.inputs.exchangeRate} />
-                            <CostCard label="⑤ FBA配送" value={calc.volume.fbaFee} subValue={`${((calc.volume.fbaFee / calc.volume.totalSales) * 100).toFixed(1)}%`} color="zinc" exchangeRate={savedModels.find(m => m.id === selectedModelId)?.inputs.exchangeRate} />
-                            <CostCard label="⑥ 平台佣金" value={calc.volume.commission} subValue={`${((calc.volume.commission / calc.volume.totalSales) * 100).toFixed(1)}%`} color="orange" exchangeRate={savedModels.find(m => m.id === selectedModelId)?.inputs.exchangeRate} />
+                            <CostCard label="③ 头程" value={calc.volume.firstMile} subValue={`${((calc.volume.firstMile / calc.volume.totalSales) * 100).toFixed(1)}%`} color="sky" exchangeRate={savedModels.find(m => m.id === selectedModelId)?.inputs.exchangeRate} />
+                            <CostCard label="④ 物流杂费" value={calc.volume.logistics} subValue={`${((calc.volume.logistics / calc.volume.totalSales) * 100).toFixed(1)}%`} color="purple" exchangeRate={savedModels.find(m => m.id === selectedModelId)?.inputs.exchangeRate} />
+                            <CostCard label="⑤ 月仓储费" value={calc.volume.storageFee} subValue={`${((calc.volume.storageFee / calc.volume.totalSales) * 100).toFixed(1)}%`} color="indigo" exchangeRate={savedModels.find(m => m.id === selectedModelId)?.inputs.exchangeRate} />
+                            <CostCard label="⑥ 销售佣金" value={calc.volume.commission} subValue={`${((calc.volume.commission / calc.volume.totalSales) * 100).toFixed(1)}%`} color="orange" exchangeRate={savedModels.find(m => m.id === selectedModelId)?.inputs.exchangeRate} />
                             <CostCard label="⑦ 退货损耗" value={calc.volume.returnsCost} subValue={`${((calc.volume.returnsCost / calc.volume.totalSales) * 100).toFixed(1)}%`} color="rose" exchangeRate={savedModels.find(m => m.id === selectedModelId)?.inputs.exchangeRate} />
-                            <CostCard label="⑧ 广告花费" value={calc.volume.adSpend} subValue={`${simTacos.toFixed(1)}%`} color="yellow" exchangeRate={savedModels.find(m => m.id === selectedModelId)?.inputs.exchangeRate} />
+                            <CostCard label="⑧ 广告成本" value={calc.volume.adSpend} subValue={`${simTacos.toFixed(1)}%`} color="yellow" exchangeRate={savedModels.find(m => m.id === selectedModelId)?.inputs.exchangeRate} />
 
                             <div className={`p-4 rounded-xl border flex flex-col justify-between h-[130px] min-w-0 flex-1 items-center ${calc.volume.netProfit >= 0 ? 'bg-emerald-900/20 border-emerald-500/50' : 'bg-red-900/20 border-red-500/50'}`}>
                                 <span className={`text-[11px] font-bold uppercase tracking-wider flex items-center gap-1 ${calc.volume.netProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>

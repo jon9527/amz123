@@ -150,7 +150,6 @@ export const AdvertisingAnalysisPanel: React.FC<AdvertisingAnalysisPanelProps> =
                     <div className="p-1.5 bg-purple-500/10 rounded-lg"><span className="material-symbols-outlined text-purple-400 text-[20px]">ads_click</span></div>
                     <span className="font-black text-zinc-100 text-[15px] tracking-wide">投放模拟器</span>
                 </div>
-                <div className="text-[11px] font-mono font-bold text-zinc-600 bg-zinc-900 border border-zinc-800 px-2 py-1 rounded">LINKED: PLAN B</div>
             </div>
 
             {/* Inputs - Controlled */}

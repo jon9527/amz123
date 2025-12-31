@@ -15,6 +15,7 @@ import SaveProfitModelDialog from '../components/SaveProfitModelDialog';
 import { ProfitModelService } from '../services/profitModelService';
 import { ProfitModelInputs, ProfitModelResults, SavedProfitModel } from '../types';
 import { useProducts } from '../ProductContext';
+import { useLogistics } from '../LogisticsContext';
 
 // --- 全局样式 ---
 const globalInputStyles = `
@@ -113,13 +114,18 @@ const DistributionRow: React.FC<{ label: string, value: number, price: number, c
 
 const ProfitCalculator: React.FC = () => {
   const { products } = useProducts();
+  const { channels } = useLogistics();
   const [selectedProductId, setSelectedProductId] = useState<string>('');
+  const [selectedChannelId, setSelectedChannelId] = useState<string>('3'); // 默认: 普船海卡
   const [targetAcos, setTargetAcos] = useState(15);
   const [targetMargin, setTargetMargin] = useState(15);
   const [autoComm, setAutoComm] = useState(true);
   const [manualComm, setManualComm] = useState(15);
   const [purchaseRMB, setPurchaseRMB] = useState(19.99);
-  const [exchangeRate, setExchangeRate] = useState(7.1);
+  const [exchangeRate, setExchangeRate] = useState(() => {
+    const cached = localStorage.getItem('exchangeRate');
+    return cached ? r2(parseFloat(cached)) : 7.1;
+  });
   const [shippingUSD, setShippingUSD] = useState(0.9);
   const [fbaFee, setFbaFee] = useState(5.69);
   const [miscFee, setMiscFee] = useState(0);
@@ -252,8 +258,51 @@ const ProfitCalculator: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchRate().then(rate => setExchangeRate(r2(rate)));
+    fetchRate().then(rate => {
+      const rounded = r2(rate);
+      setExchangeRate(prev => {
+        if (prev === rounded) return prev;
+        return rounded;
+      });
+      localStorage.setItem('exchangeRate', rounded.toString());
+    });
   }, []); // Run once on mount
+
+  // Auto-calculate shippingUSD from selected channel + product dimensions
+  useEffect(() => {
+    if (!selectedChannelId) return; // Manual mode, don't override
+
+    const channel = channels.find(c => c.id === selectedChannelId);
+    const product = products.find(p => p.id === selectedProductId);
+
+    if (!channel) return;
+
+    // Get dimensions (from product or use defaults)
+    const length = product?.length || 30;
+    const width = product?.width || 20;
+    const height = product?.height || 15;
+    const weight = product?.weight || 1;
+    const pcsPerBox = product?.pcsPerBox || 1;
+
+    const dimVol = length * width * height; // cm³
+    const volDivisor = channel.volDivisor || (channel.type === 'sea' ? 0 : 6000);
+    const volWgt = volDivisor > 0 ? dimVol / volDivisor : 0;
+    const chgWgt = Math.max(weight, volWgt);
+
+    let costPerPcsRMB: number;
+    if (channel.type === 'sea') {
+      // Sea: CBM-based
+      const cbm = dimVol / 1000000;
+      costPerPcsRMB = (cbm * (channel.pricePerCbm || 0)) / pcsPerBox;
+    } else {
+      // Air/Exp: Weight-based
+      costPerPcsRMB = (chgWgt * (channel.pricePerKg || 0)) / pcsPerBox;
+    }
+
+    // Convert to USD
+    const costPerPcsUSD = r2(costPerPcsRMB / exchangeRate);
+    setShippingUSD(costPerPcsUSD);
+  }, [selectedChannelId, selectedProductId, channels, products, exchangeRate]);
 
   const handleProductSelect = (pid: string) => {
     setSelectedProductId(pid);
@@ -607,14 +656,14 @@ const ProfitCalculator: React.FC = () => {
   const waterfallData = useMemo(() => {
     const pb = results.planB;
     const costProdUSD = results.costProdUSD;
-    const logistics = r2(shippingUSD + miscFee);
+    const firstMile = r2(shippingUSD);
+    const logistics = r2(fbaFee + miscFee); // FBA + 杂费
     const storage = r2(storageFee);
-    const fba = r2(fbaFee);
     const p1 = pb.price;
     const p2 = r2(p1 - costProdUSD);
-    const p3 = r2(p2 - logistics);
-    const p4 = r2(p3 - storage);
-    const p5 = r2(p4 - fba);
+    const p3 = r2(p2 - firstMile);
+    const p4 = r2(p3 - logistics);
+    const p5 = r2(p4 - storage);
     const p6 = r2(p5 - pb.commVal);
     const p7 = r2(p6 - pb.ret);
     const p8 = r2(p7 - pb.adsVal);
@@ -622,9 +671,9 @@ const ProfitCalculator: React.FC = () => {
     return [
       { name: '销售总额', val: pb.price, range: [0, p1], color: '#334155' },
       { name: '采购成本', val: -costProdUSD, range: [p2, p1], color: '#3b82f6' },
-      { name: '物流杂费', val: -logistics, range: [p3, p2], color: '#a855f7' },
-      { name: '月仓储费', val: -storage, range: [p4, p3], color: '#6366f1' },
-      { name: 'FBA 配送', val: -fba, range: [p5, p4], color: '#71717a' },
+      { name: '头程', val: -firstMile, range: [p3, p2], color: '#0ea5e9' },
+      { name: '物流杂费', val: -logistics, range: [p4, p3], color: '#a855f7' },
+      { name: '月仓储费', val: -storage, range: [p5, p4], color: '#6366f1' },
       { name: '销售佣金', val: -pb.commVal, range: [p6, p5], color: '#f59e0b' },
       { name: '退货损耗', val: -pb.ret, range: [p7, p6], color: '#ef4444' },
       { name: '广告成本', val: -pb.adsVal, range: [p8, p7], color: '#eab308' },
@@ -639,18 +688,18 @@ const ProfitCalculator: React.FC = () => {
   );
 
   return (
-    <div className="p-6 max-w-[1700px] mx-auto space-y-8 animate-in fade-in duration-500" >
+    <div className="p-6 pt-0 max-w-[1700px] mx-auto space-y-4" >
       <style>{globalInputStyles}</style>
 
       {/* 顶部标题区 */}
-      <div className="flex items-center justify-between gap-6 px-4 py-10 border-b border-[#27272a]/20" >
-        <div className="flex items-center gap-6">
-          <div className="bg-blue-600/10 p-4 rounded-2xl border border-blue-500/20 shadow-lg shadow-blue-500/5">
-            <span className="material-symbols-outlined text-6xl text-blue-500 leading-none">account_balance_wallet</span>
+      <div className="flex items-center justify-between gap-6 px-4 py-1 border-b border-[#27272a]/20" >
+        <div className="flex items-center gap-4">
+          <div className="bg-blue-600/10 p-3 rounded-xl border border-blue-500/20 shadow-lg shadow-blue-500/5">
+            <span className="material-symbols-outlined text-3xl text-blue-500 leading-none">account_balance_wallet</span>
           </div>
           <div className="flex flex-col">
-            <h1 className="text-5xl font-black text-white tracking-tighter leading-none">亚马逊利润测算</h1>
-            <p className="text-zinc-600 text-xs font-black uppercase tracking-[0.4em] mt-3">版本 V1.0 • 实时运营仿真系统</p>
+            <h1 className="text-2xl font-black text-white tracking-tighter leading-none">亚马逊利润测算</h1>
+            <p className="text-zinc-600 text-[10px] font-black uppercase tracking-widest mt-1">版本 V1.0 • 实时运营仿真系统</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -826,11 +875,44 @@ const ProfitCalculator: React.FC = () => {
 
           <div className="bg-[#0c0c0e] border border-[#27272a] rounded-2xl p-6 shadow-lg space-y-5">
             <h3 className="text-[12px] font-black text-white uppercase tracking-widest flex items-center gap-2.5"><span className="material-symbols-outlined text-blue-500 text-[20px]">inventory_2</span> 物流仓储</h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="group"><Label>头程 $</Label><StepperInput value={shippingUSD} onChange={setShippingUSD} step={0.1} /></div>
-              <div className="group"><Label>FBA $</Label><StepperInput value={fbaFee} onChange={setFbaFee} step={0.1} /></div>
-              <div className="group"><Label>杂费 $</Label><StepperInput value={miscFee} onChange={setMiscFee} step={0.1} /></div>
-              <div className="group"><Label>月仓储 $</Label><StepperInput value={storageFee} onChange={setStorageFee} step={0.01} /></div>
+            <div className="space-y-3">
+              {/* Row 1: 头程物流 */}
+              <div className="group">
+                <Label>头程物流</Label>
+                <div className="flex gap-2">
+                  <select
+                    value={selectedChannelId}
+                    onChange={(e) => setSelectedChannelId(e.target.value)}
+                    className="flex-1 bg-[#0d0d0f] border border-[#27272a] rounded-md h-[32px] text-xs text-white px-2 focus:outline-none focus:border-zinc-500"
+                  >
+                    <option value="">📌 手动输入</option>
+                    {channels.filter(c => c.status === 'active').map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.type === 'sea' ? '🚢' : c.type === 'air' ? '✈️' : '🚀'} {c.name} ({c.deliveryDays}天)
+                      </option>
+                    ))}
+                  </select>
+                  <div className={`${CONTAINER_CLASS} w-20 ${selectedChannelId ? 'bg-blue-900/20 border-blue-500/30' : ''}`}>
+                    {selectedChannelId ? (
+                      <span className="text-sm font-black text-blue-400 font-mono">${shippingUSD}</span>
+                    ) : (
+                      <input
+                        type="number"
+                        value={shippingUSD}
+                        onChange={(e) => setShippingUSD(parseFloat(e.target.value) || 0)}
+                        className={INPUT_CLASS}
+                        step="0.1"
+                      />
+                    )}
+                  </div>
+                </div>
+              </div>
+              {/* Row 2: FBA / 杂费 / 仓储 */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="group"><Label>FBA $</Label><StepperInput value={fbaFee} onChange={setFbaFee} step={0.1} /></div>
+                <div className="group"><Label>杂费 $</Label><StepperInput value={miscFee} onChange={setMiscFee} step={0.1} /></div>
+                <div className="group"><Label>月仓储 $</Label><StepperInput value={storageFee} onChange={setStorageFee} step={0.01} /></div>
+              </div>
             </div>
           </div>
 
@@ -876,9 +958,9 @@ const ProfitCalculator: React.FC = () => {
             <div className="p-8 flex-1 flex flex-col justify-between bg-[#0d0d0f]">
               <div className="flex-1 flex flex-col justify-center space-y-7">
                 <DistributionRow label="采购成本" value={results.planA.costProdUSD} price={results.planA.price} color="bg-blue-500" />
-                <DistributionRow label="物流杂费" value={r2(shippingUSD + miscFee)} price={results.planA.price} color="bg-purple-500" />
+                <DistributionRow label="头程" value={r2(shippingUSD)} price={results.planA.price} color="bg-sky-500" />
+                <DistributionRow label="物流杂费" value={r2(fbaFee + miscFee)} price={results.planA.price} color="bg-purple-500" />
                 <DistributionRow label="月仓储费" value={r2(storageFee)} price={results.planA.price} color="bg-indigo-400" />
-                <DistributionRow label="FBA 配送" value={r2(fbaFee)} price={results.planA.price} color="bg-zinc-500" />
                 <DistributionRow label="销售佣金" value={results.planA.commVal} price={results.planA.price} color="bg-orange-500" />
                 <DistributionRow label="退货损耗" value={results.planA.ret} price={results.planA.price} color="bg-rose-500" />
                 <DistributionRow label="广告成本" value={results.planA.adsVal} price={results.planA.price} color="bg-amber-400" />
@@ -951,9 +1033,9 @@ const ProfitCalculator: React.FC = () => {
             <div className="p-8 flex-1 flex flex-col justify-between bg-[#0d0d0f]">
               <div className="flex-1 flex flex-col justify-center space-y-7">
                 <DistributionRow label="采购成本" value={results.planB.costProdUSD} price={results.planB.price} color="bg-blue-500" />
-                <DistributionRow label="物流杂费" value={r2(shippingUSD + miscFee)} price={results.planB.price} color="bg-purple-500" />
+                <DistributionRow label="头程" value={r2(shippingUSD)} price={results.planB.price} color="bg-sky-500" />
+                <DistributionRow label="物流杂费" value={r2(fbaFee + miscFee)} price={results.planB.price} color="bg-purple-500" />
                 <DistributionRow label="月仓储费" value={r2(storageFee)} price={results.planB.price} color="bg-indigo-400" />
-                <DistributionRow label="FBA 配送" value={r2(fbaFee)} price={results.planB.price} color="bg-zinc-500" />
                 <DistributionRow label="销售佣金" value={results.planB.commVal} price={results.planB.price} color="bg-orange-500" />
                 <DistributionRow label="退货损耗" value={results.planB.ret} price={results.planB.price} color="bg-rose-500" />
                 <DistributionRow label="广告成本" value={results.planB.adsVal} price={results.planB.price} color="bg-amber-400" />

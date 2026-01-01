@@ -77,7 +77,7 @@ export const runSimulation = (
 
         if (t0 < maxSimDays) {
             dailyChange[t0] -= depositAmount;
-            dailyProfitChange[t0] -= depositAmount;
+            dailyProfitChange[t0] -= depositAmount; // 投入阶段：利润曲线减去定金
             financialEvents.push({
                 day: t0,
                 type: 'deposit',
@@ -88,7 +88,7 @@ export const runSimulation = (
         }
         if (t1 < maxSimDays) {
             dailyChange[t1] -= balanceAmount;
-            dailyProfitChange[t1] -= balanceAmount;
+            dailyProfitChange[t1] -= balanceAmount; // 投入阶段：利润曲线减去尾款
             financialEvents.push({
                 day: t1,
                 type: 'balance',
@@ -100,7 +100,7 @@ export const runSimulation = (
         const freightDay = Math.floor(t2);
         if (freightDay < maxSimDays) {
             dailyChange[freightDay] -= batchFreightUSD;
-            dailyProfitChange[freightDay] -= batchFreightUSD;
+            dailyProfitChange[freightDay] -= batchFreightUSD; // 投入阶段：利润曲线减去运费
             financialEvents.push({
                 day: freightDay,
                 type: 'freight',
@@ -204,7 +204,7 @@ export const runSimulation = (
                 totalSoldQty += take;
                 totalRevenue += revenue;
                 totalNetProfit += profit;
-                // 利润曲线：销售日计入回款收入 (USD)
+                // 利润曲线：销售日计入回款（与成本抵消后即为利润）
                 dailyProfitChange[d] += revenue;
 
                 batchObj.qty -= take;
@@ -309,6 +309,7 @@ export const runSimulation = (
         runningProfit += dailyProfitChange[d];
         if (runningCash < minCash) minCash = runningCash;
         if (beIdx === null && prevCash < 0 && runningCash >= 0 && d > 10) { beIdx = d; bePoint = { x: d, y: runningCash }; }
+        // 利润盈亏点：从负数变成正数（投入回本）
         if (profBeIdx === null && prevProf < 0 && runningProfit >= 0 && d > 10) { profBeIdx = d; profBePoint = { x: d, y: runningProfit }; }
         if (d <= cutoffDay) {
             cashPoints.push({ x: d, y: runningCash });

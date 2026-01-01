@@ -34,6 +34,7 @@ export interface ModuleState {
     prodDays: number;
     batches: ReplenishmentBatch[];
     isFreeMode: boolean;
+    safetyDays: number;
 }
 
 // 资金事件类型

@@ -1,0 +1,104 @@
+import React, { useState, useEffect } from 'react';
+import { r2 } from '../utils/formatters';
+
+// Shared style constants
+const INPUT_H = "h-[24px]";
+const CONTAINER_CLASS = `w-full bg-[#0d0d0f] border border-[#27272a] rounded-lg flex items-center justify-center relative transition-all focus-within:border-zinc-500 overflow-hidden group`;
+const INPUT_CLASS = "bg-transparent border-none text-[11px] font-black text-white text-center w-full h-full outline-none focus:ring-0 p-0 font-mono leading-none";
+
+interface StepperInputProps {
+    value: number;
+    onChange: (v: number) => void;
+    step?: number;
+    min?: number;
+    disabled?: boolean;
+    color?: 'white' | 'blue' | 'emerald';
+    height?: 'compact' | 'normal' | 'large';
+}
+
+/**
+ * Shared StepperInput component with +/- buttons
+ * Used in ProfitCalculator and PromotionDeduction
+ */
+const StepperInput: React.FC<StepperInputProps> = ({
+    value,
+    onChange,
+    step = 1,
+    min = 0,
+    disabled = false,
+    color = 'white',
+    height = 'compact'
+}) => {
+    const [displayValue, setDisplayValue] = useState<string>(value.toString());
+
+    useEffect(() => {
+        const parsed = parseFloat(displayValue);
+        if (parsed !== value && !isNaN(parsed)) {
+            setDisplayValue(value.toString());
+        }
+    }, [value]);
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (disabled) return;
+        let val = e.target.value;
+        if (val === '') { setDisplayValue(''); onChange(min); return; }
+        if (!/^\d*\.?\d*$/.test(val)) return;
+        setDisplayValue(val);
+        const num = parseFloat(val);
+        if (!isNaN(num)) onChange(Math.max(min, num));
+    };
+
+    const handleBlur = () => {
+        if (disabled) return;
+        if (displayValue === '' || isNaN(parseFloat(displayValue))) {
+            setDisplayValue(min.toString()); onChange(min);
+        } else {
+            const num = parseFloat(displayValue);
+            setDisplayValue(num.toString());
+            onChange(Math.max(min, num));
+        }
+    };
+
+    const textColorClass = disabled
+        ? 'text-zinc-500'
+        : color === 'emerald'
+            ? 'text-emerald-500'
+            : color === 'blue'
+                ? 'text-blue-400'
+                : 'text-white';
+
+    const heightClass = height === 'large' ? 'h-8' : height === 'normal' ? 'h-[32px]' : INPUT_H;
+    const disabledClass = disabled ? 'bg-zinc-900/50 border-zinc-800 cursor-not-allowed opacity-30' : '';
+
+    return (
+        <div className={`${CONTAINER_CLASS} ${heightClass} ${disabledClass}`}>
+            <input
+                type="text"
+                inputMode="decimal"
+                value={displayValue}
+                onChange={handleChange}
+                onBlur={handleBlur}
+                disabled={disabled}
+                className={`${INPUT_CLASS} ${textColorClass} disabled:cursor-not-allowed`}
+            />
+            {!disabled && (
+                <div className="absolute right-0 top-0 bottom-0 flex flex-col justify-center gap-0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none pr-0.5 bg-[#0d0d0f]">
+                    <button
+                        onClick={() => { const next = r2(value + step); onChange(next); setDisplayValue(next.toString()); }}
+                        className="pointer-events-auto material-symbols-outlined text-[10px] text-zinc-500 hover:text-white leading-none scale-75 block h-[10px]"
+                    >
+                        expand_less
+                    </button>
+                    <button
+                        onClick={() => { const next = r2(Math.max(min, value - step)); onChange(next); setDisplayValue(next.toString()); }}
+                        className="pointer-events-auto material-symbols-outlined text-[10px] text-zinc-500 hover:text-white leading-none scale-75 block h-[10px]"
+                    >
+                        expand_more
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+};
+
+export default StepperInput;

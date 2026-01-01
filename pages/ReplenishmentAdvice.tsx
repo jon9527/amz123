@@ -58,6 +58,7 @@ const getDefaultState = (): ModuleState => ({
     seaChannelId: '3',  // 普船海卡
     airChannelId: '4',  // 空派专线
     expChannelId: '5',  // 红单快递
+    safetyDays: 7, // 默认安全天数
     simStart: new Date().toISOString().split('T')[0],
     monthlyDailySales: [50, 55, 60, 55, 50, 45, 40, 40, 50, 60, 80, 100], // 1-12月日销量
     seasonality: Array(12).fill(1.0), // 保留向后兼容
@@ -224,6 +225,7 @@ const ReplenishmentAdvice: React.FC = () => {
                 { id: 1, name: '批次2', type: 'sea', qty: 1000, offset: 30, prodDays: 15 },
             ],
             isFreeMode: false,
+            safetyDays: 7,
         };
     };
 
@@ -515,23 +517,6 @@ const ReplenishmentAdvice: React.FC = () => {
         }
     }, [state, logCosts, calcSimulation]);
 
-    // ============ AUTO GENERATE BATCHES ============
-    const autoGenerate = () => {
-        const newBatches: ReplenishmentBatch[] = [];
-        for (let i = 0; i < 6; i++) {
-            const nextId = state.batches.length + i; // Calculate nextId for each new batch
-            const lastBatch = state.batches.length > 0 ? state.batches[state.batches.length - 1] : null;
-            newBatches.push({ // Push to the newBatches array
-                id: nextId,
-                name: `New Batch ${nextId + 1}`,
-                type: 'sea' as const,
-                qty: 1000,
-                offset: lastBatch ? lastBatch.offset + 30 : 0,
-                prodDays: 5,
-            });
-        }
-        setState((s) => ({ ...s, batches: newBatches }));
-    };
 
     // ============ CHARTS ============
     // 1. Cleanup Effect - Runs only on Unmount
@@ -612,6 +597,9 @@ const ReplenishmentAdvice: React.FC = () => {
 
 
         // --- GANTT CHART ---
+
+        const totalReplenishQty = state.batches.reduce((sum, b) => sum + (b.qty || 0), 0);
+
         if (ganttChartRef.current) {
             // Update Existing
             const chart = ganttChartRef.current;
@@ -647,10 +635,10 @@ const ReplenishmentAdvice: React.FC = () => {
                     // 使用索引作为 Category Labels，确保顺序固定
                     labels: state.batches.map((_, i) => i.toString()),
                     datasets: [
-                        { label: '产', data: simResult.ganttProd, backgroundColor: '#d94841', borderRadius: 4, barThickness: 35 },
-                        { label: '运', data: simResult.ganttShip, backgroundColor: '#e6a23c', borderRadius: 4, barThickness: 35 },
-                        { label: '待', data: simResult.ganttHold, backgroundColor: '#909399', borderRadius: 0, barThickness: 35 },
-                        { label: '销', data: simResult.ganttSell, backgroundColor: '#2e9f6e', borderRadius: 4, barThickness: 35 },
+                        { label: '生产', data: simResult.ganttProd, backgroundColor: '#d94841', borderRadius: 4, barThickness: 35 },
+                        { label: '运输', data: simResult.ganttShip, backgroundColor: '#e6a23c', borderRadius: 4, barThickness: 35 },
+                        { label: '待售', data: simResult.ganttHold, backgroundColor: '#909399', borderRadius: 0, barThickness: 35 },
+                        { label: '销售', data: simResult.ganttSell, backgroundColor: '#2e9f6e', borderRadius: 4, barThickness: 35 },
                         { label: '断货', data: simResult.ganttStockout, backgroundColor: 'rgba(217, 72, 65, 0.3)', borderColor: '#d94841', borderWidth: 1, borderRadius: 4, barThickness: 20 },
                     ],
                 },
@@ -667,19 +655,32 @@ const ReplenishmentAdvice: React.FC = () => {
                             font: { weight: 'bold', size: 9 },
                             formatter: (val: any, ctx: any) => {
                                 if (ctx.dataset.label === '断货') return `缺${val.gapDays}天`;
-                                if (ctx.dataset.label === '待') return `待${val.duration}天`;
+                                if (ctx.dataset.label === '待售') return `待${val.duration}天`;
                                 return ctx.dataset.label;
                             },
                         },
                         tooltip: {
                             callbacks: {
+                                title: (items: any) => {
+                                    if (items.length > 0) {
+                                        const batchIdx = items[0].raw?.batchIdx;
+                                        if (batchIdx !== undefined) {
+                                            const b = state.batches[batchIdx];
+                                            if (b) {
+                                                const finalQty = Math.round(b.qty * (1 + (b.extraPercent || 0) / 100));
+                                                return `批次${batchIdx + 1} (${finalQty}件)`;
+                                            }
+                                        }
+                                    }
+                                    return '';
+                                },
                                 label: (ctx: any) => {
                                     const start = fmtDateAxis(ctx.raw.x[0]);
                                     const end = fmtDateAxis(ctx.raw.x[1]);
                                     const d = ctx.raw;
-                                    if (ctx.dataset.label === '产') return [`🗓️ ${start} - ${end}`, `💰 成本: $${Math.round(d.cost).toLocaleString()}`];
-                                    if (ctx.dataset.label === '运') return [`🗓️ ${start} - ${end}`, `🚚 运费: $${Math.round(d.freight).toLocaleString()}`];
-                                    if (ctx.dataset.label === '销') return [`🗓️ ${start} - ${end}`, `💵 回款: $${Math.round(d.revenue).toLocaleString()}`];
+                                    if (ctx.dataset.label === '生产') return [`🗓️ ${start} - ${end}`, `💰 成本: $${Math.round(d.cost).toLocaleString()}`];
+                                    if (ctx.dataset.label === '运输') return [`🗓️ ${start} - ${end}`, `🚚 运费: $${Math.round(d.freight).toLocaleString()}`];
+                                    if (ctx.dataset.label === '销售') return [`🗓️ ${start} - ${end}`, `💵 回款: $${Math.round(d.revenue).toLocaleString()}`];
                                     return `${ctx.dataset.label}: ${start} - ${end}`;
                                 },
                             },
@@ -724,12 +725,20 @@ const ReplenishmentAdvice: React.FC = () => {
         }
 
 
-        // Calculate Safety Stock Points (14 Days)
-        const safetyPoints = simResult.invPoints.map(p => {
+        // Calculate Safety Stock Points
+        // 安全库存 = 未来N天的实际销量总和（适合安全接力场景）
+        const safetyDays = state.safetyDays || 7;
+        const getDailyDemand = (dayOffset: number): number => {
             const date = new Date(state.simStart);
-            date.setDate(date.getDate() + p.x);
-            const demand = state.monthlyDailySales[date.getMonth()] || 50;
-            return { x: p.x, y: demand * 14 };
+            date.setDate(date.getDate() + dayOffset);
+            return state.monthlyDailySales[date.getMonth()] || 50;
+        };
+        const safetyPoints = simResult.invPoints.map(p => {
+            let safetyStock = 0;
+            for (let i = 0; i < safetyDays; i++) {
+                safetyStock += getDailyDemand(p.x + 1 + i);
+            }
+            return { x: p.x, y: safetyStock };
         });
 
         if (cashChartRef.current) {
@@ -1159,7 +1168,9 @@ const ReplenishmentAdvice: React.FC = () => {
                     if (qty > 0) {
                         day++;
                     } else {
-                        currentSaleStart = take < demand ? day : day + 1;
+                        const safeBuffer = s.safetyDays || 7;
+                        currentSaleStart = (take < demand ? day : day + 1) - safeBuffer;
+                        if (currentSaleStart < leadTime) currentSaleStart = leadTime;
                     }
                 }
             });
@@ -1217,7 +1228,8 @@ const ReplenishmentAdvice: React.FC = () => {
     const autoAlignBatches = () => {
         setState((s) => {
             const newState = { ...s, isFreeMode: false };
-            const { simStart, monthlyDailySales, seaDays } = newState;
+            const { simStart, monthlyDailySales, seaDays, safetyDays } = newState;
+            const safeBuffer = safetyDays || 7;
             const leadTime = 15 + seaDays; // 生产15天 + 海运
 
             // 辅助函数：获取某天的日销量
@@ -1252,21 +1264,30 @@ const ReplenishmentAdvice: React.FC = () => {
 
             // 生成6个批次
             const newBatches: ReplenishmentBatch[] = [];
-            let currentSaleStart = leadTime; // 首批到货日
+            let nextCoverageStart = leadTime; // 真正的下一阶段需求开始日（上一批卖完日）
 
             for (let i = 0; i < 6; i++) {
-                // 计算这批货的数量（一个月的需求）
-                const qty = getMonthlyQty(currentSaleStart);
+                // 1. 计算这批货的数量（基于真正的需求开始日 nextCoverageStart）
+                // 这样能保证这批货是用来覆盖 Day X 到 Day X+30 的需求
+                const qty = getMonthlyQty(nextCoverageStart);
 
-                // 模拟消费，计算实际卖完日期
-                const sellOutDay = simulateSelling(currentSaleStart, qty);
+                // 2. 模拟消费，计算这批货能撑到哪一天
+                // 从 nextCoverageStart 开始模拟，因为之前的需求由上一批覆盖（或由上一批的安全库存缓冲期过渡）
+                const sellOutDay = simulateSelling(nextCoverageStart, qty);
 
-                // 计算下单日期（offset）
+                // 3. 计算期望到货日（Arrival Day）
+                // 为了建立安全库存，我们希望它在需求开始前 N 天就到货
+                const targetArrival = Math.max(leadTime, nextCoverageStart - safeBuffer);
+
+                // 4. 计算 Offset
                 let offset = 0;
                 if (i === 0) {
-                    offset = 0;
+                    offset = 0; // 第一批无法提前，只能从 leadTime 开始
+                    // 如果第一批是0 offset，它将在 leadTime 到货。
+                    // 它的 quantity 也是从 leadTime 开始算的。
+                    // 这里的 nextCoverageStart 也是 leadTime。
                 } else {
-                    const calcOffset = currentSaleStart - leadTime;
+                    const calcOffset = targetArrival - leadTime;
                     const prevOffset = newBatches[i - 1].offset;
                     offset = Math.max(0, Math.max(prevOffset, Math.floor(calcOffset)));
                 }
@@ -1280,8 +1301,8 @@ const ReplenishmentAdvice: React.FC = () => {
                     prodDays: 15,
                 });
 
-                // 下一批从卖完日开始
-                currentSaleStart = sellOutDay;
+                // 更新下一次的覆盖起始日
+                nextCoverageStart = sellOutDay;
             }
 
             return { ...newState, batches: newBatches };
@@ -1875,6 +1896,19 @@ const ReplenishmentAdvice: React.FC = () => {
                                         <span className="relative z-10 transition-transform group-hover:scale-110">⚡</span>
                                         <span className="relative z-10">完美接力</span>
                                     </button>
+
+                                    {/* 安全天数控制 */}
+                                    <div className="flex items-center gap-1 ml-2 bg-zinc-800/50 rounded px-1.5 py-0.5 border border-zinc-700/50">
+                                        <span className="text-[9px] text-zinc-500">🛡️ 安全天数</span>
+                                        <NumberStepper
+                                            value={state.safetyDays || 7}
+                                            onChange={(v) => setState(s => ({ ...s, safetyDays: v }))}
+                                            className="w-12 h-[18px] bg-transparent text-[10px] text-white text-center focus:outline-none"
+                                            step={1}
+                                            min={0}
+                                            max={30}
+                                        />
+                                    </div>
                                 </div>
                                 <div className="flex items-center gap-1">
                                     <button
@@ -2071,7 +2105,15 @@ const ReplenishmentAdvice: React.FC = () => {
                 {/* Charts - Shared X-axis layout */}
                 <div className="flex-1 flex flex-col overflow-hidden relative">
                     {/* Floating Stockout Summary */}
-                    <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10 bg-[#18181b]/80 backdrop-blur-sm border border-[#27272a] rounded-full px-4 py-1 shadow-xl flex items-center gap-2 pointer-events-none">
+                    <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10 bg-[#18181b]/80 backdrop-blur-sm border border-[#27272a] rounded-full px-4 py-1 shadow-xl flex items-center gap-3 pointer-events-none">
+                        {/* 补货总数 */}
+                        <div className="flex items-center gap-1 border-r border-[#27272a] pr-3">
+                            <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">补货总数</span>
+                            <span className="text-xs font-black text-blue-400 font-mono">
+                                {state.batches.reduce((sum, b) => sum + (b.qty || 0), 0).toLocaleString()}
+                            </span>
+                            <span className="text-[9px] text-zinc-600">件</span>
+                        </div>
                         {simResult && simResult.totalStockoutDays > 0 ? (
                             <>
                                 <span className="material-symbols-outlined text-red-500 text-sm">warning</span>
@@ -2086,7 +2128,7 @@ const ReplenishmentAdvice: React.FC = () => {
                     </div>
 
                     <div className="flex-1 flex flex-col overflow-hidden" onClick={() => setSelectedEvent(null)}>
-                        <div className="h-1/2 pl-1 pr-4 pt-4 pb-0 overflow-hidden">
+                        <div className="h-1/2 pl-1 pr-4 pt-4 pb-0 overflow-hidden relative">
                             <canvas ref={ganttCanvasRef} />
                         </div>
                         <div className="h-1/2 pl-1 pr-4 pt-0 pb-4 overflow-hidden relative">

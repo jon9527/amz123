@@ -6,10 +6,9 @@ import PromotionOrderBreakdown from '../components/PromotionOrderBreakdown';
 import PromotionStrategyPanel from '../components/PromotionStrategyPanel';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
+import { r2, fmtUSD } from '../utils/formatters';
 
-// Helper for rounding
-const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
-const fmtUSD = (num: number) => '$' + num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 
 // Custom Stepper Input for Volume (Integer only, max 9999)
 const VolumeStepper = ({ value, onChange }: { value: number, onChange: (v: number) => void }) => {

@@ -12,10 +12,12 @@ import {
   LabelList
 } from 'recharts';
 import SaveProfitModelDialog from '../components/SaveProfitModelDialog';
+import StepperInput from '../components/StepperInput';
 import { ProfitModelService } from '../services/profitModelService';
 import { ProfitModelInputs, ProfitModelResults, SavedProfitModel } from '../types';
 import { useProducts } from '../ProductContext';
 import { useLogistics } from '../LogisticsContext';
+import { r2, fmtUSD, fmtPct, getRefundAdminFee } from '../utils/formatters';
 
 // --- 全局样式 ---
 const globalInputStyles = `
@@ -28,68 +30,6 @@ const globalInputStyles = `
     -moz-appearance: textfield;
   }
 `;
-
-const r2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
-const fmtUSD = (num: number) => '$' + num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const fmtPct = (num: number) => (num * 100).toFixed(1) + '%';
-
-/**
- * 管理费计算逻辑：固定为佣金的 20%
- */
-const getRefundAdminFee = (price: number, commRate: number) => {
-  if (price <= 0) return 0;
-  return Math.min(5.00, (price * commRate) * 0.20);
-};
-
-const INPUT_H = "h-[32px]";
-const CONTAINER_CLASS = `w-full bg-[#0d0d0f] border border-[#27272a] rounded-md ${INPUT_H} flex items-center justify-center relative transition-all focus-within:border-zinc-500 overflow-hidden group`;
-const DISABLED_CONTAINER = `bg-[#141416] border-[#1f1f21] cursor-not-allowed opacity-30`;
-const INPUT_CLASS = "bg-transparent border-none text-sm font-black text-white text-center w-full h-full outline-none focus:ring-0 p-0 font-mono leading-none disabled:cursor-not-allowed";
-
-/**
- * 步进输入组件
- */
-const StepperInput = ({ value, onChange, step = 0.1, color = "white", min = 0, disabled = false }: { value: number, onChange: (v: number) => void, step?: number, color?: string, min?: number, disabled?: boolean }) => {
-  const [displayValue, setDisplayValue] = useState<string>(value.toString());
-
-  useEffect(() => {
-    const parsed = parseFloat(displayValue);
-    if (parsed !== value && !isNaN(parsed)) {
-      setDisplayValue(value.toString());
-    }
-  }, [value]);
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (disabled) return;
-    let val = e.target.value;
-    if (val === '') { setDisplayValue(''); onChange(min); return; }
-    if (!/^\d*\.?\d*$/.test(val)) return;
-    setDisplayValue(val);
-    const num = parseFloat(val);
-    if (!isNaN(num)) onChange(Math.max(min, num));
-  };
-
-  const handleBlur = () => {
-    if (disabled) return;
-    if (displayValue === '' || isNaN(parseFloat(displayValue))) {
-      setDisplayValue(min.toString()); onChange(min);
-    } else {
-      setDisplayValue(parseFloat(displayValue).toString());
-    }
-  };
-
-  return (
-    <div className={`${CONTAINER_CLASS} ${disabled ? DISABLED_CONTAINER : ''}`}>
-      <input type="text" inputMode="decimal" value={displayValue} onChange={handleChange} onBlur={handleBlur} disabled={disabled} className={`${INPUT_CLASS} ${!disabled && color === 'blue' ? 'text-blue-400' : ''}`} />
-      {!disabled && (
-        <div className="absolute right-0 top-0 bottom-0 flex flex-col justify-center gap-0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none pr-1">
-          <button onClick={() => { const next = r2(value + step); onChange(next); setDisplayValue(next.toString()); }} className="pointer-events-auto material-symbols-outlined text-[14px] text-zinc-600 hover:text-white leading-none scale-75">expand_less</button>
-          <button onClick={() => { const next = r2(Math.max(min, value - step)); onChange(next); setDisplayValue(next.toString()); }} className="pointer-events-auto material-symbols-outlined text-[14px] text-zinc-600 hover:text-white leading-none scale-75">expand_more</button>
-        </div>
-      )}
-    </div>
-  );
-};
 
 const DistributionRow: React.FC<{ label: string, value: number, price: number, color: string, isBold?: boolean }> = ({ label, value, price, color, isBold }) => {
   const pct = price > 0 ? (value / price) * 100 : 0;
@@ -191,8 +131,8 @@ const ProfitCalculator: React.FC = () => {
   // Helper to generate label: 价格-时间 格式 (e.g., "20.99-22:31:45")
   const getUniqueLabel = (baseLabel: string, _currentProductName: string) => {
     const now = new Date();
-    const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
-    return `${baseLabel}-${time}`;
+    const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')} `;
+    return `${baseLabel} -${time} `;
   };
 
   // ... (existing code)
@@ -405,7 +345,7 @@ const ProfitCalculator: React.FC = () => {
     });
 
     if (duplicateModel) {
-      setToastMessage(`该方案已存在: ${duplicateModel.label || duplicateModel.inputs.actualPrice}`);
+      setToastMessage(`该方案已存在: ${duplicateModel.label || duplicateModel.inputs.actualPrice} `);
       setShowToast(true);
       setTimeout(() => setShowToast(false), 2000);
       return;
@@ -719,8 +659,8 @@ const ProfitCalculator: React.FC = () => {
                 <span className="material-symbols-outlined text-zinc-500 text-[18px]">expand_more</span>
               </div>
             </div>
-            <div className={`flex items-center justify-center w-8 h-8 rounded-full border transition-all duration-300 ${selectedProductId ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-zinc-800/30 border-zinc-800'}`} title={selectedProductId ? "基础数据已同步" : "未关联产品"}>
-              <span className={`w-2 h-2 rounded-full transition-all duration-300 ${selectedProductId ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-zinc-700'}`}></span>
+            <div className={`flex items - center justify - center w - 8 h - 8 rounded - full border transition - all duration - 300 ${selectedProductId ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-zinc-800/30 border-zinc-800'} `} title={selectedProductId ? "基础数据已同步" : "未关联产品"}>
+              <span className={`w - 2 h - 2 rounded - full transition - all duration - 300 ${selectedProductId ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-zinc-700'} `}></span>
             </div>
 
 
@@ -788,7 +728,7 @@ const ProfitCalculator: React.FC = () => {
                                         <span className="text-sm font-black font-mono text-zinc-300 w-16 text-right">
                                           ${model.inputs.actualPrice}
                                         </span>
-                                        <span className={`text-[10px] font-bold ${marginColor} flex items-center gap-0.5 w-14`}>
+                                        <span className={`text - [10px] font - bold ${marginColor} flex items - center gap - 0.5 w - 14`}>
                                           <span className="material-symbols-outlined text-[12px]">trending_up</span>
                                           {marginPct.toFixed(1)}%
                                         </span>
@@ -822,17 +762,17 @@ const ProfitCalculator: React.FC = () => {
         {/* 输入面板 */}
         <div className="lg:col-span-4 flex flex-col gap-5">
 
-          <div className="bg-[#0c0c0e] border border-[#27272a] rounded-2xl p-6 shadow-lg space-y-6">
+          <div className="bg-[#0c0c0e] border border-[#27272a] rounded-2xl p-3 shadow-lg space-y-2">
             <h3 className="text-[12px] font-black text-white uppercase tracking-widest flex items-center gap-2.5">
               <span className="material-symbols-outlined text-blue-500 text-[20px] font-bold">radio_button_checked</span> 运营目标
             </h3>
             <div className="grid grid-cols-2 gap-4">
-              <div className="group"><Label>广告占比 %</Label><StepperInput value={targetAcos} onChange={setTargetAcos} step={1} /></div>
-              <div className="group"><Label>利润率 %</Label><StepperInput value={targetMargin} onChange={targetMargin => setTargetMargin(targetMargin)} step={1} /></div>
+              <div className="group"><Label>广告占比 %</Label><StepperInput value={targetAcos} onChange={setTargetAcos} step={1} height="large" /></div>
+              <div className="group"><Label>利润率 %</Label><StepperInput value={targetMargin} onChange={targetMargin => setTargetMargin(targetMargin)} step={1} height="large" /></div>
             </div>
 
-            <div className="space-y-4 pt-5 border-t border-zinc-900/50">
-              <div className={`flex items-center justify-between px-3 h-[40px] bg-[#18181b]/50 border border-zinc-800 rounded-lg`}>
+            <div className="space-y-2 pt-2 border-t border-zinc-900/50">
+              <div className="flex items-center justify-between px-2 h-8 bg-[#18181b]/50 border border-zinc-800 rounded-lg">
                 <div className="flex flex-col">
                   <span className="text-[11px] font-black text-zinc-400 uppercase leading-none">自动阶梯佣金</span>
                 </div>
@@ -840,35 +780,37 @@ const ProfitCalculator: React.FC = () => {
                   <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all duration-300 ${autoComm ? 'left-[24px]' : 'left-1'}`}></div>
                 </button>
               </div>
-              <div className="space-y-2 relative pb-4">
-                <div className="flex flex-col items-center">
-                  <div className="flex items-center justify-center gap-2 w-full relative">
+              <div className="mt-4">
+                <div className="flex flex-col items-center relative">
+                  <div className="flex items-center justify-center gap-2 w-full mb-1.5 relative">
                     <Label className="m-0">手动佣金比例 %</Label>
-                    <span className={`absolute right-0 text-[9px] text-blue-500 font-black uppercase bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20 transition-opacity duration-300 ${autoComm ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
-                      已锁定
-                    </span>
+                    {autoComm && (
+                      <span className="absolute right-0 text-[9px] text-zinc-500 font-bold uppercase bg-zinc-800/50 px-2 py-0.5 rounded border border-zinc-700/50">
+                        已锁定
+                      </span>
+                    )}
                   </div>
-                  <StepperInput value={manualComm} onChange={setManualComm} step={0.5} color="blue" disabled={autoComm} />
+                  <StepperInput value={manualComm} onChange={setManualComm} step={0.5} color="blue" disabled={autoComm} height="large" />
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="bg-[#0c0c0e] border border-[#27272a] rounded-2xl p-6 shadow-lg space-y-5">
+          <div className="bg-[#0c0c0e] border border-[#27272a] rounded-2xl p-3 shadow-lg space-y-2">
             <h3 className="text-[12px] font-black text-white uppercase tracking-widest flex items-center gap-2.5"><span className="material-symbols-outlined text-blue-500 text-[20px]">payments</span> 产品成本</h3>
             <div className="grid grid-cols-2 gap-4">
-              <div className="group">
-                <div className="flex items-center justify-center mb-1.5 h-[14px]">
+              <div className="group flex flex-col items-center">
+                <div className="flex items-center justify-center mb-1.5 h-[14px] w-full">
                   <label className="text-[11px] font-black text-zinc-400 uppercase tracking-tight leading-none text-center">采购价 ¥</label>
                 </div>
-                <StepperInput value={purchaseRMB} onChange={setPurchaseRMB} step={1} />
+                <StepperInput value={purchaseRMB} onChange={setPurchaseRMB} step={1} height="large" />
               </div>
-              <div className="group relative">
-                <div className="flex items-center justify-center gap-2 mb-1.5 h-[14px]">
+              <div className="group relative flex flex-col items-center">
+                <div className="flex items-center justify-center gap-2 mb-1.5 h-[14px] w-full">
                   <label className="text-[11px] font-black text-zinc-400 uppercase tracking-tight leading-none text-center">汇率</label>
                   <span className="text-[9px] px-1 py-[1px] rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 leading-none flex items-center h-[13px]">实时</span>
                 </div>
-                <StepperInput value={exchangeRate} onChange={setExchangeRate} step={0.01} min={0.01} disabled={true} color="white" />
+                <StepperInput value={exchangeRate} onChange={setExchangeRate} step={0.01} min={0.01} disabled={true} color="white" height="large" />
               </div>
             </div>
           </div>
@@ -883,7 +825,8 @@ const ProfitCalculator: React.FC = () => {
                   <select
                     value={selectedChannelId}
                     onChange={(e) => setSelectedChannelId(e.target.value)}
-                    className="flex-1 bg-[#0d0d0f] border border-[#27272a] rounded-md h-[32px] text-xs text-white px-2 focus:outline-none focus:border-zinc-500"
+                    className="flex-1 bg-[#0d0d0f] border border-[#27272a] rounded-md h-8 text-xs text-white px-1 text-center focus:outline-none focus:border-zinc-500 appearance-none"
+                    style={{ textAlignLast: 'center' }}
                   >
                     <option value="">📌 手动输入</option>
                     {channels.filter(c => c.status === 'active').map(c => (
@@ -892,7 +835,7 @@ const ProfitCalculator: React.FC = () => {
                       </option>
                     ))}
                   </select>
-                  <div className={`${CONTAINER_CLASS} w-20 ${selectedChannelId ? 'bg-blue-900/20 border-blue-500/30' : ''}`}>
+                  <div className={`border border-[#27272a] rounded-md h-8 flex items-center justify-center relative transition-all focus-within:border-zinc-500 overflow-hidden group w-20 ${selectedChannelId ? 'bg-blue-900/20 border-blue-500/30' : 'bg-[#0d0d0f]'}`}>
                     {selectedChannelId ? (
                       <span className="text-sm font-black text-blue-400 font-mono">${shippingUSD}</span>
                     ) : (
@@ -900,7 +843,7 @@ const ProfitCalculator: React.FC = () => {
                         type="number"
                         value={shippingUSD}
                         onChange={(e) => setShippingUSD(parseFloat(e.target.value) || 0)}
-                        className={INPUT_CLASS}
+                        className="bg-transparent border-none text-sm font-black text-white text-center w-full h-full outline-none focus:ring-0 p-0 font-mono leading-none"
                         step="0.1"
                       />
                     )}
@@ -909,9 +852,9 @@ const ProfitCalculator: React.FC = () => {
               </div>
               {/* Row 2: FBA / 杂费 / 仓储 */}
               <div className="grid grid-cols-3 gap-3">
-                <div className="group"><Label>FBA $</Label><StepperInput value={fbaFee} onChange={setFbaFee} step={0.1} /></div>
-                <div className="group"><Label>杂费 $</Label><StepperInput value={miscFee} onChange={setMiscFee} step={0.1} /></div>
-                <div className="group"><Label>月仓储 $</Label><StepperInput value={storageFee} onChange={setStorageFee} step={0.01} /></div>
+                <div className="group"><Label>FBA $</Label><StepperInput value={fbaFee} onChange={setFbaFee} step={0.1} height="large" /></div>
+                <div className="group"><Label>杂费 $</Label><StepperInput value={miscFee} onChange={setMiscFee} step={0.1} height="large" /></div>
+                <div className="group"><Label>月仓储 $</Label><StepperInput value={storageFee} onChange={setStorageFee} step={0.01} height="large" /></div>
               </div>
             </div>
           </div>
@@ -919,29 +862,29 @@ const ProfitCalculator: React.FC = () => {
           <div className="bg-[#0c0c0e] border border-[#27272a] rounded-2xl p-6 shadow-lg space-y-5">
             <h3 className="text-[12px] font-black text-white uppercase tracking-widest flex items-center gap-2.5"><span className="material-symbols-outlined text-blue-500 text-[20px]">undo</span> 退货损耗</h3>
             <div className="grid grid-cols-2 gap-4">
-              <div className="group"><Label>退货率 %</Label><StepperInput value={returnRate} onChange={setReturnRate} step={1} /></div>
-              <div className="group"><Label>不可售占比 %</Label><StepperInput value={unsellableRate} onChange={setUnsellableRate} step={1} /></div>
+              <div className="group"><Label>退货率 %</Label><StepperInput value={returnRate} onChange={setReturnRate} step={1} height="large" /></div>
+              <div className="group"><Label>不可售占比 %</Label><StepperInput value={unsellableRate} onChange={setUnsellableRate} step={1} height="large" /></div>
             </div>
 
             <div className="grid grid-cols-3 gap-2 pt-4 border-t border-zinc-900/50">
               <div className="group flex flex-col items-center">
-                <Label className="mb-1 font-black">处理费</Label>
-                <StepperInput value={retProcFee} onChange={setRetProcFee} step={0.01} />
+                <Label className="mb-1.5 font-black">处理费</Label>
+                <StepperInput value={retProcFee} onChange={setRetProcFee} step={0.01} height="large" />
               </div>
               <div className="group flex flex-col items-center w-full">
-                <div className="flex items-center justify-center gap-1 mb-1 h-[14px] w-full">
+                <div className="flex items-center justify-center gap-1 mb-1.5 h-[14px] w-full">
                   <label className="text-[11px] font-black text-zinc-400 uppercase tracking-tight leading-none text-center">管理费</label>
                   <span className="text-[9px] px-1 py-[1px] rounded bg-blue-500/20 text-blue-400 border border-blue-500/50 leading-none flex items-center h-[13px] self-center">固定</span>
                 </div>
-                <div className={`${CONTAINER_CLASS} bg-[#141416] border-[#1f1f21] cursor-not-allowed opacity-60`}>
-                  <span className={INPUT_CLASS + " flex items-center justify-center text-zinc-400"}>
+                <div className="w-full bg-[#141416] border border-[#1f1f21] rounded-md h-8 flex items-center justify-center relative cursor-not-allowed opacity-60">
+                  <span className="bg-transparent border-none text-sm font-black text-white text-center w-full h-full outline-none p-0 font-mono leading-none flex items-center justify-center text-zinc-400">
                     {getRefundAdminFee(actualPrice, results.planB.commRate).toFixed(2)}
                   </span>
                 </div>
               </div>
               <div className="group flex flex-col items-center">
-                <Label className="mb-1 font-black">移除费</Label>
-                <StepperInput value={retRemFee} onChange={setRetRemFee} step={0.01} />
+                <Label className="mb-1.5 font-black">移除费</Label>
+                <StepperInput value={retRemFee} onChange={setRetRemFee} step={0.01} height="large" />
               </div>
             </div>
           </div>
@@ -950,13 +893,13 @@ const ProfitCalculator: React.FC = () => {
         {/* PLAN A */}
         <div className="lg:col-span-4 flex flex-col h-full">
           <div className="bg-[#111111] border border-[#27272a] rounded-3xl overflow-hidden shadow-2xl flex flex-col flex-1">
-            <div className="p-8 pb-6 text-center border-b border-zinc-800/50 bg-gradient-to-b from-blue-600/5 to-transparent flex flex-col items-center">
-              <span className="px-5 py-1.5 bg-blue-600/10 text-blue-500 rounded-full text-[11px] font-black uppercase tracking-[0.3em] border border-blue-500/20">PLAN A</span>
-              <h2 className="text-6xl font-black text-white my-8 font-mono tracking-tighter leading-none">{fmtUSD(results.planA.price)}</h2>
-              <div className="text-sm text-zinc-500 flex items-center gap-2 font-black uppercase tracking-widest">目标利润率: <span className="text-emerald-500 px-3 py-1 bg-emerald-500/10 rounded-lg">{targetMargin}.0%</span></div>
+            <div className="p-4 pb-2 text-center border-b border-zinc-800/50 bg-gradient-to-b from-blue-600/5 to-transparent flex flex-col items-center">
+              <span className="px-4 py-1 bg-blue-600/10 text-blue-500 rounded-full text-[10px] font-black uppercase tracking-[0.3em] border border-blue-500/20">PLAN A</span>
+              <h2 className="text-5xl font-black text-white my-3 font-mono tracking-tighter leading-none">{fmtUSD(results.planA.price)}</h2>
+              <div className="text-[10px] text-zinc-500 flex items-center gap-2 font-black uppercase tracking-widest">目标利润率: <span className="text-emerald-500 px-2 py-0.5 bg-emerald-500/10 rounded">{targetMargin}%</span></div>
             </div>
-            <div className="p-8 flex-1 flex flex-col justify-between bg-[#0d0d0f]">
-              <div className="flex-1 flex flex-col justify-center space-y-7">
+            <div className="p-4 flex-1 flex flex-col bg-[#0d0d0f]">
+              <div className="flex-1 flex flex-col justify-between">
                 <DistributionRow label="采购成本" value={results.planA.costProdUSD} price={results.planA.price} color="bg-blue-500" />
                 <DistributionRow label="头程" value={r2(shippingUSD)} price={results.planA.price} color="bg-sky-500" />
                 <DistributionRow label="物流杂费" value={r2(fbaFee + miscFee)} price={results.planA.price} color="bg-purple-500" />
@@ -967,7 +910,7 @@ const ProfitCalculator: React.FC = () => {
                 <DistributionRow label="预期利润" value={results.planA.profit} price={results.planA.price} color="bg-emerald-500" isBold />
               </div>
 
-              <div className="mt-8 pt-8 border-t border-zinc-800 flex items-center justify-between">
+              <div className="mt-auto pt-6 border-t border-zinc-800 flex items-center justify-between">
                 <div className="flex-1 flex flex-col items-center">
                   <span className="text-[12px] text-zinc-500 font-bold mb-2">盈亏平衡</span>
                   <span className="text-[18px] font-black font-mono text-zinc-300 leading-none">{fmtUSD(results.planA.be)}</span>
@@ -995,9 +938,9 @@ const ProfitCalculator: React.FC = () => {
         {/* PLAN B */}
         <div className="lg:col-span-4 flex flex-col h-full">
           <div className="bg-[#111111] border border-blue-600/20 rounded-3xl overflow-hidden shadow-2xl flex flex-col flex-1">
-            <div className="p-8 pb-6 text-center border-b border-zinc-800/50 bg-gradient-to-b from-emerald-600/5 to-transparent flex flex-col items-center">
-              <span className="px-5 py-1.5 bg-zinc-800 text-zinc-400 rounded-full text-[11px] font-black uppercase tracking-[0.3em] border border-zinc-700/50">PLAN B</span>
-              <div className="my-8 relative inline-block group w-full px-12">
+            <div className="p-4 pb-2 text-center border-b border-zinc-800/50 bg-gradient-to-b from-emerald-600/5 to-transparent flex flex-col items-center">
+              <span className="px-4 py-1 bg-zinc-800 text-zinc-400 rounded-full text-[10px] font-black uppercase tracking-[0.3em] border border-zinc-700/50">PLAN B</span>
+              <div className="my-3 relative inline-block group w-full px-8">
                 <div className="relative inline-flex items-center justify-center w-full">
                   <input type="text" inputMode="decimal" value={actualPriceDisplay} onChange={(e) => {
                     const val = e.target.value;
@@ -1010,7 +953,7 @@ const ProfitCalculator: React.FC = () => {
                     const n = parseFloat(actualPriceDisplay);
                     if (isNaN(n)) { setActualPrice(0); setActualPriceDisplay('0'); }
                     else { setActualPriceDisplay(n.toString()); }
-                  }} className="bg-transparent border-none text-6xl font-black text-white focus:ring-0 text-center w-full font-mono tracking-tighter p-0 leading-none" />
+                  }} className="bg-transparent border-none text-5xl font-black text-white focus:ring-0 text-center w-full font-mono tracking-tighter p-0 leading-none" />
                   <div className="absolute right-[-15px] flex flex-col gap-1">
                     <button onClick={() => {
                       const next = r2(actualPrice + 0.1);
@@ -1028,10 +971,10 @@ const ProfitCalculator: React.FC = () => {
                 </div>
                 <div className="absolute bottom-[-12px] left-1/2 -translate-x-1/2 w-[55%] h-[3px] bg-blue-600 rounded-full shadow-[0_0_20px_rgba(37,99,235,0.9)]"></div>
               </div>
-              <div className="text-sm text-zinc-500 flex items-center gap-2 font-black uppercase tracking-widest">实际利润率: <span className={`px-3 py-1 rounded-lg ${results.planB.profit >= 0 ? 'text-emerald-500 bg-emerald-500/10' : 'text-red-500 bg-red-500/10'}`}>{fmtPct(results.planB.margin)}</span></div>
+              <div className="text-sm text-zinc-500 flex items-center gap-2 font-black uppercase tracking-widest">实际利润率: <span className={`px - 3 py - 1 rounded - lg ${results.planB.profit >= 0 ? 'text-emerald-500 bg-emerald-500/10' : 'text-red-500 bg-red-500/10'} `}>{fmtPct(results.planB.margin)}</span></div>
             </div>
-            <div className="p-8 flex-1 flex flex-col justify-between bg-[#0d0d0f]">
-              <div className="flex-1 flex flex-col justify-center space-y-7">
+            <div className="p-4 flex-1 flex flex-col bg-[#0d0d0f]">
+              <div className="flex-1 flex flex-col justify-between">
                 <DistributionRow label="采购成本" value={results.planB.costProdUSD} price={results.planB.price} color="bg-blue-500" />
                 <DistributionRow label="头程" value={r2(shippingUSD)} price={results.planB.price} color="bg-sky-500" />
                 <DistributionRow label="物流杂费" value={r2(fbaFee + miscFee)} price={results.planB.price} color="bg-purple-500" />
@@ -1042,7 +985,7 @@ const ProfitCalculator: React.FC = () => {
                 <DistributionRow label="实际利润" value={results.planB.profit} price={results.planB.price} color="bg-emerald-500" isBold />
               </div>
 
-              <div className="mt-8 pt-8 border-t border-zinc-800 flex items-center justify-between">
+              <div className="mt-auto pt-6 border-t border-zinc-800 flex items-center justify-between">
                 <div className="flex-1 flex flex-col items-center">
                   <span className="text-[12px] text-zinc-500 font-bold mb-2">盈亏平衡</span>
                   <span className="text-[18px] font-black font-mono text-zinc-300 leading-none">{fmtUSD(results.planB.be)}</span>
@@ -1092,7 +1035,7 @@ const ProfitCalculator: React.FC = () => {
               <BarChart data={waterfallData} margin={{ top: 20, right: 30, left: 30, bottom: 40 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e1e21" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#52525b', fontSize: 13, fontWeight: 900, letterSpacing: '0.05em' }} dy={20} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#52525b', fontSize: 12, fontWeight: 600 }} tickFormatter={(v) => `$${v}`} domain={[0, 'auto']} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#52525b', fontSize: 12, fontWeight: 600 }} tickFormatter={(v) => `$${v} `} domain={[0, 'auto']} />
                 <Tooltip cursor={{ fill: 'rgba(255,255,255,0.02)' }} animationDuration={0} isAnimationActive={false}
                   content={({ active, payload }) => {
                     if (active && payload && payload.length) {
@@ -1100,7 +1043,7 @@ const ProfitCalculator: React.FC = () => {
                       return (
                         <div className="bg-[#18181b] border border-zinc-800 p-6 rounded-2xl shadow-2xl ring-1 ring-white/5 backdrop-blur-xl pointer-events-none min-w-[160px]">
                           <p className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em] mb-3 border-b border-zinc-800 pb-2">{data.name}</p>
-                          <p className={`text-2xl font-black font-mono ${data.val >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{fmtUSD(data.val)}</p>
+                          <p className={`text - 2xl font - black font - mono ${data.val >= 0 ? 'text-emerald-400' : 'text-rose-400'} `}>{fmtUSD(data.val)}</p>
                         </div>
                       );
                     }
@@ -1108,7 +1051,7 @@ const ProfitCalculator: React.FC = () => {
                   }}
                 />
                 <Bar dataKey="range" isAnimationActive={false} barSize={85}>
-                  {waterfallData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} fillOpacity={0.9} radius={[4, 4, 4, 4]} />)}
+                  {waterfallData.map((entry, index) => <Cell key={`cell - ${index} `} fill={entry.color} fillOpacity={0.9} radius={[4, 4, 4, 4]} />)}
                   <LabelList dataKey="val" position="top" formatter={(v: number) => fmtUSD(v)} style={{ fill: '#a1a1aa', fontSize: 14, fontWeight: 900, fontFamily: 'JetBrains Mono' }} />
                 </Bar>
               </BarChart>

@@ -5,79 +5,8 @@ import { jsPDF } from 'jspdf';
 import { ProfitModelService } from '../services/profitModelService';
 import { SavedProfitModel } from '../types';
 import PromotionProfitChart from '../components/PromotionProfitChart';
-
-const r2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
-const fmtUSD = (num: number) => '$' + num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const fmtPct = (num: number) => (num * 100).toFixed(1) + '%';
-
-// --- Styled Stepper Input Component ---
-const INPUT_H = "h-[24px]"; // Compact for cards
-const CONTAINER_CLASS = `w-full bg-[#0d0d0f] border border-[#27272a] rounded-lg flex items-center justify-center relative transition-all focus-within:border-zinc-500 overflow-hidden group`;
-const INPUT_CLASS = "bg-transparent border-none text-[11px] font-black text-white text-center w-full h-full outline-none focus:ring-0 p-0 font-mono leading-none";
-
-const StepperInput = ({ value, onChange, step = 1, min = 0, disabled = false, color = 'white' }: { value: number, onChange: (v: number) => void, step?: number, min?: number, disabled?: boolean, color?: string }) => {
-    const [displayValue, setDisplayValue] = useState<string>(value.toString());
-
-    useEffect(() => {
-        const parsed = parseFloat(displayValue);
-        if (parsed !== value && !isNaN(parsed)) {
-            setDisplayValue(value.toString());
-        }
-    }, [value]);
-
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (disabled) return;
-        let val = e.target.value;
-        if (val === '') { setDisplayValue(''); onChange(min); return; }
-        if (!/^\d*\.?\d*$/.test(val)) return;
-        setDisplayValue(val);
-        const num = parseFloat(val);
-        if (!isNaN(num)) onChange(Math.max(min, num));
-    };
-
-    const handleBlur = () => {
-        if (disabled) return;
-        if (displayValue === '' || isNaN(parseFloat(displayValue))) {
-            setDisplayValue(min.toString()); onChange(min);
-        } else {
-            const num = parseFloat(displayValue);
-            setDisplayValue(num.toString());
-            onChange(Math.max(min, num));
-        }
-    };
-
-    const textColorClass = disabled ? 'text-zinc-500' : (color === 'emerald' ? 'text-emerald-500' : 'text-white');
-
-    return (
-        <div className={`${CONTAINER_CLASS} ${INPUT_H} ${disabled ? 'bg-zinc-900/50 border-zinc-800 cursor-not-allowed' : ''}`}>
-            <input
-                type="text"
-                inputMode="decimal"
-                value={displayValue}
-                onChange={handleChange}
-                onBlur={handleBlur}
-                disabled={disabled}
-                className={`${INPUT_CLASS} ${textColorClass}`}
-            />
-            {!disabled && (
-                <div className="absolute right-0 top-0 bottom-0 flex flex-col justify-center gap-0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none pr-0.5 bg-[#0d0d0f]">
-                    <button
-                        onClick={() => { const next = r2(value + step); onChange(next); setDisplayValue(next.toString()); }}
-                        className="pointer-events-auto material-symbols-outlined text-[10px] text-zinc-500 hover:text-white leading-none scale-75 block h-[10px]"
-                    >
-                        expand_less
-                    </button>
-                    <button
-                        onClick={() => { const next = r2(Math.max(min, value - step)); onChange(next); setDisplayValue(next.toString()); }}
-                        className="pointer-events-auto material-symbols-outlined text-[10px] text-zinc-500 hover:text-white leading-none scale-75 block h-[10px]"
-                    >
-                        expand_more
-                    </button>
-                </div>
-            )}
-        </div>
-    );
-};
+import StepperInput from '../components/StepperInput';
+import { r2, fmtUSD, fmtPct } from '../utils/formatters';
 
 // --- DATA TYPES ---
 interface MonthConfig {

@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { r2 } from '../utils/formatters';
 
 interface AdvertisingAnalysisPanelProps {
     sellingPrice: number;
@@ -13,8 +14,7 @@ interface AdvertisingAnalysisPanelProps {
     onCvrChange: (v: number) => void;
 }
 
-// Helper for rounding
-const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+
 
 // Internal Stepper Component
 const Stepper = ({

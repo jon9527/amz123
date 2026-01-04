@@ -10,11 +10,17 @@ import PromotionDeduction from './pages/PromotionDeduction';
 import ReplenishmentAdvice from './pages/ReplenishmentAdvice';
 import ProductLibrary from './pages/ProductLibrary';
 import { LogisticsLibrary } from './pages/LogisticsLibrary';
+import SettingsPanel from './pages/SettingsPanel';
+import OperationsToolbox from './pages/OperationsToolbox';
+import KeywordTool from './pages/KeywordTool';
 import { ProductProvider } from './ProductContext';
 import { LogisticsProvider } from './LogisticsContext';
+import { AuthProvider, useAuth } from './AuthContext';
+import PinLockScreen from './components/PinLockScreen';
 import { NAVIGATION_ITEMS } from './constants';
 
-const App: React.FC = () => {
+const AppContent: React.FC = () => {
+  const { isLocked } = useAuth();
   const [currentView, setCurrentView] = useState<AppView>(AppView.DASHBOARD);
 
   const renderContent = () => {
@@ -37,6 +43,12 @@ const App: React.FC = () => {
         return <PromotionDeduction />;
       case AppView.REPLENISHMENT:
         return <ReplenishmentAdvice />;
+      case AppView.SETTINGS:
+        return <SettingsPanel />;
+      case AppView.TOOLBOX:
+        return <OperationsToolbox />;
+      case AppView.KEYWORD:
+        return <KeywordTool />;
       default:
         const label = NAVIGATION_ITEMS.find(n => n.view === currentView)?.label || currentView;
         return (
@@ -58,14 +70,26 @@ const App: React.FC = () => {
   };
 
   return (
-    <ProductProvider>
-      <LogisticsProvider>
-        <Layout currentView={currentView} onViewChange={setCurrentView}>
-          {renderContent()}
-        </Layout>
-      </LogisticsProvider>
-    </ProductProvider>
+    <>
+      {isLocked && <PinLockScreen />}
+      <ProductProvider>
+        <LogisticsProvider>
+          <Layout currentView={currentView} onViewChange={setCurrentView}>
+            {renderContent()}
+          </Layout>
+        </LogisticsProvider>
+      </ProductProvider>
+    </>
+  );
+};
+
+const App: React.FC = () => {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 };
 
 export default App;
+

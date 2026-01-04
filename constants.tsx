@@ -12,7 +12,9 @@ export const NAVIGATION_ITEMS = [
   { view: AppView.DEDUCTION, label: '推广推演', icon: 'rocket_launch' },
   { view: AppView.REPLENISHMENT, label: '补货建议', icon: 'local_shipping' },
   { view: AppView.TRAFFIC, label: '流量分析', icon: 'insights' },
+  { view: AppView.KEYWORD, label: '关键词分析', icon: 'key' },
   { view: AppView.TOOLBOX, label: '运营工具箱', icon: 'construction' },
+  { view: AppView.SETTINGS, label: '系统设置', icon: 'settings' },
 ];
 
 export const MOCK_KPIS: KPI[] = [

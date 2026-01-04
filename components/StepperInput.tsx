@@ -82,16 +82,16 @@ const StepperInput: React.FC<StepperInputProps> = ({
                 className={`${INPUT_CLASS} ${textColorClass} disabled:cursor-not-allowed`}
             />
             {!disabled && (
-                <div className="absolute right-0 top-0 bottom-0 flex flex-col justify-center gap-0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none pr-0.5 bg-[#0d0d0f]">
+                <div className="absolute right-0 top-0 bottom-0 flex flex-col justify-center gap-0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none pr-1 bg-[#0d0d0f]">
                     <button
                         onClick={() => { const next = r2(value + step); onChange(next); setDisplayValue(next.toString()); }}
-                        className="pointer-events-auto material-symbols-outlined text-[10px] text-zinc-500 hover:text-white leading-none scale-75 block h-[10px]"
+                        className="pointer-events-auto material-symbols-outlined text-[14px] text-zinc-600 hover:text-zinc-300 leading-none block h-3"
                     >
                         expand_less
                     </button>
                     <button
                         onClick={() => { const next = r2(Math.max(min, value - step)); onChange(next); setDisplayValue(next.toString()); }}
-                        className="pointer-events-auto material-symbols-outlined text-[10px] text-zinc-500 hover:text-white leading-none scale-75 block h-[10px]"
+                        className="pointer-events-auto material-symbols-outlined text-[14px] text-zinc-600 hover:text-zinc-300 leading-none block h-3"
                     >
                         expand_more
                     </button>

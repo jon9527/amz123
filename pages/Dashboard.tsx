@@ -22,7 +22,7 @@ const Dashboard: React.FC = () => {
           <p className="text-zinc-500 text-sm">亚马逊店铺实时运营数据监控。</p>
         </div>
         <div className="flex gap-3">
-           <button className="flex items-center gap-2 px-4 py-2 bg-blue-600/10 hover:bg-blue-600/20 text-blue-600 rounded-lg text-sm font-bold transition-all border border-blue-600/20">
+          <button className="flex items-center gap-2 px-4 py-2 bg-blue-600/10 hover:bg-blue-600/20 text-blue-600 rounded-lg text-sm font-bold transition-all border border-blue-600/20">
             <span className="material-symbols-outlined text-[18px]">edit_square</span>
             编辑布局
           </button>
@@ -37,7 +37,7 @@ const Dashboard: React.FC = () => {
           { label: '新建货件', icon: 'local_shipping' },
           { label: '添加产品', icon: 'add_circle' }
         ].map((action) => (
-           <button key={action.label} className="flex flex-col items-center justify-center gap-2 p-6 rounded-2xl border border-dashed border-[#27272a] bg-[#111111] hover:bg-blue-600/5 hover:border-blue-600/50 transition-all group">
+          <button key={action.label} className="flex flex-col items-center justify-center gap-2 p-6 rounded-2xl border border-dashed border-[#27272a] bg-[#111111] hover:bg-blue-600/5 hover:border-blue-600/50 transition-all group">
             <div className="p-3 rounded-full bg-zinc-900 group-hover:bg-blue-600 transition-colors">
               <span className="material-symbols-outlined text-zinc-500 group-hover:text-white">
                 {action.icon}
@@ -61,7 +61,7 @@ const Dashboard: React.FC = () => {
             <div>
               <p className="text-white text-3xl font-black font-mono tracking-tight">{kpi.value}</p>
               <p className={`text-xs font-bold mt-2 flex items-center gap-1 ${kpi.trend >= 0 ? 'text-emerald-500' : 'text-orange-500'}`}>
-                {kpi.trend >= 0 ? '↑' : '↓'} {Math.abs(kpi.trend)}% 
+                {kpi.trend >= 0 ? '↑' : '↓'} {Math.abs(kpi.trend)}%
                 <span className="text-zinc-600 font-normal">较上周</span>
               </p>
             </div>
@@ -72,7 +72,7 @@ const Dashboard: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Main Chart */}
         <div className="lg:col-span-8 bg-[#111111] rounded-2xl border border-[#27272a] p-8">
-           <div className="flex justify-between items-center mb-10">
+          <div className="flex justify-between items-center mb-10">
             <div>
               <h3 className="text-lg font-bold">销售额 vs 利润 趋势</h3>
               <p className="text-sm text-zinc-500">可视化业务健康状况随时间的变化</p>
@@ -91,18 +91,18 @@ const Dashboard: React.FC = () => {
               <AreaChart data={data}>
                 <defs>
                   <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#2563eb" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#2563eb" stopOpacity={0}/>
+                    <stop offset="5%" stopColor="#2563eb" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
                   </linearGradient>
                   <linearGradient id="colorProfit" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#27272a" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#71717a', fontSize: 12}} dy={10} />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#71717a', fontSize: 12 }} dy={10} />
                 <YAxis hide />
-                <Tooltip 
+                <Tooltip
                   contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '12px' }}
                   itemStyle={{ fontSize: '12px' }}
                 />
@@ -115,7 +115,7 @@ const Dashboard: React.FC = () => {
 
         {/* Sidebar Mini List */}
         <div className="lg:col-span-4 space-y-6">
-           <div className="bg-[#111111] rounded-2xl border border-[#27272a] p-6">
+          <div className="bg-[#111111] rounded-2xl border border-[#27272a] p-6">
             <h3 className="text-lg font-bold mb-6">库存预警</h3>
             <div className="space-y-4">
               {[
@@ -138,16 +138,16 @@ const Dashboard: React.FC = () => {
             </div>
             <button className="w-full mt-6 py-2.5 rounded-xl border border-zinc-800 text-zinc-500 text-xs font-bold hover:text-white transition-all uppercase tracking-widest">查看完整库存</button>
           </div>
-          
+
           <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl p-6 text-white shadow-xl shadow-blue-600/20">
-             <div className="flex justify-between items-start mb-6">
-                <div>
-                  <h4 className="font-black text-xl mb-1">AI 助力店铺增长</h4>
-                  <p className="text-blue-100 text-xs">解锁预测性模拟和全天候补货建议。</p>
-                </div>
-                <span className="material-symbols-outlined text-3xl opacity-50">auto_awesome</span>
-             </div>
-             <button className="w-full py-3 bg-white text-blue-600 rounded-xl text-sm font-black shadow-lg">升级方案</button>
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h4 className="font-black text-xl mb-1">AI 助力店铺增长</h4>
+                <p className="text-blue-100 text-xs">解锁预测性模拟和全天候补货建议。</p>
+              </div>
+              <span className="material-symbols-outlined text-3xl opacity-50">auto_awesome</span>
+            </div>
+            <button className="w-full py-3 bg-white text-blue-600 rounded-xl text-sm font-black shadow-lg">升级方案</button>
           </div>
         </div>
       </div>

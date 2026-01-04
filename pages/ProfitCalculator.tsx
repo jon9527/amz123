@@ -34,14 +34,14 @@ const globalInputStyles = `
 const DistributionRow: React.FC<{ label: string, value: number, price: number, color: string, isBold?: boolean }> = ({ label, value, price, color, isBold }) => {
   const pct = price > 0 ? (value / price) * 100 : 0;
   return (
-    <div className="group w-full">
-      <div className="flex items-center justify-between mb-1.5">
-        <div className="flex items-center gap-2.5">
-          <div className={`size-2.5 rounded-full ${color} shadow-lg shadow-black/50`}></div>
-          <span className="text-[13px] text-zinc-400 font-black uppercase tracking-tight">{label}</span>
+    <div className="group w-full h-[44px] flex flex-col justify-center">
+      <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center gap-2">
+          <div className={`size-2 rounded-full ${color} shadow-lg shadow-black/50`}></div>
+          <span className="text-[12px] text-zinc-400 font-black uppercase tracking-tight">{label}</span>
         </div>
-        <div className="flex items-center gap-4">
-          <span className={`text-[14px] font-mono ${isBold ? 'text-emerald-500 font-black' : 'text-zinc-100 font-black'}`}>{fmtUSD(value)}</span>
+        <div className="flex items-center gap-3">
+          <span className={`text-[13px] font-mono ${isBold ? 'text-emerald-500 font-black' : 'text-zinc-100 font-black'}`}>{fmtUSD(value)}</span>
           <span className="text-[10px] text-zinc-600 font-mono w-10 text-right font-black">{pct.toFixed(1)}%</span>
         </div>
       </div>
@@ -758,9 +758,9 @@ const ProfitCalculator: React.FC = () => {
         </div>
       </div >
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
         {/* 输入面板 */}
-        <div className="lg:col-span-4 flex flex-col gap-5">
+        <div className="lg:col-span-4 flex flex-col gap-3">
 
           <div className="bg-[#0c0c0e] border border-[#27272a] rounded-2xl p-3 shadow-lg space-y-2">
             <h3 className="text-[12px] font-black text-white uppercase tracking-widest flex items-center gap-2.5">
@@ -815,9 +815,9 @@ const ProfitCalculator: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-[#0c0c0e] border border-[#27272a] rounded-2xl p-6 shadow-lg space-y-5">
+          <div className="bg-[#0c0c0e] border border-[#27272a] rounded-2xl p-3 shadow-lg space-y-2">
             <h3 className="text-[12px] font-black text-white uppercase tracking-widest flex items-center gap-2.5"><span className="material-symbols-outlined text-blue-500 text-[20px]">inventory_2</span> 物流仓储</h3>
-            <div className="space-y-3">
+            <div className="space-y-2">
               {/* Row 1: 头程物流 */}
               <div className="group">
                 <Label>头程物流</Label>
@@ -859,14 +859,14 @@ const ProfitCalculator: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-[#0c0c0e] border border-[#27272a] rounded-2xl p-6 shadow-lg space-y-5">
+          <div className="bg-[#0c0c0e] border border-[#27272a] rounded-2xl p-3 shadow-lg space-y-2">
             <h3 className="text-[12px] font-black text-white uppercase tracking-widest flex items-center gap-2.5"><span className="material-symbols-outlined text-blue-500 text-[20px]">undo</span> 退货损耗</h3>
             <div className="grid grid-cols-2 gap-4">
               <div className="group"><Label>退货率 %</Label><StepperInput value={returnRate} onChange={setReturnRate} step={1} height="large" /></div>
               <div className="group"><Label>不可售占比 %</Label><StepperInput value={unsellableRate} onChange={setUnsellableRate} step={1} height="large" /></div>
             </div>
 
-            <div className="grid grid-cols-3 gap-2 pt-4 border-t border-zinc-900/50">
+            <div className="grid grid-cols-3 gap-2 pt-2 border-t border-zinc-900/50">
               <div className="group flex flex-col items-center">
                 <Label className="mb-1.5 font-black">处理费</Label>
                 <StepperInput value={retProcFee} onChange={setRetProcFee} step={0.01} height="large" />
@@ -893,7 +893,7 @@ const ProfitCalculator: React.FC = () => {
         {/* PLAN A */}
         <div className="lg:col-span-4 flex flex-col h-full">
           <div className="bg-[#111111] border border-[#27272a] rounded-3xl overflow-hidden shadow-2xl flex flex-col flex-1">
-            <div className="p-4 pb-2 text-center border-b border-zinc-800/50 bg-gradient-to-b from-blue-600/5 to-transparent flex flex-col items-center">
+            <div className="p-4 pb-2 h-[130px] text-center border-b border-zinc-800/50 bg-gradient-to-b from-blue-600/5 to-transparent flex flex-col items-center justify-center">
               <span className="px-4 py-1 bg-blue-600/10 text-blue-500 rounded-full text-[10px] font-black uppercase tracking-[0.3em] border border-blue-500/20">PLAN A</span>
               <h2 className="text-5xl font-black text-white my-3 font-mono tracking-tighter leading-none">{fmtUSD(results.planA.price)}</h2>
               <div className="text-[10px] text-zinc-500 flex items-center gap-2 font-black uppercase tracking-widest">目标利润率: <span className="text-emerald-500 px-2 py-0.5 bg-emerald-500/10 rounded">{targetMargin}%</span></div>
@@ -938,7 +938,7 @@ const ProfitCalculator: React.FC = () => {
         {/* PLAN B */}
         <div className="lg:col-span-4 flex flex-col h-full">
           <div className="bg-[#111111] border border-blue-600/20 rounded-3xl overflow-hidden shadow-2xl flex flex-col flex-1">
-            <div className="p-4 pb-2 text-center border-b border-zinc-800/50 bg-gradient-to-b from-emerald-600/5 to-transparent flex flex-col items-center">
+            <div className="p-4 pb-2 h-[130px] text-center border-b border-zinc-800/50 bg-gradient-to-b from-emerald-600/5 to-transparent flex flex-col items-center justify-center">
               <span className="px-4 py-1 bg-zinc-800 text-zinc-400 rounded-full text-[10px] font-black uppercase tracking-[0.3em] border border-zinc-700/50">PLAN B</span>
               <div className="my-3 relative inline-block group w-full px-8">
                 <div className="relative inline-flex items-center justify-center w-full">
@@ -1012,8 +1012,8 @@ const ProfitCalculator: React.FC = () => {
       </div>
 
       {/* PROFIT WATERFALL */}
-      <div className="bg-[#0c0c0e] border border-[#27272a] rounded-3xl overflow-hidden shadow-2xl flex flex-col w-full animate-in slide-in-from-bottom-4 duration-700">
-        <div className="p-8 border-b border-zinc-900 bg-[#111111]/50 flex justify-between items-center">
+      <div className="bg-[#0c0c0e] border border-[#27272a] rounded-2xl overflow-hidden shadow-2xl flex flex-col w-full animate-in slide-in-from-bottom-4 duration-700">
+        <div className="p-5 border-b border-zinc-900 bg-[#111111]/50 flex justify-between items-center">
           <div className="flex items-center gap-5">
             <div className="bg-zinc-900 size-14 rounded-2xl flex items-center justify-center border border-zinc-800 shadow-inner">
               <span className="material-symbols-outlined text-blue-500 text-4xl">waterfall_chart</span>
@@ -1029,8 +1029,8 @@ const ProfitCalculator: React.FC = () => {
           </div>
         </div>
 
-        <div className="w-full p-10 md:p-16 bg-[#0d0d0f]">
-          <div className="h-[550px] w-full relative">
+        <div className="w-full p-6 md:p-8 bg-[#0d0d0f]">
+          <div className="h-[420px] w-full relative">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={waterfallData} margin={{ top: 20, right: 30, left: 30, bottom: 40 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e1e21" />

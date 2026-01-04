@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+	<meta charset="UTF-8">
+	<title>Amazon Keyword Analysis v1.0</title>
+	<style>
+		:root {
+		    --bg-color: #f4f5f7;
+		    --column-width: 450px; 
+		    --primary-color: #0052cc;
+		    --gold-bg: #fffbf0;
+		    --gold-border: #ffe58f;
+		    --text-main: #172b4d;
+		    --tag-active-bg: #e3f2fd;
+		    --tag-active-border: #0052cc;
+		    --tag-active-text: #0052cc;
+		}
+		
+		body {
+		    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+		    margin: 0; display: flex; height: 100vh; background-color: var(--bg-color); color: var(--text-main); overflow: hidden;
+		}
+		
+		/* 左侧 */
+		.sidebar {
+		    width: 260px; background: #fff; border-right: 1px solid #dfe1e6; display: flex; flex-direction: column; padding: 20px; z-index: 10; box-shadow: 2px 0 12px rgba(0,0,0,0.04);
+		}
+		h2 { font-size: 16px; margin: 0 0 15px 0; color: var(--primary-color); font-weight: 800; display: flex; align-items: center; }
+		h2::before { content: '🚩'; margin-right: 8px; } /* v1.0 旗帜 */
+		.input-wrapper { flex: 1; display: flex; flex-direction: column; margin-bottom: 15px; position: relative; }
+		textarea {
+		    flex: 1; border: 2px solid #dfe1e6; border-radius: 6px; padding: 12px; resize: none; background: #fafbfc; font-family: monospace; font-size: 13px;
+		}
+		textarea:focus { outline: none; border-color: var(--primary-color); background: #fff; }
+		
+		.btn {
+		    background-color: var(--primary-color); color: white; border: none; padding: 12px; border-radius: 4px; font-weight: 600; cursor: pointer; margin-bottom: 10px;
+		}
+		.btn:hover { background-color: #0747a6; }
+		.btn-sec { background-color: #fff; color: #172b4d; border: 1px solid #dfe1e6; }
+		.btn-sec:hover { background-color: #ebecf0; }
+		
+		/* 看板 */
+		.board-container {
+		    flex: 1; overflow-x: auto; padding: 20px; display: flex; align-items: flex-start; gap: 16px; scroll-behavior: smooth;
+		}
+		
+		.column {
+		    min-width: var(--column-width); max-width: var(--column-width); background: #ebecf0;
+		    border-radius: 8px; display: flex; flex-direction: column; max-height: 100%; border: 1px solid transparent; transition: box-shadow 0.3s;
+		}
+		.target-highlight { animation: pulse-border 1.5s ease-in-out; }
+		@keyframes pulse-border {
+		    0% { box-shadow: 0 0 0 0 rgba(0, 82, 204, 0.7); border-color: #0052cc; }
+		    100% { box-shadow: 0 0 0 0 rgba(0, 82, 204, 0); border-color: transparent; }
+		}
+		
+		.column-header {
+		    padding: 10px 12px; background: #fff; border-radius: 8px 8px 0 0; display: flex; justify-content: space-between; align-items: center; border-top: 5px solid transparent; font-weight: 700; font-size: 15px; border-bottom: 1px solid #ebecf0;
+		}
+		.header-btn { cursor: pointer; opacity: 0.5; transition: 0.2s; font-size: 16px; padding: 4px; }
+		.header-btn:hover { opacity: 1; background: #ebecf0; border-radius: 4px; color: var(--primary-color); }
+		
+		/* === 智能分析面板 === */
+		.analysis-panel {
+		    background: #fff; padding: 10px 12px; border-bottom: 1px solid #dfe1e6;
+		}
+		.core-combo-box {
+		    background: var(--gold-bg); border: 1px solid var(--gold-border); border-radius: 4px; padding: 8px 10px;
+		    margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;
+		}
+		.core-label { font-size: 10px; color: #d48806; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; }
+		.core-word { font-size: 14px; font-weight: 800; color: #333; user-select: all; cursor: pointer; }
+		.core-word:hover { text-decoration: underline; }
+		
+		.tags-row { display: flex; gap: 5px; flex-wrap: wrap; }
+		.stat-tag {
+		    font-size: 11px; background: #f4f5f7; color: #5e6c84; padding: 4px 8px; border-radius: 4px; 
+		    border: 1px solid #ebecf0; display: flex; align-items: center; cursor: pointer; transition: 0.2s; user-select: none;
+		}
+		.stat-tag:hover { border-color: #b3d4ff; background: #fff; }
+		
+		/* 激活状态的标签 */
+		.stat-tag.active {
+		    background: var(--tag-active-bg); border-color: var(--tag-active-border); color: var(--tag-active-text); font-weight: 600;
+		}
+		.stat-tag b { margin-left: 4px; opacity: 0.7; font-size: 0.9em;}
+		
+		.word-list { flex: 1; overflow-y: auto; padding: 8px; margin: 0; }
+		
+		/* === 6格行 === */
+		.grid-row {
+		    display: grid; grid-template-columns: repeat(6, 1fr); gap: 2px;
+		    background: #fff; margin-bottom: 4px; border-radius: 4px; padding: 4px 28px 4px 4px; 
+		    position: relative; transition: background 0.1s; cursor: pointer;
+		}
+		.grid-row:hover { background-color: #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.15); z-index: 2; }
+		
+		.cell {
+		    height: 26px; display: flex; align-items: center; justify-content: center;
+		    font-size: 11px; color: #6b778c; background-color: #f9f9fa; border-radius: 3px;
+		    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 2px;
+		}
+		.cell-root { color: #fff; font-weight: 700; font-size: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.15); }
+		.cell-empty { background: transparent; }
+		
+		/* 悬停复制按钮 */
+		.row-copy-btn {
+		    position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+		    width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;
+		    border-radius: 4px; cursor: pointer; color: #5e6c84; opacity: 0; transition: all 0.1s;
+		    background: #fff; border: 1px solid #ebecf0; z-index: 5;
+		}
+		.row-copy-btn:hover { background-color: var(--primary-color); color: #fff; border-color: var(--primary-color); }
+		.grid-row:hover .row-copy-btn { opacity: 1; }
+		
+		.dup-badge {
+		    position: absolute; top: -4px; right: -4px;
+		    background: #ff5630; color: white; font-size: 9px; font-weight: bold;
+		    height: 16px; width: 16px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+		    border: 2px solid #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.2); z-index: 6;
+		}
+		
+		/* 弹窗 */
+		.modal-overlay {
+		    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+		    background: rgba(9, 30, 66, 0.6); display: none; justify-content: center; align-items: center; z-index: 1000;
+		}
+		.modal {
+		    background: #fff; width: 500px; border-radius: 8px; box-shadow: 0 8px 30px rgba(0,0,0,0.4); animation: popIn 0.2s ease-out;
+		}
+		@keyframes popIn { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+		.modal-header { padding: 15px 20px; border-bottom: 1px solid #dfe1e6; font-weight: 700; display: flex; justify-content: space-between; align-items: center; background: #f4f5f7; border-radius: 8px 8px 0 0; }
+		.modal-body { padding: 25px; }
+		.roots-container { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 15px; margin-bottom: 20px; }
+		
+		.root-tag {
+		    padding: 6px 12px; border-radius: 4px; color: white; font-weight: 600; font-size: 13px;
+		    cursor: pointer; transition: transform 0.1s; display: flex; align-items: center;
+		}
+		.root-tag:hover { transform: scale(1.05); box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+		.root-tag::after { content: '➔'; margin-left: 6px; opacity: 0.8; font-size: 10px; }
+		
+		.modal-footer { text-align: right; padding-top: 15px; border-top: 1px solid #ebecf0; }
+		
+		.toast {
+		    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+		    background: rgba(0,0,0,0.7); color: white; padding: 10px 20px; border-radius: 20px; font-weight: 600;
+		    font-size: 14px; pointer-events: none; animation: fadeUp 1.2s forwards; z-index: 2000;
+		}
+		@keyframes fadeUp { 0% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; transform: translate(-50%, -30px); } }
+		
+		::-webkit-scrollbar { width: 8px; height: 8px; }
+		::-webkit-scrollbar-thumb { background: #c1c7d0; border-radius: 4px; }
+	</style>
+</head>
+<body>
+	<div class="sidebar">
+		<h2>🚩 亚马逊分析 v1.0</h2>
+		<div class="input-wrapper">
+			<textarea id="inputData" placeholder="在此粘贴海量关键词..."></textarea>
+		</div>
+		<div style="margin-bottom:15px; font-size:12px; color:#666;">
+			<label><input type="checkbox" id="filterStop" checked> 仅过滤冠词 (a, an, the)</label>
+		</div>
+		<button class="btn" onclick="renderBoard()">⚡ 开始透视</button>
+		<button class="btn btn-sec" onclick="exportToCSV()">📥 下载表格</button>
+		<div style="margin-top:20px; font-size:12px; color:#5e6c84; line-height:1.6;">
+			<strong>v1.0 基准功能：</strong><br> 1. <strong>👑 真实核心：</strong> 算法寻找列表内真实存在的最优短语。<br> 2. <strong>🖱️ 标签筛选：</strong> 点击属性标签，即时过滤列表。<br> 3. <strong>📍 交互完备：</strong> 跳转、复制、查重一应俱全。
+		</div>
+	</div>
+	<div class="board-container" id="board"></div>
+	<div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)">
+		<div class="modal">
+			<div class="modal-header">
+				<span>关键词详情</span>
+				<span style="cursor:pointer; font-size:20px;" onclick="document.getElementById('modalOverlay').style.display='none'">&times;</span>
+			</div>
+			<div class="modal-body">
+				<div style="font-size:13px; color:#5e6c84; margin-bottom:5px;">当前关键词：</div>
+				<div id="modalKeyword" style="font-size:16px; color:#172b4d; font-weight:bold; margin-bottom:20px; padding:12px; background:#ebecf0; border-radius:4px; font-family:monospace; text-align:center; user-select: all;"></div>
+				<div style="font-size:13px; color:#5e6c84;">包含以下词根 (点击跳转列)：</div>
+				<div class="roots-container" id="modalRoots"></div>
+				<div class="modal-footer">
+					<button class="copy-btn btn-sec" style="padding:8px 12px;border-radius:4px;border:1px solid #ccc;cursor:pointer;" onclick="copyModalKeyword()">📄 复制关键词文本</button>
+				</div>
+			</div>
+		</div>
+	</div>
+	<script>
+		const colors = ['#0052cc', '#c9372c', '#1f845a', '#6e5dc6', '#974f0c', '#008da6', '#bf2600', '#403294'];
+		let exportData = {};
+		let globalData = {};
+		let sortedRootsGlobal = [];
+		
+		// 存储每一列的筛选状态 { 'leggings': 'pockets', 'women': null }
+		let columnFilters = {}; 
+		
+		function normalize(str) { return str.toLowerCase().replace(/[^a-z0-9]/g, ''); }
+		
+		function renderBoard() {
+		    const rawText = document.getElementById('inputData').value;
+		    if (!rawText.trim()) return;
+		
+		    const filterStop = document.getElementById('filterStop').checked;
+		    const stopWords = new Set(['a', 'an', 'the', 'is', 'are', 'am']); 
+		
+		    const lines = rawText.split('\n').filter(l => l.trim().length > 0);
+		    const rootMap = {}; const rootCounts = {};
+		    exportData = {}; globalData = {}; columnFilters = {};
+		
+		    // 1. 数据解析
+		    lines.forEach(line => {
+		        const cleanLine = line.trim();
+		        const words = cleanLine.toLowerCase().replace(/[^\w\s]/gi, '').split(/\s+/);
+		        const uniqueWords = new Set(words);
+		
+		        uniqueWords.forEach(w => {
+		            if (w.length < 2) return;
+		            if (filterStop && stopWords.has(w)) return;
+		            if (!rootMap[w]) { rootMap[w] = []; rootCounts[w] = 0; }
+		            rootMap[w].push(cleanLine);
+		            rootCounts[w]++;
+		        });
+		        globalData[cleanLine] = Array.from(uniqueWords).filter(w => w.length>=2 && (!filterStop || !stopWords.has(w)));
+		    });
+		
+		    // 2. 排序
+		    const sortedRoots = Object.keys(rootCounts).sort((a, b) => rootCounts[b] - rootCounts[a]);
+		    sortedRootsGlobal = sortedRoots;
+		    const board = document.getElementById('board');
+		    board.innerHTML = '';
+		
+		    sortedRoots.forEach((root, index) => {
+		        const color = colors[index % colors.length];
+		        const keywords = rootMap[root];
+		        exportData[root] = keywords;
+		
+		        // 3. 词频统计
+		        const subCounts = {};
+		        keywords.forEach(kw => {
+		            const words = kw.toLowerCase().replace(/[^\w\s]/gi, '').split(/\s+/);
+		            words.forEach(w => {
+		                if (normalize(w) !== normalize(root) && !stopWords.has(w) && w.length > 1) {
+		                    subCounts[w] = (subCounts[w] || 0) + 1;
+		                }
+		            });
+		        });
+		        const topAttrs = Object.keys(subCounts).sort((a, b) => subCounts[b] - subCounts[a]);
+		        const topPartner = topAttrs[0];
+		
+		        // === 核心逻辑修改：从列表中寻找真实存在的最短核心词 ===
+		        let corePrediction = root;
+		        if (topPartner) {
+		            // 1. 筛选出同时包含 root 和 topPartner 的词
+		            const candidates = keywords.filter(kw => {
+		                const normKw = normalize(kw);
+		                return normKw.includes(normalize(root)) && normKw.includes(normalize(topPartner));
+		            });
+		            
+		            if (candidates.length > 0) {
+		                // 2. 找最短的那个，就是核心词 (比如 "leggings for women" 比 "black leggings for women" 短)
+		                candidates.sort((a, b) => a.length - b.length);
+		                corePrediction = candidates[0];
+		            } else {
+		                // 兜底：如果没找到共现词（极少情况），才用拼接
+		                corePrediction = `${root} ${topPartner}`;
+		            }
+		        }
+		
+		        // 4. DOM 构建
+		        const col = document.createElement('div');
+		        col.className = 'column';
+		        col.id = 'col-' + normalize(root);
+		
+		        // Header
+		        const header = document.createElement('div');
+		        header.className = 'column-header';
+		        header.style.borderTopColor = color;
+		        header.innerHTML = `
+		            <span>${root} <span style="font-weight:400; opacity:0.6; font-size:12px; margin-left:4px;">${keywords.length}</span></span>
+		            <span class="header-btn" title="复制整列" onclick="copyColumn('${root}')">📋</span>
+		        `;
+		
+		        // Analysis Panel (带点击筛选功能)
+		        const analysis = document.createElement('div');
+		        analysis.className = 'analysis-panel';
+		        
+		        let tagsHtml = topAttrs.slice(0, 5).map(w => 
+		            `<div class="stat-tag" onclick="toggleFilter('${root}', '${w}', this)">${w} <b>${subCounts[w]}</b></div>`
+		        ).join('');
+		
+		        analysis.innerHTML = `
+		            <div class="core-combo-box">
+		                <span class="core-label">👑 真实核心</span>
+		                <span class="core-word" onclick="copyText('${corePrediction}')" title="点击复制">${corePrediction}</span>
+		            </div>
+		            <div class="tags-row" id="tags-${normalize(root)}">${tagsHtml}</div>
+		        `;
+		
+		        // List Container
+		        const ul = document.createElement('ul');
+		        ul.className = 'word-list';
+		        ul.id = `list-${normalize(root)}`; // 给列表加ID方便局部更新
+		
+		        // 初次渲染列表
+		        renderColumnList(ul, root, keywords, color);
+		
+		        col.appendChild(header);
+		        col.appendChild(analysis);
+		        col.appendChild(ul);
+		        board.appendChild(col);
+		    });
+		}
+		
+		// === 筛选逻辑 ===
+		function toggleFilter(root, filterWord, tagElem) {
+		    const normRoot = normalize(root);
+		    const ul = document.getElementById(`list-${normRoot}`);
+		    const allKeywords = exportData[root];
+		    const color = document.getElementById(`col-${normRoot}`).querySelector('.column-header').style.borderTopColor;
+		
+		    // 1. 处理 Tag 样式
+		    const parent = document.getElementById(`tags-${normRoot}`);
+		    const isActive = tagElem.classList.contains('active');
+		    
+		    // 重置所有 active
+		    Array.from(parent.children).forEach(c => c.classList.remove('active'));
+		
+		    if (isActive) {
+		        // 取消筛选
+		        columnFilters[root] = null;
+		        renderColumnList(ul, root, allKeywords, color);
+		    } else {
+		        // 激活筛选
+		        tagElem.classList.add('active');
+		        columnFilters[root] = filterWord;
+		        
+		        // 过滤关键词
+		        const filteredKeywords = allKeywords.filter(kw => 
+		            kw.toLowerCase().includes(filterWord.toLowerCase())
+		        );
+		        renderColumnList(ul, root, filteredKeywords, color);
+		    }
+		}
+		
+		// === 列表渲染逻辑 (抽离出来复用) ===
+		function renderColumnList(container, root, keywords, color) {
+		    container.innerHTML = ''; // 清空
+		
+		    // 排序：位置 > 字母
+		    keywords.sort((a, b) => {
+		        const wordsA = a.split(/\s+/); const wordsB = b.split(/\s+/);
+		        let idxA = wordsA.findIndex(w => normalize(w).includes(normalize(root)));
+		        let idxB = wordsB.findIndex(w => normalize(w).includes(normalize(root)));
+		        if(idxA===-1) idxA=0; if(idxB===-1) idxB=0;
+		        if(idxA !== idxB) return idxA - idxB;
+		        return a.localeCompare(b);
+		    });
+		
+		    keywords.forEach(kw => {
+		        const li = document.createElement('li');
+		        li.className = 'grid-row';
+		        
+		        // 点击行 -> 弹窗
+		        li.onclick = (e) => {
+		            if(e.target.closest('.row-copy-btn')) return;
+		            openModal(kw, globalData[kw] || []);
+		        };
+		
+		        const wordsArr = kw.split(/\s+/);
+		        let rootIdx = wordsArr.findIndex(w => normalize(w).includes(normalize(root)));
+		        let html = '';
+		        for(let i=0; i<6; i++){
+		            const word = wordsArr[i];
+		            if(word){
+		                const isRoot = (i === rootIdx);
+		                const style = isRoot ? `background-color:${color}` : '';
+		                const cls = isRoot ? 'cell cell-root' : 'cell';
+		                html += `<div class="${cls}" style="${style}" title="${word}">${word}</div>`;
+		            } else {
+		                html += `<div class="cell cell-empty"></div>`;
+		            }
+		        }
+		
+		        // 复制按钮
+		        html += `
+		            <div class="row-copy-btn" onclick="copyText('${kw.replace(/'/g, "\\'")}')" title="复制">
+		                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+		            </div>
+		        `;
+		        
+		        // 红点
+		        const rootsBelonging = globalData[kw] || [];
+		        if(rootsBelonging.length > 1) {
+		            html += `<div class="dup-badge">${rootsBelonging.length}</div>`;
+		        }
+		
+		        li.innerHTML = html;
+		        container.appendChild(li);
+		    });
+		}
+		
+		// === 功能函数 ===
+		function openModal(keyword, roots) {
+		    document.getElementById('modalKeyword').innerText = keyword;
+		    const container = document.getElementById('modalRoots');
+		    container.innerHTML = '';
+		    roots.forEach(r => {
+		        const idx = sortedRootsGlobal.indexOf(r);
+		        const color = idx !== -1 ? colors[idx % colors.length] : '#666';
+		        const tag = document.createElement('div');
+		        tag.className = 'root-tag';
+		        tag.style.backgroundColor = color;
+		        tag.innerText = r;
+		        tag.onclick = function() { jumpToColumn(r); };
+		        container.appendChild(tag);
+		    });
+		    document.getElementById('modalOverlay').style.display = 'flex';
+		}
+		
+		function jumpToColumn(root) {
+		    document.getElementById('modalOverlay').style.display = 'none';
+		    const targetId = 'col-' + normalize(root);
+		    const targetCol = document.getElementById(targetId);
+		    if (targetCol) {
+		        targetCol.scrollIntoView({ behavior: 'smooth', inline: 'center' });
+		        targetCol.classList.remove('target-highlight');
+		        void targetCol.offsetWidth; 
+		        targetCol.classList.add('target-highlight');
+		    }
+		}
+		
+		function copyText(text) {
+		    navigator.clipboard.writeText(text).then(() => showToast("已复制: " + text));
+		}
+		
+		function copyModalKeyword() {
+		    const text = document.getElementById('modalKeyword').innerText;
+		    copyText(text);
+		}
+		
+		function copyColumn(root) {
+		    // 如果当前有筛选，只复制筛选后的；如果没有，复制全部
+		    const filterWord = columnFilters[root];
+		    let words = exportData[root] || [];
+		    
+		    if (filterWord) {
+		        words = words.filter(kw => kw.toLowerCase().includes(filterWord.toLowerCase()));
+		    }
+		
+		    navigator.clipboard.writeText(words.join('\n')).then(() => showToast(`已复制 ${words.length} 个关键词`));
+		}
+		
+		function showToast(msg) {
+		    const div = document.createElement('div');
+		    div.className = 'toast'; div.innerText = msg;
+		    document.body.appendChild(div);
+		    setTimeout(() => div.remove(), 1200);
+		}
+		
+		function exportToCSV() {
+		    if(Object.keys(exportData).length === 0) return;
+		    let csv = "\uFEFF";
+		    const roots = Object.keys(exportData);
+		    csv += roots.join(",") + "\n";
+		    let max = 0; roots.forEach(r => max = Math.max(max, exportData[r].length));
+		    for(let i=0; i<max; i++) {
+		        csv += roots.map(r => `"${(exportData[r][i] || "").replace(/"/g, '""')}"`).join(",") + "\n";
+		    }
+		    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+		    const link = document.createElement("a");
+		    link.href = URL.createObjectURL(blob);
+		    link.download = "amazon_analysis.csv";
+		    link.click();
+		}
+		
+		function closeModal(e) {
+		    if (e.target.id === 'modalOverlay') document.getElementById('modalOverlay').style.display = 'none';
+		}
+		
+		window.onload = function() {
+		    document.getElementById('inputData').value = '';
+		}
+	</script>
+</body>
+</html>

@@ -3,37 +3,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { SavedProfitModel } from '../types';
 import { ProfitModelService } from '../services/profitModelService';
-import { useProducts } from '../ProductContext';
+import { useProducts } from '../contexts/ProductContext';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend } from 'recharts';
-
-const fmtUSD = (num: number) => '$' + num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const fmtPct = (num: number) => (num * 100).toFixed(1) + '%';
-
-// 标签颜色配置（暗色主题）
-const TAG_COLORS = [
-  { bg: 'bg-gray-700/60', text: 'text-gray-200', hover: 'hover:bg-gray-600/60' },
-  { bg: 'bg-red-900/50', text: 'text-red-300', hover: 'hover:bg-red-800/50' },
-  { bg: 'bg-orange-900/50', text: 'text-orange-300', hover: 'hover:bg-orange-800/50' },
-  { bg: 'bg-yellow-900/50', text: 'text-yellow-300', hover: 'hover:bg-yellow-800/50' },
-  { bg: 'bg-green-900/50', text: 'text-green-300', hover: 'hover:bg-green-800/50' },
-  { bg: 'bg-teal-900/50', text: 'text-teal-300', hover: 'hover:bg-teal-800/50' },
-  { bg: 'bg-blue-900/50', text: 'text-blue-300', hover: 'hover:bg-blue-800/50' },
-  { bg: 'bg-purple-900/50', text: 'text-purple-300', hover: 'hover:bg-purple-800/50' },
-  { bg: 'bg-pink-900/50', text: 'text-pink-300', hover: 'hover:bg-pink-800/50' },
-];
-
-// 根据标签名生成稳定的颜色索引
-const getTagColor = (tag: string) => {
-  let hash = 0;
-  for (let i = 0; i < tag.length; i++) {
-    hash = tag.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const index = Math.abs(hash) % TAG_COLORS.length;
-  return TAG_COLORS[index];
-};
+import { fmtUSD, fmtPct } from '../utils/formatters';
+import { TAG_COLORS, getTagColor } from '../utils/tagColors';
+import SortIcon, { SortOrder } from '../components/SortIcon';
 
 type SortKey = 'timestamp' | 'planBProfit' | 'planBMargin' | 'actualPrice' | 'productName';
-type SortOrder = 'asc' | 'desc';
 type ViewMode = 'table' | 'comparison';
 
 const ProductProfitList: React.FC = () => {
@@ -264,12 +240,6 @@ const ProductProfitList: React.FC = () => {
       成本: m.results.planB.sellCost,
     }));
   };
-
-  const SortIcon = ({ active, order }: { active: boolean, order: SortOrder }) => (
-    <span className={`material-symbols-outlined text-xs transition-all ${active ? 'text-blue-500' : 'text-zinc-600'}`}>
-      {active ? (order === 'asc' ? 'arrow_upward' : 'arrow_downward') : 'unfold_more'}
-    </span>
-  );
 
   return (
     <div className="p-8 space-y-6 max-w-[1700px] mx-auto animate-in fade-in duration-700">

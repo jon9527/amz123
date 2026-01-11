@@ -4,6 +4,7 @@ import { SavedProfitModel } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList } from 'recharts';
 import PromotionOrderBreakdown from '../components/PromotionOrderBreakdown';
 import PromotionStrategyPanel from '../components/PromotionStrategyPanel';
+import CostCard from '../components/CostCard';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { r2, fmtUSD } from '../utils/formatters';
@@ -325,53 +326,6 @@ const PromotionAnalysis: React.FC = () => {
             </div>
         );
     }
-
-    // Card Component
-    const CostCard = ({
-        label,
-        value,
-        subValue,
-        color,
-        exchangeRate,
-        isBold = false
-    }: any) => {
-        const colorStyles: any = {
-            slate: 'border-slate-800 bg-slate-900/50 text-slate-400',
-            blue: 'border-blue-900/50 bg-blue-900/20 text-blue-400',
-            sky: 'border-sky-900/50 bg-sky-900/20 text-sky-400',
-            orange: 'border-orange-900/50 bg-orange-900/20 text-orange-400',
-            purple: 'border-purple-900/50 bg-purple-900/20 text-purple-400',
-            indigo: 'border-indigo-900/50 bg-indigo-900/20 text-indigo-400',
-            emerald: 'border-emerald-900/50 bg-emerald-900/20 text-emerald-400',
-            rose: 'border-rose-900/50 bg-rose-900/20 text-rose-400',
-            yellow: 'border-yellow-900/50 bg-yellow-900/20 text-yellow-400',
-            zinc: 'border-zinc-800 bg-zinc-900/50 text-zinc-400'
-        };
-        const style = colorStyles[color] || colorStyles.slate;
-
-        return (
-            <div className={`p-4 rounded-xl border ${style} flex flex-col justify-between h-[130px] min-w-0 flex-1 items-center`}>
-                <span className={`text-[11px] font-bold uppercase tracking-wider opacity-80 flex items-center gap-1 ${isBold ? 'text-white' : ''}`}>
-                    {label}
-                </span>
-                <div className="text-center w-full">
-                    <div className={`text-2xl font-black tracking-tight font-mono flex justify-center ${isBold ? 'text-emerald-400' : 'text-white'}`}>
-                        {typeof value === 'number' && !isNaN(value) ? `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '$0.00'}
-                    </div>
-                    {typeof value === 'number' && !isNaN(value) && exchangeRate && (
-                        <div className="text-[13px] font-bold opacity-60 font-mono text-zinc-400 mt-0.5">
-                            ¥{(value * exchangeRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </div>
-                    )}
-                    {subValue && (
-                        <div className="text-[11px] font-bold opacity-60 mt-2 font-mono border-t border-white/10 pt-1 w-full flex justify-center">
-                            {subValue}
-                        </div>
-                    )}
-                </div>
-            </div>
-        );
-    };
 
     return (
         <div ref={contentRef} className="p-8 space-y-12 max-w-[1800px] mx-auto animate-in fade-in duration-500 pb-24">

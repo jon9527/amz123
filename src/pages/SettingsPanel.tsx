@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useAuth } from '../AuthContext';
+import { useAuth } from '../contexts/AuthContext';
 import { DataService } from '../services/DataService';
+import { Logger, LogLevel, LogEntry } from '../services/Logger';
 
 const SettingsPanel: React.FC = () => {
     const { lock, hasPin, clearPin, setPin } = useAuth();
@@ -14,6 +15,13 @@ const SettingsPanel: React.FC = () => {
     const [pinStep, setPinStep] = useState<'new' | 'confirm'>('new');
     const [pinError, setPinError] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Log state
+    const [logSettings, setLogSettings] = useState(Logger.getSettings());
+    const [logStats, setLogStats] = useState(Logger.getStats());
+    const [showLogViewer, setShowLogViewer] = useState(false);
+    const [logs, setLogs] = useState<LogEntry[]>([]);
+    const [logFilter, setLogFilter] = useState<LogLevel | 'ALL'>('ALL');
 
     useEffect(() => {
         setStats(DataService.getStats());
@@ -235,6 +243,143 @@ const SettingsPanel: React.FC = () => {
                 />
             </div>
 
+            {/* Log Management */}
+            <div className="space-y-3">
+                <h2 className="text-zinc-400 text-xs font-black uppercase tracking-widest">日志管理</h2>
+
+                <div className="bg-[#111111] border border-[#27272a] rounded-xl p-4">
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-4">
+                            <div className="p-3 rounded-xl bg-cyan-500/10 text-cyan-500">
+                                <span className="material-symbols-outlined text-2xl">terminal</span>
+                            </div>
+                            <div>
+                                <h3 className="text-white font-bold">系统日志</h3>
+                                <p className="text-zinc-500 text-sm">记录应用运行状态，方便排查问题</p>
+                            </div>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={logSettings.enabled}
+                                onChange={(e) => {
+                                    const newSettings = { ...logSettings, enabled: e.target.checked };
+                                    Logger.saveSettings(newSettings);
+                                    setLogSettings(newSettings);
+                                }}
+                                className="sr-only peer"
+                            />
+                            <div className="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-600"></div>
+                        </label>
+                    </div>
+
+                    {/* Log Stats */}
+                    <div className="grid grid-cols-5 gap-2 mb-4">
+                        <div className="bg-zinc-900/50 rounded-lg p-2 text-center">
+                            <div className="text-lg font-black text-white font-mono">{logStats.total}</div>
+                            <div className="text-[10px] text-zinc-500 uppercase font-bold">总计</div>
+                        </div>
+                        <div className="bg-zinc-900/50 rounded-lg p-2 text-center">
+                            <div className="text-lg font-black text-zinc-400 font-mono">{logStats.byLevel[LogLevel.DEBUG]}</div>
+                            <div className="text-[10px] text-zinc-500 uppercase font-bold">Debug</div>
+                        </div>
+                        <div className="bg-zinc-900/50 rounded-lg p-2 text-center">
+                            <div className="text-lg font-black text-blue-400 font-mono">{logStats.byLevel[LogLevel.INFO]}</div>
+                            <div className="text-[10px] text-zinc-500 uppercase font-bold">Info</div>
+                        </div>
+                        <div className="bg-zinc-900/50 rounded-lg p-2 text-center">
+                            <div className="text-lg font-black text-yellow-400 font-mono">{logStats.byLevel[LogLevel.WARN]}</div>
+                            <div className="text-[10px] text-zinc-500 uppercase font-bold">Warn</div>
+                        </div>
+                        <div className="bg-zinc-900/50 rounded-lg p-2 text-center">
+                            <div className="text-lg font-black text-red-400 font-mono">{logStats.byLevel[LogLevel.ERROR]}</div>
+                            <div className="text-[10px] text-zinc-500 uppercase font-bold">Error</div>
+                        </div>
+                    </div>
+
+                    {/* Log Actions */}
+                    <div className="flex gap-2">
+                        <button
+                            onClick={() => {
+                                setLogs(Logger.getAll());
+                                setShowLogViewer(true);
+                            }}
+                            className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 rounded-lg font-bold text-sm transition-colors flex items-center justify-center gap-2"
+                        >
+                            <span className="material-symbols-outlined text-[18px]">visibility</span>
+                            查看日志
+                        </button>
+                        <button
+                            onClick={() => {
+                                Logger.downloadExport();
+                                showMessage('日志已导出', 'success');
+                            }}
+                            className="bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded-lg font-bold text-sm transition-colors flex items-center justify-center gap-2"
+                        >
+                            <span className="material-symbols-outlined text-[18px]">download</span>
+                            导出
+                        </button>
+                        <button
+                            onClick={() => {
+                                if (confirm('确定要清除所有日志吗？')) {
+                                    Logger.clear();
+                                    setLogStats(Logger.getStats());
+                                    showMessage('日志已清除', 'success');
+                                }
+                            }}
+                            className="bg-zinc-800 hover:bg-red-600 text-zinc-400 hover:text-white px-4 py-2 rounded-lg font-bold text-sm transition-colors flex items-center justify-center gap-2"
+                        >
+                            <span className="material-symbols-outlined text-[18px]">delete</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            {/* Log Viewer Modal */}
+            {showLogViewer && (
+                <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={() => setShowLogViewer(false)}>
+                    <div className="bg-[#18181b] border border-[#27272a] rounded-2xl w-full max-w-4xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                        <div className="p-4 border-b border-[#27272a] flex justify-between items-center shrink-0">
+                            <h2 className="text-lg font-black text-white">系统日志</h2>
+                            <div className="flex items-center gap-2">
+                                <select
+                                    value={logFilter}
+                                    onChange={(e) => setLogFilter(e.target.value as LogLevel | 'ALL')}
+                                    className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-white"
+                                >
+                                    <option value="ALL">全部</option>
+                                    <option value={LogLevel.DEBUG}>Debug</option>
+                                    <option value={LogLevel.INFO}>Info</option>
+                                    <option value={LogLevel.WARN}>Warn</option>
+                                    <option value={LogLevel.ERROR}>Error</option>
+                                </select>
+                                <button onClick={() => setShowLogViewer(false)} className="text-zinc-500 hover:text-white p-1">
+                                    <span className="material-symbols-outlined">close</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div className="flex-1 overflow-auto p-4 font-mono text-xs">
+                            {logs
+                                .filter(l => logFilter === 'ALL' || l.level === logFilter)
+                                .reverse()
+                                .map(log => (
+                                    <div key={log.id} className="py-1.5 border-b border-zinc-800 flex gap-3 hover:bg-zinc-800/50">
+                                        <span className="text-zinc-600 shrink-0">{new Date(log.timestamp).toLocaleString('zh-CN', { hour12: false })}</span>
+                                        <span className={`shrink-0 w-12 font-bold ${log.level === LogLevel.ERROR ? 'text-red-400' :
+                                                log.level === LogLevel.WARN ? 'text-yellow-400' :
+                                                    log.level === LogLevel.INFO ? 'text-blue-400' : 'text-zinc-500'
+                                            }`}>{log.level}</span>
+                                        <span className="text-cyan-400 shrink-0">[{log.category}]</span>
+                                        <span className="text-zinc-300 flex-1">{log.message}</span>
+                                        {log.data && <span className="text-zinc-500 truncate max-w-[200px]">{JSON.stringify(log.data)}</span>}
+                                    </div>
+                                ))}
+                            {logs.length === 0 && <div className="text-zinc-500 text-center py-8">暂无日志</div>}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Change PIN Modal */}
             {showChangePinModal && (
                 <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center">
@@ -284,8 +429,8 @@ const SettingsPanel: React.FC = () => {
             {/* Toast */}
             {showToast && (
                 <div className={`fixed top-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 animate-in fade-in zoom-in-95 ${toastType === 'success'
-                        ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
-                        : 'bg-red-500/10 border border-red-500/30 text-red-400'
+                    ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
+                    : 'bg-red-500/10 border border-red-500/30 text-red-400'
                     }`}>
                     <span className="material-symbols-outlined">
                         {toastType === 'success' ? 'check_circle' : 'error'}

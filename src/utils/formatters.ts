@@ -19,3 +19,6 @@ export const getRefundAdminFee = (price: number, commRate: number): number => {
     if (price <= 0) return 0;
     return Math.min(5.00, (price * commRate) * 0.20);
 };
+
+// Format as money (integer, no decimals)
+export const fmtMoney = (v: number): string => `$${Math.round(v).toLocaleString()}`;

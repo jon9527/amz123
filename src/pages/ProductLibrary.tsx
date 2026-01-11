@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { ProductSpec } from '../types';
-import { useProducts } from '../ProductContext';
+import { useProducts } from '../contexts/ProductContext';
 
 // 标签颜色配置（暗色主题）
 const TAG_COLORS = [

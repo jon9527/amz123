@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { LogisticsChannel } from '../types';
-import { useLogistics } from '../LogisticsContext';
+import { useLogistics } from '../contexts/LogisticsContext';
 
 const emptyForm: LogisticsChannel = {
     id: '',
@@ -342,3 +342,5 @@ export const LogisticsLibrary: React.FC = () => {
         </div>
     );
 };
+
+export default LogisticsLibrary;

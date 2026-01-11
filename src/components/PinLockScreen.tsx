@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useAuth, hashPin } from '../AuthContext';
+import { useAuth, hashPin } from '../contexts/AuthContext';
 
 const PinLockScreen: React.FC = () => {
     const { hasPin, setPin, isLocked, clearPin } = useAuth();
@@ -115,8 +115,8 @@ const PinLockScreen: React.FC = () => {
                     <div
                         key={i}
                         className={`w-4 h-4 rounded-full border-2 transition-all duration-200 ${i < pin.length
-                                ? 'bg-blue-500 border-blue-500 shadow-lg shadow-blue-500/30'
-                                : 'border-zinc-600'
+                            ? 'bg-blue-500 border-blue-500 shadow-lg shadow-blue-500/30'
+                            : 'border-zinc-600'
                             }`}
                     />
                 ))}
@@ -153,10 +153,10 @@ const PinLockScreen: React.FC = () => {
                         }}
                         disabled={!key}
                         className={`w-16 h-16 rounded-2xl text-2xl font-black transition-all ${key === ''
-                                ? 'invisible'
-                                : key === 'del'
-                                    ? 'bg-zinc-800/50 text-zinc-400 hover:bg-zinc-700 flex items-center justify-center'
-                                    : 'bg-zinc-800 text-white hover:bg-zinc-700 hover:scale-105 active:scale-95'
+                            ? 'invisible'
+                            : key === 'del'
+                                ? 'bg-zinc-800/50 text-zinc-400 hover:bg-zinc-700 flex items-center justify-center'
+                                : 'bg-zinc-800 text-white hover:bg-zinc-700 hover:scale-105 active:scale-95'
                             }`}
                     >
                         {key === 'del' ? (

@@ -1,22 +1,13 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Cell,
-  LabelList
-} from 'recharts';
 import SaveProfitModelDialog from '../components/SaveProfitModelDialog';
 import StepperInput from '../components/StepperInput';
+import DistributionRow from '../components/DistributionRow';
+import WaterfallChart from '../components/WaterfallChart';
 import { ProfitModelService } from '../services/profitModelService';
 import { ProfitModelInputs, ProfitModelResults, SavedProfitModel } from '../types';
-import { useProducts } from '../ProductContext';
-import { useLogistics } from '../LogisticsContext';
+import { useProducts } from '../contexts/ProductContext';
+import { useLogistics } from '../contexts/LogisticsContext';
 import { r2, fmtUSD, fmtPct, getRefundAdminFee } from '../utils/formatters';
 
 // --- 全局样式 ---
@@ -30,27 +21,6 @@ const globalInputStyles = `
     -moz-appearance: textfield;
   }
 `;
-
-const DistributionRow: React.FC<{ label: string, value: number, price: number, color: string, isBold?: boolean }> = ({ label, value, price, color, isBold }) => {
-  const pct = price > 0 ? (value / price) * 100 : 0;
-  return (
-    <div className="group w-full h-[44px] flex flex-col justify-center">
-      <div className="flex items-center justify-between mb-1">
-        <div className="flex items-center gap-2">
-          <div className={`size-2 rounded-full ${color} shadow-lg shadow-black/50`}></div>
-          <span className="text-[12px] text-zinc-400 font-black uppercase tracking-tight">{label}</span>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className={`text-[13px] font-mono ${isBold ? 'text-emerald-500 font-black' : 'text-zinc-100 font-black'}`}>{fmtUSD(value)}</span>
-          <span className="text-[10px] text-zinc-600 font-mono w-10 text-right font-black">{pct.toFixed(1)}%</span>
-        </div>
-      </div>
-      <div className="h-[2px] bg-zinc-950 rounded-full overflow-hidden">
-        <div className={`h-full ${color} opacity-90 transition-all duration-700 ease-out`} style={{ width: `${Math.max(0, Math.min(100, pct))}%` }}></div>
-      </div>
-    </div>
-  );
-};
 
 const ProfitCalculator: React.FC = () => {
   const { products } = useProducts();
@@ -609,15 +579,15 @@ const ProfitCalculator: React.FC = () => {
     const p8 = r2(p7 - pb.adsVal);
 
     return [
-      { name: '销售总额', val: pb.price, range: [0, p1], color: '#334155' },
-      { name: '采购成本', val: -costProdUSD, range: [p2, p1], color: '#3b82f6' },
-      { name: '头程', val: -firstMile, range: [p3, p2], color: '#0ea5e9' },
-      { name: '物流杂费', val: -logistics, range: [p4, p3], color: '#a855f7' },
-      { name: '月仓储费', val: -storage, range: [p5, p4], color: '#6366f1' },
-      { name: '销售佣金', val: -pb.commVal, range: [p6, p5], color: '#f59e0b' },
-      { name: '退货损耗', val: -pb.ret, range: [p7, p6], color: '#ef4444' },
-      { name: '广告成本', val: -pb.adsVal, range: [p8, p7], color: '#eab308' },
-      { name: '净利润', val: pb.profit, range: [0, pb.profit], color: '#22c55e' }
+      { name: '销售总额', val: pb.price, range: [0, p1] as [number, number], color: '#334155' },
+      { name: '采购成本', val: -costProdUSD, range: [p2, p1] as [number, number], color: '#3b82f6' },
+      { name: '头程', val: -firstMile, range: [p3, p2] as [number, number], color: '#0ea5e9' },
+      { name: '物流杂费', val: -logistics, range: [p4, p3] as [number, number], color: '#a855f7' },
+      { name: '月仓储费', val: -storage, range: [p5, p4] as [number, number], color: '#6366f1' },
+      { name: '销售佣金', val: -pb.commVal, range: [p6, p5] as [number, number], color: '#f59e0b' },
+      { name: '退货损耗', val: -pb.ret, range: [p7, p6] as [number, number], color: '#ef4444' },
+      { name: '广告成本', val: -pb.adsVal, range: [p8, p7] as [number, number], color: '#eab308' },
+      { name: '净利润', val: pb.profit, range: [0, pb.profit] as [number, number], color: '#22c55e' }
     ];
   }, [results.planB, results.costProdUSD, shippingUSD, miscFee, storageFee, fbaFee]);
 
@@ -1030,34 +1000,7 @@ const ProfitCalculator: React.FC = () => {
         </div>
 
         <div className="w-full p-6 md:p-8 bg-[#0d0d0f]">
-          <div className="h-[420px] w-full relative">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={waterfallData} margin={{ top: 20, right: 30, left: 30, bottom: 40 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e1e21" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#52525b', fontSize: 13, fontWeight: 900, letterSpacing: '0.05em' }} dy={20} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#52525b', fontSize: 12, fontWeight: 600 }} tickFormatter={(v) => `$${v} `} domain={[0, 'auto']} />
-                <Tooltip cursor={{ fill: 'rgba(255,255,255,0.02)' }} animationDuration={0} isAnimationActive={false}
-                  content={({ active, payload }) => {
-                    if (active && payload && payload.length) {
-                      const data = payload[0].payload;
-                      return (
-                        <div className="bg-[#18181b] border border-zinc-800 p-6 rounded-2xl shadow-2xl ring-1 ring-white/5 backdrop-blur-xl pointer-events-none min-w-[160px]">
-                          <p className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em] mb-3 border-b border-zinc-800 pb-2">{data.name}</p>
-                          <p className={`text - 2xl font - black font - mono ${data.val >= 0 ? 'text-emerald-400' : 'text-rose-400'} `}>{fmtUSD(data.val)}</p>
-                        </div>
-                      );
-                    }
-                    return null;
-                  }}
-                />
-                <Bar dataKey="range" isAnimationActive={false} barSize={85}>
-                  {waterfallData.map((entry, index) => <Cell key={`cell - ${index} `} fill={entry.color} fillOpacity={0.9} radius={[4, 4, 4, 4]} />)}
-                  <LabelList dataKey="val" position="top" formatter={(v: number) => fmtUSD(v)} style={{ fill: '#a1a1aa', fontSize: 14, fontWeight: 900, fontFamily: 'JetBrains Mono' }} />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-
+          <WaterfallChart data={waterfallData} height={420} />
         </div>
       </div>
 

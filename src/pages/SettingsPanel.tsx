@@ -5,7 +5,7 @@ import { Logger, LogLevel, LogEntry } from '../services/Logger';
 import { PageShell } from '../components/page-layout';
 
 const SettingsPanel: React.FC = () => {
-    const { lock, hasPin, clearPin, setPin } = useAuth();
+    const { lock, hasPin: _hasPin, clearPin, setPin } = useAuth();
     const [stats, setStats] = useState({ productCount: 0, modelCount: 0, channelCount: 0 });
     const [showToast, setShowToast] = useState(false);
     const [toastMessage, setToastMessage] = useState('');

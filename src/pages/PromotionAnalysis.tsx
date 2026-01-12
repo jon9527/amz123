@@ -67,7 +67,7 @@ const PromotionAnalysis: React.FC = () => {
 
     // Inputs (Internal State only, UI removed for per-unit)
     const [simPrice, setSimPrice] = useState<number>(0);
-    const [simTacos, setSimTacos] = useState<number>(15.0); // Default 15%
+    const [simTacos, _setSimTacos] = useState<number>(15.0); // Default 15%
 
     // Volume Input
     const [targetVolume, setTargetVolume] = useState<number>(100);
@@ -571,8 +571,8 @@ const PromotionAnalysis: React.FC = () => {
                                             }}
                                         />
                                         <Bar dataKey="range" isAnimationActive={false} barSize={85}>
-                                            {calc.waterfallData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} fillOpacity={0.9} radius={[4, 4, 4, 4]} />)}
-                                            <LabelList dataKey="val" position="top" formatter={(v: number) => fmtUSD(v)} style={{ fill: '#a1a1aa', fontSize: 14, fontWeight: 900, fontFamily: 'JetBrains Mono' }} />
+                                            {calc.waterfallData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} fillOpacity={0.9} radius={[4, 4, 4, 4] as any} />)}
+                                            <LabelList dataKey="val" position="top" formatter={(v: any) => fmtUSD(Number(v))} style={{ fill: '#a1a1aa', fontSize: 14, fontWeight: 900, fontFamily: 'JetBrains Mono' }} />
                                         </Bar>
                                     </BarChart>
                                 </ResponsiveContainer>

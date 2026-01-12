@@ -71,7 +71,7 @@ const PromotionProfitChart: React.FC<PromotionProfitChartProps> = ({ monthlyProf
         return { data, maxLoss, maxLossIdx, maxLossLabel, breakEvenIdx, breakEvenDate, totalDaysToBreakEven, finalValue: cumulative, minVal, maxVal };
     }, [monthlyProfits]);
 
-    const { data, maxLoss, maxLossIdx, maxLossLabel, breakEvenIdx, breakEvenDate, totalDaysToBreakEven, finalValue, minVal, maxVal } = chartState;
+    const { data, maxLoss, maxLossIdx, maxLossLabel, breakEvenIdx, breakEvenDate, totalDaysToBreakEven, minVal, maxVal } = chartState;
 
     return (
         <div className="bg-[#111111] border border-[#27272a] rounded-2xl p-6">
@@ -143,7 +143,7 @@ const PromotionProfitChart: React.FC<PromotionProfitChartProps> = ({ monthlyProf
                                 padding: '10px 14px'
                             }}
                             labelStyle={{ color: '#fff', fontWeight: 'bold', marginBottom: '6px' }}
-                            formatter={(value: number, name: string, props: any) => {
+                            formatter={(value: any, _name: any, props: any) => {
                                 const monthProfit = props.payload.monthProfit;
                                 return [
                                     <div key="v" style={{ color: '#fff', lineHeight: '1.6' }}>

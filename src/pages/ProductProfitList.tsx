@@ -1,15 +1,13 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { SavedProfitModel } from '../types';
 import { ProfitModelService } from '../services/profitModelService';
 import { useProducts } from '../contexts/ProductContext';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend } from 'recharts';
-import { fmtUSD, fmtPct } from '../utils/formatters';
-import { TAG_COLORS, getTagColor } from '../utils/tagColors';
-import SortIcon, { SortOrder } from '../components/SortIcon';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { fmtUSD } from '../utils/formatters';
+import { getTagColor } from '../utils/tagColors';
 
-type SortKey = 'timestamp' | 'planBProfit' | 'planBMargin' | 'actualPrice' | 'productName';
 type ViewMode = 'table' | 'comparison';
 
 const ProductProfitList: React.FC = () => {
@@ -17,8 +15,7 @@ const ProductProfitList: React.FC = () => {
   const [models, setModels] = useState<SavedProfitModel[]>([]);
   const [filteredModels, setFilteredModels] = useState<SavedProfitModel[]>([]);
   const [search, setSearch] = useState('');
-  const [sortKey, setSortKey] = useState<SortKey>('timestamp');
-  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
+
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<ViewMode>('table');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -64,7 +61,7 @@ const ProductProfitList: React.FC = () => {
 
   useEffect(() => {
     applyFiltersAndSort();
-  }, [models, search, sortKey, sortOrder]);
+  }, [models, search]);
 
   const loadData = () => {
     const data = ProfitModelService.getAll();
@@ -80,53 +77,11 @@ const ProductProfitList: React.FC = () => {
     }
 
     // 排序
-    filtered.sort((a, b) => {
-      let aVal: any, bVal: any;
-
-      switch (sortKey) {
-        case 'timestamp':
-          aVal = a.timestamp;
-          bVal = b.timestamp;
-          break;
-        case 'planBProfit':
-          aVal = a.results.planB.profit;
-          bVal = b.results.planB.profit;
-          break;
-        case 'planBMargin':
-          aVal = a.results.planB.margin;
-          bVal = b.results.planB.margin;
-          break;
-        case 'actualPrice':
-          aVal = a.inputs.actualPrice;
-          bVal = b.inputs.actualPrice;
-          break;
-        case 'productName':
-          aVal = a.productName.toLowerCase();
-          bVal = b.productName.toLowerCase();
-          break;
-        default:
-          aVal = a.timestamp;
-          bVal = b.timestamp;
-      }
-
-      if (sortOrder === 'asc') {
-        return aVal > bVal ? 1 : -1;
-      } else {
-        return aVal < bVal ? 1 : -1;
-      }
-    });
 
     setFilteredModels(filtered);
   };
 
-  const handleSort = (key: SortKey) => {
-    if (sortKey === key) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortKey(key);
-      setSortOrder('desc');
-    }
-  };
+
 
   const handleDelete = (ids: string[]) => {
     setToDeleteIds(ids);
@@ -430,7 +385,7 @@ const ProductProfitList: React.FC = () => {
                 {(Object.entries(groupedModels) as [string, SavedProfitModel[]][]).map(([groupName, groupItems]) => {
                   const isExpanded = expandedGroups.has(groupName);
                   const groupSelectedCount = groupItems.filter(m => selectedIds.has(m.id)).length;
-                  const allGroupSelected = groupSelectedCount === groupItems.length;
+
 
                   return (
                     <React.Fragment key={groupName}>

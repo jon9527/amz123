@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 /**
  * System Logger
  * Wraps console methods to provide consistent timestamped logs.

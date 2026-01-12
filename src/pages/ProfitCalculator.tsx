@@ -7,7 +7,8 @@ import { ProfitModelService } from '../services/profitModelService';
 import { ProfitModelInputs, ProfitModelResults, SavedProfitModel } from '../types';
 import { useProducts } from '../contexts/ProductContext';
 import { useLogistics } from '../contexts/LogisticsContext';
-import { r2, fmtUSD, fmtPct, getRefundAdminFee } from '../utils/formatters';
+import { r2, fmtUSD, fmtPct } from '../utils/formatters';
+import { getCommRate as getCommRateUtil, getRefundAdminFee, CommissionConfig } from '../utils/commissionUtils';
 
 import { ProfitHeader } from '../components/profit-calculator/ProfitHeader';
 import { ProfitInputs } from '../components/profit-calculator/ProfitInputs';
@@ -50,20 +51,20 @@ const ProfitCalculator: React.FC = () => {
   const [actualPriceDisplay, setActualPriceDisplay] = useState('17.99');
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [showToast, setShowToast] = useState(false);
-  const [savedModelId, setSavedModelId] = useState<string | null>(null);
+  const [_savedModelId, setSavedModelId] = useState<string | null>(null);
   const [showLoadMenu, setShowLoadMenu] = useState(false);
   const [recentProducts, setRecentProducts] = useState<SavedProfitModel[]>([]);
   // 新增：所有历史记录（支持展开查看）
-  const [allModels, setAllModels] = useState<SavedProfitModel[]>([]);
+  const [_allModels, setAllModels] = useState<SavedProfitModel[]>([]);
   // const [expandedProduct, setExpandedProduct] = useState<string | null>(null);
 
   // Smart Model Detection State
-  const [existingModelsForProduct, setExistingModelsForProduct] = useState<SavedProfitModel[]>([]);
+
 
   // 新增：产品基本信息（用于保存和对比）
   const [productName, setProductName] = useState('');
-  const [loadedLabel, setLoadedLabel] = useState(''); // 记录导入的方案标签
-  const [loadedNote, setLoadedNote] = useState('');   // 记录导入的备注
+  const [_loadedLabel, setLoadedLabel] = useState(''); // 记录导入的方案标签
+  const [_loadedNote, setLoadedNote] = useState('');   // 记录导入的备注
   const [loadedModelId, setLoadedModelId] = useState<string | null>(null); // 记录导入的模型 ID（用于更新而非新建）
 
   // Content Hashing for Smart Save
@@ -222,7 +223,7 @@ const ProfitCalculator: React.FC = () => {
     setLoadedModelId(null);
     setLoadedLabel('');
     setLoadedHash(''); // 重置 hash，防止切换回来后重复保存
-    setExistingModelsForProduct([]);
+    // setExistingModelsForProduct([]);
     setDataSource('productLibrary'); // 追踪来源：产品库
 
     if (!pid) return; // User cleared selection
@@ -238,25 +239,9 @@ const ProfitCalculator: React.FC = () => {
         hasEditedPlanB.current = false;
       }
     }
-
-    // 2. Smart Detection: Check for existing profit models for this product
-    const allModels = ProfitModelService.getAll();
-    // Filter by productId OR strictly matching productName (fallback)
-    const matches = allModels.filter(m =>
-      m.productId === pid ||
-      (product && m.productName === product.name)
-    ).sort((a, b) => b.timestamp - a.timestamp); // Newest first
-
-    if (matches.length > 0) {
-      setExistingModelsForProduct(matches);
-    }
   };
 
-  const loadRecentModel = () => {
-    if (existingModelsForProduct.length > 0) {
-      handleLoadModel(existingModelsForProduct[0]);
-    }
-  };
+
 
 
   // Grouped models state
@@ -449,13 +434,9 @@ const ProfitCalculator: React.FC = () => {
     const costMisc = miscFee;
     const costStorage = storageFee;
 
-    // Helper: Determine Commission Rate based on Price
-    const getCommRate = (price: number) => {
-      if (!autoComm) return manualComm / 100;
-      if (price > 20) return 0.17; // > $20
-      if (price >= 15) return 0.10; // $15 - $20
-      return 0.05; // < $15
-    };
+    // Helper: Determine Commission Rate based on Price - 使用统一工具函数
+    const commConfig: CommissionConfig = { autoComm, manualComm };
+    const getCommRate = (price: number) => getCommRateUtil(price, commConfig);
 
     /**
      * Unified Solver for True Break-Even Price

@@ -239,7 +239,7 @@ const ReplenishmentAdvice: React.FC = () => {
                 sellCost: targetData.sellCost || 0, // 总成本(无广)
                 shippingUSD: strategy.inputs.shippingUSD || 0, // 头程USD
                 profitUSD: targetData.profit || 0, // 净利润USD
-                exchRate: strategy.inputs.exchRate || prev.exchRate, // 使用策略的汇率
+                exchRate: strategy.inputs.exchangeRate || prev.exchRate, // 使用策略的汇率
             }));
         }
     };
@@ -323,7 +323,7 @@ const ReplenishmentAdvice: React.FC = () => {
         });
     }, [selectedStrategyId, computeMarginFromPrice]);
 
-    const selectedProduct = products.find(p => p.id === selectedProductId);
+
     const [activeTab, setActiveTab] = useState<'spec' | 'pricing' | 'batch' | 'boss'>('spec');
     const [logCosts, setLogCosts] = useState<LogisticsCosts>({ sea: 0, air: 0, exp: 0 });
 
@@ -492,7 +492,7 @@ const ReplenishmentAdvice: React.FC = () => {
             }
         };
 
-        const yLabels = state.batches.map((b, i) => `批次${i + 1}\n${b.qty}件`);
+
 
         const fmtDateAxis = (val: number) => {
             const d = new Date(state.simStart);
@@ -508,14 +508,14 @@ const ReplenishmentAdvice: React.FC = () => {
             ticks: { color: '#fff', font: { weight: 'bold' as const, size: 11 }, stepSize: 14, callback: (v: any) => fmtDateAxis(v as number) },
         };
         const yAxisWidth = 60;
-        const chartPadding = { left: 0, right: 20, top: 45, bottom: 0 }; // Deprecated, kept for reference if needed
+
         const ganttPadding = { left: 0, right: 20, top: 10, bottom: 0 };
         const cashPadding = { left: 0, right: 20, top: 15, bottom: 0 };
 
 
         // --- GANTT CHART ---
 
-        const totalReplenishQty = state.batches.reduce((sum, b) => sum + (b.qty || 0), 0);
+
 
         if (ganttChartRef.current) {
             // Update Existing
@@ -534,11 +534,11 @@ const ReplenishmentAdvice: React.FC = () => {
                 };
             }
 
-            chart.data.datasets[0].data = simResult.ganttProd;
-            chart.data.datasets[1].data = simResult.ganttShip;
-            chart.data.datasets[2].data = simResult.ganttHold;
-            chart.data.datasets[3].data = simResult.ganttSell;
-            chart.data.datasets[4].data = simResult.ganttStockout;
+            chart.data.datasets[0].data = simResult.ganttProd as any;
+            chart.data.datasets[1].data = simResult.ganttShip as any;
+            chart.data.datasets[2].data = simResult.ganttHold as any;
+            chart.data.datasets[3].data = simResult.ganttSell as any;
+            chart.data.datasets[4].data = simResult.ganttStockout as any;
 
             if (chart.options.scales?.x) {
                 chart.options.scales.x = { ...commonXScale, position: 'bottom', grid: { color: '#3f3f46', lineWidth: 1 } };
@@ -552,11 +552,11 @@ const ReplenishmentAdvice: React.FC = () => {
                     // 使用索引作为 Category Labels，确保顺序固定
                     labels: state.batches.map((_, i) => i.toString()),
                     datasets: [
-                        { label: '生产', data: simResult.ganttProd, backgroundColor: '#d94841', borderRadius: 4, barThickness: 35 },
-                        { label: '运输', data: simResult.ganttShip, backgroundColor: '#e6a23c', borderRadius: 4, barThickness: 35 },
-                        { label: '待售', data: simResult.ganttHold, backgroundColor: '#909399', borderRadius: 0, barThickness: 35 },
-                        { label: '销售', data: simResult.ganttSell, backgroundColor: '#2e9f6e', borderRadius: 4, barThickness: 35 },
-                        { label: '断货', data: simResult.ganttStockout, backgroundColor: 'rgba(217, 72, 65, 0.3)', borderColor: '#d94841', borderWidth: 1, borderRadius: 4, barThickness: 20 },
+                        { label: '生产', data: simResult.ganttProd as any, backgroundColor: '#d94841', borderRadius: 4, barThickness: 35 },
+                        { label: '运输', data: simResult.ganttShip as any, backgroundColor: '#e6a23c', borderRadius: 4, barThickness: 35 },
+                        { label: '待售', data: simResult.ganttHold as any, backgroundColor: '#909399', borderRadius: 0, barThickness: 35 },
+                        { label: '销售', data: simResult.ganttSell as any, backgroundColor: '#2e9f6e', borderRadius: 4, barThickness: 35 },
+                        { label: '断货', data: simResult.ganttStockout as any, backgroundColor: 'rgba(217, 72, 65, 0.3)', borderColor: '#d94841', borderWidth: 1, borderRadius: 4, barThickness: 20 },
                     ],
                 },
                 options: {
@@ -968,11 +968,7 @@ const ReplenishmentAdvice: React.FC = () => {
                             position: 'left',
                             grid: { color: '#3f3f46', lineWidth: 0.5 },
                             afterFit: (axis: any) => { axis.width = yAxisWidth; },
-                            ticks: {
-                                color: '#a1a1aa',
-                                precision: 0,
-                                callback: (v: number) => Math.abs(v) >= 1000 ? '$' + (v / 1000).toFixed(0) + 'k' : '$' + v
-                            },
+                            ticks: { color: '#fff', font: { weight: 'bold' as const, size: 11 }, stepSize: 14, callback: (v: any) => Math.abs(Number(v)) >= 1000 ? '$' + (Number(v) / 1000).toFixed(0) + 'k' : '$' + v },
                             afterDataLimits: alignZeroHelper
                         },
                         y1: {
@@ -1040,61 +1036,6 @@ const ReplenishmentAdvice: React.FC = () => {
         }));
     };
 
-
-    const deleteBatch = (id: number) => {
-        setState((s) => {
-            const remainingBatches = s.batches
-                .filter((b) => b.id !== id)
-                .map((b, i) => ({ ...b, id: i, name: `批次${i + 1}` }));
-
-            if (remainingBatches.length === 0) {
-                return { ...s, batches: [] };
-            }
-
-            // 重新计算完美接力
-            const { simStart, monthlyDailySales, seaDays } = s;
-            const leadTime = 15 + seaDays;
-
-            // 辅助函数：获取某天的日销量
-            const getDemandForDay = (dayOffset: number): number => {
-                const date = new Date(simStart);
-                date.setDate(date.getDate() + dayOffset);
-                return monthlyDailySales[date.getMonth()] || 50;
-            };
-
-            let currentSaleStart = leadTime;
-
-            remainingBatches.forEach((b, i) => {
-                if (i === 0) {
-                    b.offset = 0;
-                    currentSaleStart = leadTime;
-                } else {
-                    const calcOffset = currentSaleStart - leadTime;
-                    const prevOffset = remainingBatches[i - 1].offset;
-                    b.offset = Math.max(0, Math.max(prevOffset, Math.floor(calcOffset)));
-                    currentSaleStart = Math.max(currentSaleStart, b.offset + leadTime);
-                }
-
-                // 模拟消费，计算卖完日
-                let qty = b.qty;
-                let day = currentSaleStart;
-                while (qty > 0 && day < 1000) {
-                    const demand = getDemandForDay(day);
-                    const take = Math.min(qty, demand);
-                    qty -= take;
-                    if (qty > 0) {
-                        day++;
-                    } else {
-                        const safeBuffer = s.safetyDays || 7;
-                        currentSaleStart = (take < demand ? day : day + 1) - safeBuffer;
-                        if (currentSaleStart < leadTime) currentSaleStart = leadTime;
-                    }
-                }
-            });
-
-            return { ...s, batches: remainingBatches };
-        });
-    };
 
     const updateBatch = (id: number, key: keyof ReplenishmentBatch, value: any) => {
         setState((s) => ({
@@ -1233,8 +1174,7 @@ const ReplenishmentAdvice: React.FC = () => {
         { key: 'batch', label: '📝 补货批次', icon: 'local_shipping' },
     ] as const;
 
-    const inputClass = 'w-full bg-[#18181b] border border-[#27272a] rounded-lg px-3 py-2 text-white text-center font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none';
-    const labelClass = 'text-xs text-zinc-500 font-bold uppercase mb-1';
+
     const cardClass = 'bg-[#0f0f12] border border-[#1e1e24] rounded-xl p-4';
 
     // ============ RENDER ============
@@ -1349,7 +1289,7 @@ const ReplenishmentAdvice: React.FC = () => {
                                         { emoji: '🚢', name: '海运', priceKey: 'seaPriceCbm', daysKey: 'seaDays', channelKey: 'seaChannelId', type: 'sea' as const },
                                         { emoji: '✈️', name: '空派', priceKey: 'airPriceKg', daysKey: 'airDays', channelKey: 'airChannelId', type: 'air' as const },
                                         { emoji: '🚀', name: '快递', priceKey: 'expPriceKg', daysKey: 'expDays', channelKey: 'expChannelId', type: 'exp' as const },
-                                    ].map(({ emoji, name, priceKey, daysKey, channelKey, type }) => {
+                                    ].map(({ emoji, name, daysKey, channelKey, type }) => {
                                         const currentChanId = (state as any)[channelKey];
                                         const channel = channels.find(c => c.id === currentChanId);
                                         const costUSD = logCosts[type] / state.exchRate;
@@ -1363,11 +1303,10 @@ const ReplenishmentAdvice: React.FC = () => {
                                         }
 
                                         // 决定显示的价格值
-                                        let displayPrice = 0;
                                         if (channel) {
-                                            displayPrice = useKg ? (channel.pricePerKg || 0) : (channel.pricePerCbm || 0);
+                                            // displayPrice = useKg ? (channel.pricePerKg || 0) : (channel.pricePerCbm || 0);
                                         } else {
-                                            displayPrice = (isSea && useKg) ? state.seaPriceKg : (state as any)[priceKey];
+                                            // displayPrice = (isSea && useKg) ? state.seaPriceKg : (state as any)[priceKey];
                                         }
 
                                         return (
@@ -1751,7 +1690,6 @@ const ReplenishmentAdvice: React.FC = () => {
                                                     );
                                                 }
                                                 const { recallUSD } = computeFeeBreakdown(price, selectedStrategyId);
-                                                const recallRMB = recallUSD * state.exchRate;
                                                 const isNegative = recallUSD < 0;
                                                 return (
                                                     <td key={i} className="py-3 px-1 text-center">

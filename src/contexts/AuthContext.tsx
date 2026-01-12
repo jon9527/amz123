@@ -123,16 +123,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const contextValue: AuthContextType = {
         isLocked,
         hasPin,
-        unlock: (pin: string) => {
-            hashPin(pin).then(hash => {
-                if (hash === pinHash) {
-                    setIsLocked(false);
-                    localStorage.setItem(LOCK_STATE_KEY, 'unlocked');
-                    localStorage.setItem(LAST_ACTIVITY_KEY, Date.now().toString());
-                }
-            });
-            return true;
-        },
+        unlock,
         lock,
         setPin,
         clearPin

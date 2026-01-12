@@ -1,6 +1,6 @@
 import React from 'react';
 import { SavedProfitModel, ProductSpec } from '../../types';
-import { Product } from '../../contexts/ProductContext'; // Assuming Product type is exported here or I should import it from types if available
+
 
 // Check where Product is defined. In ProfitCalculator it iterates products map.
 // Line 9: import { useProducts } from '../contexts/ProductContext';

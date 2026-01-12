@@ -248,10 +248,10 @@ export const runSimulation = (
     };
 
     // Process Batch Recalls
-    batches.forEach((b, i) => generateRecallEvents(batchRecallMap[i], i));
+    batches.forEach((_, i) => generateRecallEvents(batchRecallMap[i], i));
 
     salesPeriods.forEach((period, i) => {
-        const b = batches[i];
+
         const yKey = i.toString();
         if (period.start !== null && period.end !== null) {
             ganttSell.push({ x: [period.start, period.end], y: yKey, batchIdx: i, revenue: batchRevenueMap[i] });

@@ -217,7 +217,7 @@ const KeywordTool: React.FC = () => {
                         请在左侧输入关键词后点击"开始透视"
                     </div>
                 ) : (
-                    rootsData.map((rd, idx) => (
+                    rootsData.map((rd) => (
                         <Column
                             key={rd.root}
                             data={rd}
@@ -299,7 +299,7 @@ const Column: React.FC<{
     onOpenModal: (keyword: string) => void;
     onCopyColumn: () => void;
     onCopyText: (text: string) => void;
-}> = ({ data, globalData, sortedRoots, activeFilter, onToggleFilter, onOpenModal, onCopyColumn, onCopyText }) => {
+}> = ({ data, globalData, sortedRoots: _sortedRoots, activeFilter, onToggleFilter, onOpenModal, onCopyColumn, onCopyText }) => {
     const normalize = (str: string) => str.toLowerCase().replace(/[^a-z0-9]/g, '');
     const { root, keywords, color, subCounts, corePrediction } = data;
 

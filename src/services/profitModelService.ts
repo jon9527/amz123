@@ -101,7 +101,7 @@ export class ProfitModelService {
         const lowerQuery = query.toLowerCase();
         return all.filter(model =>
             model.productName.toLowerCase().includes(lowerQuery) ||
-            model.asin.toLowerCase().includes(lowerQuery) ||
+            model.asin?.toLowerCase().includes(lowerQuery) ||
             model.label.toLowerCase().includes(lowerQuery)
         );
     }

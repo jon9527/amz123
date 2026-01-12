@@ -46,17 +46,52 @@ export interface FinancialEvent {
     label: string;         // 显示标签，如 "#1定 12/27"
 }
 
+// ============ Gantt 图数据类型 ============
+
+/** Gantt 柱状图基础数据 */
+export interface GanttBarBase {
+    x: [number, number];   // [开始日, 结束日]
+    y: number;             // 批次索引
+    batchIdx: number;      // 批次索引
+    duration?: number;     // 持续天数
+}
+
+/** 生产阶段数据 */
+export interface GanttProdBar extends GanttBarBase {
+    cost: number;          // 采购成本
+}
+
+/** 运输阶段数据 */
+export interface GanttShipBar extends GanttBarBase {
+    freight: number;       // 运费
+}
+
+/** 待售阶段数据 */
+export interface GanttHoldBar extends GanttBarBase {
+    duration: number;      // 待售天数
+}
+
+/** 销售阶段数据 */
+export interface GanttSellBar extends GanttBarBase {
+    revenue: number;       // 回款金额
+}
+
+/** 断货数据 */
+export interface GanttStockoutBar extends GanttBarBase {
+    gapDays: number;       // 断货天数
+}
+
 export interface SimulationResult {
     xMin: number;
     xMax: number;
     cashPoints: { x: number; y: number }[];
     invPoints: { x: number; y: number }[];
     profitPoints: { x: number; y: number }[];
-    ganttProd: any[];
-    ganttShip: any[];
-    ganttHold: any[];
-    ganttSell: any[];
-    ganttStockout: any[];
+    ganttProd: GanttProdBar[];
+    ganttShip: GanttShipBar[];
+    ganttHold: GanttHoldBar[];
+    ganttSell: GanttSellBar[];
+    ganttStockout: GanttStockoutBar[];
     minCash: number;
     finalCash: number;
     totalNetProfit: number;
@@ -72,3 +107,4 @@ export interface SimulationResult {
     financialEvents: FinancialEvent[];
     totalStockoutDays: number;
 }
+

@@ -22,7 +22,7 @@ const SaveProfitModelDialog: React.FC<SaveProfitModelDialogProps> = ({ isOpen, o
 
     // 重复检测状态
     const [duplicateId, setDuplicateId] = useState<string | null>(null);
-    const isDuplicate = !!duplicateId;
+
 
     const [saveAsNew, setSaveAsNew] = useState(false);
 
@@ -138,13 +138,6 @@ const SaveProfitModelDialog: React.FC<SaveProfitModelDialogProps> = ({ isOpen, o
 
     const handleClose = () => {
         onClose();
-    };
-
-    const handleSwitchToUpdate = () => {
-        if (duplicateId) {
-            setForceUpdateId(duplicateId);
-            setDuplicateId(null); // Clear duplicate warning as we are now updating
-        }
     };
 
     if (!isOpen) return null;

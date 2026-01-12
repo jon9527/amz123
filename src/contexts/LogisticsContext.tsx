@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { LogisticsChannel } from './types';
+import { LogisticsChannel } from '../types';
 
 interface LogisticsContextType {
     channels: LogisticsChannel[];

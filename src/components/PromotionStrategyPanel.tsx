@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { ComposedChart, Line, Bar, BarChart, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Scatter, Area, Cell, LabelList } from 'recharts';
+import { ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Scatter, Area, Cell } from 'recharts';
 
 import JCurveLogicDialog from './JCurveLogicDialog';
 
@@ -28,7 +28,7 @@ const PromotionStrategyPanel: React.FC<PromotionStrategyPanelProps> = ({
 
     // 1. J-Curve Data (Cash Flow) - 3-Point Linear Model (Based on original logic)
     const jCurveData = useMemo(() => {
-        const safe = { points: [], maxVal: 100, minVal: -100, trueMax: 100, gradientOffset: 0.5, profitAd: 0, profitOrg: 0, bePoint: null, troughPoint: null, ticksX: [], ticksY: [] };
+        const safe = { points: [], maxVal: 100, minVal: -100, trueMax: 100, gradientOffset: 0.5, profitAd: 0, profitOrg: 0, bePoint: null, troughPoint: null, finalPoint: null, ticksX: [], ticksY: [], xDomainMax: 100 };
 
         if (viewMode === 'matrix') return safe;
 

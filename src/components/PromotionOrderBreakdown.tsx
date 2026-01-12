@@ -19,13 +19,13 @@ const Stepper = ({
     onChange,
     step = 1,
     min = 0,
-    suffix = ''
+
 }: {
     value: number;
     onChange: (v: number) => void;
     step?: number;
     min?: number;
-    suffix?: string;
+
 }) => {
     const [strVal, setStrVal] = React.useState(value.toString());
     const inputRef = React.useRef<HTMLInputElement>(null);
@@ -39,13 +39,7 @@ const Stepper = ({
         }
     }, [value]);
 
-    const commit = (s: string) => {
-        let n = parseFloat(s);
-        if (isNaN(n)) n = min;
-        if (n < min) n = min;
-        onChange(n);
-        setStrVal(n.toString());
-    };
+
 
     const update = (delta: number) => {
         const current = parseFloat(strVal) || 0;
@@ -106,14 +100,6 @@ const PromotionOrderBreakdown: React.FC<PromotionOrderBreakdownProps> = ({
     simCtr, setSimCtr,
     simCvr, setSimCvr
 }) => {
-
-    // Header Style Helper
-    const CardHeader = ({ title, icon }: { title: string, icon: string }) => (
-        <div className="flex items-center gap-2 mb-4">
-            <span className="material-symbols-outlined text-blue-500">{icon}</span>
-            <h3 className="text-lg font-bold text-white">{title}</h3>
-        </div>
-    );
 
     // Calculations
     const calc = useMemo(() => {

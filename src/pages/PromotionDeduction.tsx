@@ -6,7 +6,8 @@ import { ProfitModelService } from '../services/profitModelService';
 import { SavedProfitModel } from '../types';
 import PromotionProfitChart from '../components/PromotionProfitChart';
 import StepperInput from '../components/StepperInput';
-import { r2, fmtUSD, fmtPct } from '../utils/formatters';
+import { fmtUSD, fmtPct } from '../utils/formatters';
+import { getCommRate as getCommRateUtil, getReturnCost as getReturnCostUtil, CommissionConfig, ReturnCostParams } from '../utils/commissionUtils';
 
 // --- DATA TYPES ---
 interface MonthConfig {
@@ -149,21 +150,22 @@ const PromotionDeduction: React.FC = () => {
 
     // --- CALCULATION LOGIC ---
 
-    // 1. Commission
-    const getCommRate = (price: number) => {
-        if (!autoComm) return manualComm / 100;
-        if (price > 20) return 0.17;
-        if (price >= 15) return 0.10;
-        return 0.05;
-    };
+    // 1. Commission - 使用统一工具函数
+    const commConfig: CommissionConfig = { autoComm, manualComm };
+    const getCommRate = (price: number) => getCommRateUtil(price, commConfig);
 
-    // 2. Return Cost
-    const getReturnCost = (price: number, comm: number) => {
-        const adminFee = Math.min(5.00, comm * 0.20);
-        const lossSellable = baseData.retProc + adminFee + baseData.fba;
-        const lossUnsellable = lossSellable + baseData.prod + baseData.firstMile + baseData.retRem;
-        const weightedLoss = (lossSellable * (1 - baseData.unsellable)) + (lossUnsellable * baseData.unsellable);
-        return weightedLoss * baseData.retRate;
+    // 2. Return Cost - 使用统一工具函数
+    const getReturnCost = (price: number, commRate: number) => {
+        const returnParams: ReturnCostParams = {
+            retProcFee: baseData.retProc,
+            retRemFee: baseData.retRem,
+            fbaFee: baseData.fba,
+            prodCostUSD: baseData.prod,
+            shippingUSD: baseData.firstMile,
+            returnRate: baseData.retRate * 100,  // 转换为百分比值
+            unsellableRate: baseData.unsellable * 100  // 转换为百分比值
+        };
+        return getReturnCostUtil(price, commRate, returnParams);
     };
 
     // 3. Monthly Calculation Wrapper
@@ -174,8 +176,9 @@ const PromotionDeduction: React.FC = () => {
         const orgUnits = totalUnits - adUnits;
 
         // Dynamic Unit Economics
-        const mComm = m.price * getCommRate(m.price);
-        const mRet = getReturnCost(m.price, mComm);
+        const mCommRate = getCommRate(m.price);
+        const mComm = m.price * mCommRate;
+        const mRet = getReturnCost(m.price, mCommRate);
         const mTotalCOGS = baseData.prod + baseData.firstMile + baseData.misc + baseData.fba + baseData.storage + mComm + mRet;
         const mGrossOrganic = m.price - mTotalCOGS;
         const mCpa = (m.cvr > 0) ? m.cpc / (m.cvr / 100) : 0;
@@ -213,12 +216,12 @@ const PromotionDeduction: React.FC = () => {
 
     // 5. Recovery (Filling the Hole)
     const planBProfit = baseData.planBProfit || 1.0;
-    let recoveryUnits = 0;
-    let recoveryDays = 0;
+    // let recoveryUnits = 0;
+
     if (totalPromoPeriod.profit < 0 && planBProfit > 0) {
-        recoveryUnits = Math.ceil(Math.abs(totalPromoPeriod.profit) / planBProfit);
+        // recoveryUnits = Math.ceil(Math.abs(totalPromoPeriod.profit) / planBProfit);
         if (lastMonth.dailyUnits > 0) {
-            recoveryDays = Math.ceil(recoveryUnits / lastMonth.dailyUnits);
+
         }
     }
 
@@ -273,7 +276,7 @@ const PromotionDeduction: React.FC = () => {
     const firstProfitMonth = evaluatedMonths.find(m => m.res.totalProfit > 0);
 
     // Ad spend efficiency
-    const avgCPA = totalPromoPeriod.units > 0 ? totalPromoPeriod.spend / (totalPromoPeriod.units * (evaluatedMonths.reduce((sum, m) => sum + m.adShare, 0) / evaluatedMonths.length / 100)) : 0;
+
 
     // Export PDF - 使用 onclone 修复 input 渲染问题
     const handleExportPDF = async () => {

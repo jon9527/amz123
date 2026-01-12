@@ -45,8 +45,7 @@ ChartJS.register(
 
 // ============ HELPERS ============
 // fmtDate is imported from ReplenishmentEngine
-
-const fmtMoney = (v: number) => `$${Math.round(v).toLocaleString()}`;
+import { fmtMoney } from '../utils/formatters';
 
 
 const getDefaultState = (): ModuleState => ({

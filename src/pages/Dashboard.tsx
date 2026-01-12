@@ -2,6 +2,8 @@
 import React from 'react';
 import { MOCK_KPIS } from '../constants';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { Button } from '../components/ui';
+import { PageShell } from '../components/page-layout';
 
 const data = [
   { name: '周一', sales: 4000, profit: 2400 },
@@ -15,19 +17,14 @@ const data = [
 
 const Dashboard: React.FC = () => {
   return (
-    <div className="p-8 space-y-8 max-w-[1600px] mx-auto animate-in fade-in duration-500">
-      <div className="flex justify-between items-end gap-4">
-        <div>
-          <h2 className="text-3xl font-black tracking-tight mb-2">总览面板</h2>
-          <p className="text-zinc-500 text-sm">亚马逊店铺实时运营数据监控。</p>
-        </div>
-        <div className="flex gap-3">
-          <button className="flex items-center gap-2 px-4 py-2 bg-blue-600/10 hover:bg-blue-600/20 text-blue-600 rounded-lg text-sm font-bold transition-all border border-blue-600/20">
-            <span className="material-symbols-outlined text-[18px]">edit_square</span>
-            编辑布局
-          </button>
-        </div>
-      </div>
+    <PageShell
+      title="总览面板"
+      subtitle="亚马逊店铺实时运营数据监控"
+      maxWidth="wide"
+      actions={
+        <Button variant="ghost" icon="edit_square">编辑布局</Button>
+      }
+    >
 
       {/* Quick Actions */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -151,7 +148,7 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
       </div>
-    </div>
+    </PageShell>
   );
 };
 

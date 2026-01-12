@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { DataService } from '../services/DataService';
 import { Logger, LogLevel, LogEntry } from '../services/Logger';
+import { PageShell } from '../components/page-layout';
 
 const SettingsPanel: React.FC = () => {
     const { lock, hasPin, clearPin, setPin } = useAuth();
@@ -124,17 +125,13 @@ const SettingsPanel: React.FC = () => {
     );
 
     return (
-        <div className="p-6 max-w-4xl mx-auto space-y-6">
-            {/* Header */}
-            <div className="flex items-center gap-4 pb-4 border-b border-[#27272a]">
-                <div className="bg-zinc-800 p-3 rounded-xl">
-                    <span className="material-symbols-outlined text-3xl text-zinc-400">settings</span>
-                </div>
-                <div>
-                    <h1 className="text-2xl font-black text-white">系统设置</h1>
-                    <p className="text-zinc-500 text-sm">数据管理、安全设置</p>
-                </div>
-            </div>
+        <PageShell
+            title="系统设置"
+            subtitle="数据管理、安全设置"
+            icon="settings"
+            useMaterialIcon
+            maxWidth="default"
+        >
 
             {/* Data Stats */}
             <div className="grid grid-cols-3 gap-4">
@@ -366,8 +363,8 @@ const SettingsPanel: React.FC = () => {
                                     <div key={log.id} className="py-1.5 border-b border-zinc-800 flex gap-3 hover:bg-zinc-800/50">
                                         <span className="text-zinc-600 shrink-0">{new Date(log.timestamp).toLocaleString('zh-CN', { hour12: false })}</span>
                                         <span className={`shrink-0 w-12 font-bold ${log.level === LogLevel.ERROR ? 'text-red-400' :
-                                                log.level === LogLevel.WARN ? 'text-yellow-400' :
-                                                    log.level === LogLevel.INFO ? 'text-blue-400' : 'text-zinc-500'
+                                            log.level === LogLevel.WARN ? 'text-yellow-400' :
+                                                log.level === LogLevel.INFO ? 'text-blue-400' : 'text-zinc-500'
                                             }`}>{log.level}</span>
                                         <span className="text-cyan-400 shrink-0">[{log.category}]</span>
                                         <span className="text-zinc-300 flex-1">{log.message}</span>
@@ -438,7 +435,7 @@ const SettingsPanel: React.FC = () => {
                     <span className="font-bold">{toastMessage}</span>
                 </div>
             )}
-        </div>
+        </PageShell>
     );
 };
 

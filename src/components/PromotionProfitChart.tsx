@@ -1,14 +1,10 @@
 import React, { useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell, ReferenceDot, Label } from 'recharts';
+import { fmtUSDSigned as fmtUSD } from '../utils/formatters';
 
 interface PromotionProfitChartProps {
     monthlyProfits: number[];
 }
-
-const fmtUSD = (num: number) => {
-    const sign = num < 0 ? '-' : '+';
-    return (num === 0 ? '$0' : sign + '$' + Math.abs(num).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 }));
-};
 
 const PromotionProfitChart: React.FC<PromotionProfitChartProps> = ({ monthlyProfits }) => {
     const chartState = useMemo(() => {

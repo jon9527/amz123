@@ -1,29 +1,9 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo } from 'react';
 import { ProductSpec } from '../types';
 import { useProducts } from '../contexts/ProductContext';
-
-// 标签颜色配置（暗色主题）
-const TAG_COLORS = [
-    { bg: 'bg-gray-700/60', text: 'text-gray-200', hover: 'hover:bg-gray-600/60' },
-    { bg: 'bg-red-900/50', text: 'text-red-300', hover: 'hover:bg-red-800/50' },
-    { bg: 'bg-orange-900/50', text: 'text-orange-300', hover: 'hover:bg-orange-800/50' },
-    { bg: 'bg-yellow-900/50', text: 'text-yellow-300', hover: 'hover:bg-yellow-800/50' },
-    { bg: 'bg-green-900/50', text: 'text-green-300', hover: 'hover:bg-green-800/50' },
-    { bg: 'bg-teal-900/50', text: 'text-teal-300', hover: 'hover:bg-teal-800/50' },
-    { bg: 'bg-blue-900/50', text: 'text-blue-300', hover: 'hover:bg-blue-800/50' },
-    { bg: 'bg-purple-900/50', text: 'text-purple-300', hover: 'hover:bg-purple-800/50' },
-    { bg: 'bg-pink-900/50', text: 'text-pink-300', hover: 'hover:bg-pink-800/50' },
-];
-
-// 根据标签名生成稳定的颜色索引
-const getTagColor = (tag: string) => {
-    let hash = 0;
-    for (let i = 0; i < tag.length; i++) {
-        hash = tag.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    const index = Math.abs(hash) % TAG_COLORS.length;
-    return TAG_COLORS[index];
-};
+import { getTagColor } from '../utils/tagColors';
+import { Button } from '../components/ui';
+import { PageShell } from '../components/page-layout';
 
 // 空表单初始状态
 const emptyForm = {
@@ -214,17 +194,13 @@ const ProductLibrary: React.FC = () => {
     const labelClass = 'text-xs text-zinc-500 font-bold uppercase mb-1';
 
     return (
-        <div className="h-full bg-[#09090b] text-white overflow-auto p-6">
-            {/* Header */}
-            <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-3">
-                    <span className="text-3xl">📦</span>
-                    <div>
-                        <h1 className="text-2xl font-black">产品库</h1>
-                        <p className="text-zinc-500 text-sm">管理产品规格，供其他模块引用</p>
-                    </div>
-                </div>
-                <div className="flex items-center gap-2">
+        <PageShell
+            title="产品库"
+            subtitle="管理产品规格，供其他模块引用"
+            icon="📦"
+            maxWidth="full"
+            actions={
+                <>
                     {/* 搜索框 */}
                     {products.length > 0 && (
                         <div className="relative w-[200px]">
@@ -245,21 +221,19 @@ const ProductLibrary: React.FC = () => {
                             )}
                         </div>
                     )}
-                    <button
+                    <Button
+                        variant="secondary"
                         onClick={exportCSV}
-                        className="px-3 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-sm flex items-center gap-1"
                         disabled={products.length === 0}
                     >
                         📥 导出CSV
-                    </button>
-                    <button
-                        onClick={openAddForm}
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg font-bold flex items-center gap-2"
-                    >
+                    </Button>
+                    <Button onClick={openAddForm}>
                         <span className="text-lg">+</span> 添加产品
-                    </button>
-                </div>
-            </div>
+                    </Button>
+                </>
+            }
+        >
 
             {/* 筛选栏：排序 + 标签 */}
             {products.length > 0 && (
@@ -904,7 +878,7 @@ const ProductLibrary: React.FC = () => {
                     </div>
                 </>
             )}
-        </div>
+        </PageShell>
     );
 };
 

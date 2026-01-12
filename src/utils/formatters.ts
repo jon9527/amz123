@@ -8,6 +8,13 @@ export const r2 = (num: number): number => Math.round((num + Number.EPSILON) * 1
 // Format as USD currency
 export const fmtUSD = (num: number): string => '$' + num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+// Format as USD with +/- sign (for charts showing profit/loss)
+export const fmtUSDSigned = (num: number): string => {
+    if (num === 0) return '$0';
+    const sign = num < 0 ? '-' : '+';
+    return sign + '$' + Math.abs(num).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+};
+
 // Format as percentage
 export const fmtPct = (num: number): string => (num * 100).toFixed(1) + '%';
 

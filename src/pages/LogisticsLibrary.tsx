@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { LogisticsChannel } from '../types';
 import { useLogistics } from '../contexts/LogisticsContext';
+import { Button, Modal } from '../components/ui';
+import { PageShell } from '../components/page-layout';
 
 const emptyForm: LogisticsChannel = {
     id: '',
@@ -75,17 +77,14 @@ export const LogisticsLibrary: React.FC = () => {
     const labelClass = 'text-xs text-zinc-500 font-bold uppercase mb-1';
 
     return (
-        <div className="h-full bg-[#09090b] text-white p-6 overflow-hidden flex flex-col">
-            {/* Header */}
-            <div className="flex items-center justify-between mb-6 shrink-0">
-                <div className="flex items-center gap-3">
-                    <span className="text-3xl">🏗️</span>
-                    <div>
-                        <h1 className="text-2xl font-black">物流渠道库</h1>
-                        <p className="text-zinc-500 text-sm">管理头程物流渠道及费率规则</p>
-                    </div>
-                </div>
-                <div className="flex gap-4">
+        <PageShell
+            title="物流渠道库"
+            subtitle="管理头程物流渠道及费率规则"
+            icon="🏗️"
+            maxWidth="full"
+            fullHeight
+            actions={
+                <>
                     <div className="flex gap-2">
                         <div className="bg-[#18181b] border border-[#27272a] px-3 py-1 rounded-lg flex items-center gap-2">
                             <span>🚢</span> <span className="font-bold">{stats.sea}</span>
@@ -97,14 +96,10 @@ export const LogisticsLibrary: React.FC = () => {
                             <span>🚀</span> <span className="font-bold">{stats.exp}</span>
                         </div>
                     </div>
-                    <button
-                        onClick={openAddForm}
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg font-bold flex items-center gap-2"
-                    >
-                        + 新增渠道
-                    </button>
-                </div>
-            </div>
+                    <Button onClick={openAddForm}>+ 新增渠道</Button>
+                </>
+            }
+        >
 
             {/* List */}
             <div className="flex-1 overflow-auto bg-[#18181b] border border-[#27272a] rounded-xl">
@@ -170,176 +165,174 @@ export const LogisticsLibrary: React.FC = () => {
             </div>
 
             {/* Edit Modal */}
-            {showForm && (
-                <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={resetForm}>
-                    <div className="bg-[#18181b] border border-[#27272a] rounded-xl w-[500px] max-h-[90vh] overflow-auto flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
-                        <div className="p-4 border-b border-[#27272a] flex justify-between items-center">
-                            <h2 className="text-lg font-bold text-white">{editingId ? '编辑渠道' : '新增物流渠道'}</h2>
-                            <button onClick={resetForm} className="text-zinc-500 hover:text-white">✕</button>
-                        </div>
+            <Modal
+                isOpen={showForm}
+                onClose={resetForm}
+                title={editingId ? '编辑渠道' : '新增物流渠道'}
+                width="500px"
+            >
 
-                        <div className="p-6 space-y-4">
-                            {/* Type Selection */}
-                            <div>
-                                <div className={labelClass}>运输方式</div>
-                                <div className="grid grid-cols-3 gap-2">
-                                    {[
-                                        { id: 'sea', label: '海运 / 船运', icon: '🚢' },
-                                        { id: 'air', label: '空运 / 空派', icon: '✈️' },
-                                        { id: 'exp', label: '快递 / 红单', icon: '🚀' },
-                                    ].map(t => (
-                                        <button
-                                            key={t.id}
-                                            onClick={() => setForm(f => ({ ...f, type: t.id as any }))}
-                                            className={`py-2 px-3 rounded-lg border text-sm font-bold flex items-center justify-center gap-2 transition-all ${form.type === t.id
-                                                ? 'bg-blue-600/20 border-blue-500 text-blue-400'
-                                                : 'bg-[#0a0a0a] border-[#27272a] text-zinc-500 hover:bg-[#27272a]'
-                                                }`}
-                                        >
-                                            <span>{t.icon}</span> {t.label}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
 
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <div className={labelClass}>渠道名称 *</div>
-                                    <input
-                                        type="text"
-                                        value={form.name}
-                                        onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                                        placeholder="例: 美森限时达"
-                                        className={inputClass}
-                                    />
-                                </div>
-                                <div>
-                                    <div className={labelClass}>承运商 / 货代</div>
-                                    <input
-                                        type="text"
-                                        value={form.carrier || ''}
-                                        onChange={e => setForm(f => ({ ...f, carrier: e.target.value }))}
-                                        placeholder="例: 义乌仓"
-                                        className={inputClass}
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="bg-[#0a0a0a] border border-[#27272a] rounded-lg p-4">
-                                <div className="text-sm font-bold text-zinc-300 mb-3 flex items-center gap-2">
-                                    <span>💰</span> 计费规则
-                                </div>
-                                <div className="grid grid-cols-2 gap-4">
-                                    {form.type === 'sea' ? (
-                                        <div>
-                                            <div className={labelClass}>海运费 (¥/CBM)</div>
-                                            <input
-                                                type="number"
-                                                value={form.pricePerCbm || ''}
-                                                onChange={e => setForm(f => ({ ...f, pricePerCbm: parseFloat(e.target.value) }))}
-                                                className={inputClass}
-                                            />
-                                            <div className="mt-2">
-                                                <div className={labelClass}>海运费 (¥/KG) [可选]</div>
-                                                <input
-                                                    type="number"
-                                                    value={form.pricePerKg || ''}
-                                                    onChange={e => setForm(f => ({ ...f, pricePerKg: parseFloat(e.target.value) }))}
-                                                    placeholder="例如: 美森限时达"
-                                                    className={inputClass}
-                                                />
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <div>
-                                            <div className={labelClass}>运费单价 (¥/KG)</div>
-                                            <input
-                                                type="number"
-                                                value={form.pricePerKg || ''}
-                                                onChange={e => setForm(f => ({ ...f, pricePerKg: parseFloat(e.target.value) }))}
-                                                className={inputClass}
-                                            />
-                                        </div>
-                                    )}
-
-                                    <div>
-                                        <div className={labelClass}>材积除数 (Vol Divisor)</div>
-                                        <select
-                                            value={form.volDivisor || 6000}
-                                            onChange={e => setForm(f => ({ ...f, volDivisor: parseInt(e.target.value) }))}
-                                            className={inputClass}
-                                        >
-                                            <option value={6000}>6000 (标准)</option>
-                                            <option value={5000}>5000 (快递)</option>
-                                            <option value={0}>无 (纯实重)</option>
-                                        </select>
-                                    </div>
-
-                                    <div>
-                                        <div className={labelClass}>起运重量 (KG)</div>
-                                        <input
-                                            type="number"
-                                            value={form.minWeight || ''}
-                                            onChange={e => setForm(f => ({ ...f, minWeight: parseFloat(e.target.value) }))}
-                                            placeholder="0"
-                                            className={inputClass}
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <div className={labelClass}>关税率 (%)</div>
-                                        <input
-                                            type="number"
-                                            value={form.taxRate || ''}
-                                            onChange={e => setForm(f => ({ ...f, taxRate: parseFloat(e.target.value) }))}
-                                            placeholder="0"
-                                            className={inputClass}
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <div className={labelClass}>预计时效 (天) *</div>
-                                    <input
-                                        type="number"
-                                        value={form.deliveryDays || ''}
-                                        onChange={e => setForm(f => ({ ...f, deliveryDays: parseInt(e.target.value) }))}
-                                        className={inputClass}
-                                    />
-                                </div>
-                                <div>
-                                    <div className={labelClass}>最慢时效 (天)</div>
-                                    <input
-                                        type="number"
-                                        value={form.slowDays || ''}
-                                        onChange={e => setForm(f => ({ ...f, slowDays: parseInt(e.target.value) }))}
-                                        placeholder="用于风险提示"
-                                        className={inputClass}
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="flex items-center gap-2">
-                                <div className={labelClass}>状态:</div>
+                <div className="space-y-4">
+                    {/* Type Selection */}
+                    <div>
+                        <div className={labelClass}>运输方式</div>
+                        <div className="grid grid-cols-3 gap-2">
+                            {[
+                                { id: 'sea', label: '海运 / 船运', icon: '🚢' },
+                                { id: 'air', label: '空运 / 空派', icon: '✈️' },
+                                { id: 'exp', label: '快递 / 红单', icon: '🚀' },
+                            ].map(t => (
                                 <button
-                                    onClick={() => setForm(f => ({ ...f, status: f.status === 'active' ? 'disabled' : 'active' }))}
-                                    className={`px-3 py-1 rounded text-xs font-bold ${form.status === 'active' ? 'bg-green-600 text-white' : 'bg-zinc-700 text-zinc-400'}`}
+                                    key={t.id}
+                                    onClick={() => setForm(f => ({ ...f, type: t.id as any }))}
+                                    className={`py-2 px-3 rounded-lg border text-sm font-bold flex items-center justify-center gap-2 transition-all ${form.type === t.id
+                                        ? 'bg-blue-600/20 border-blue-500 text-blue-400'
+                                        : 'bg-[#0a0a0a] border-[#27272a] text-zinc-500 hover:bg-[#27272a]'
+                                        }`}
                                 >
-                                    {form.status === 'active' ? '启用中' : '已停用'}
+                                    <span>{t.icon}</span> {t.label}
                                 </button>
-                            </div>
-                        </div>
-
-                        <div className="p-4 border-t border-[#27272a] bg-[#1f1f23] rounded-b-xl flex gap-3">
-                            <button onClick={resetForm} className="flex-1 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-sm font-bold">取消</button>
-                            <button onClick={handleSubmit} className="flex-1 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-bold">保存</button>
+                            ))}
                         </div>
                     </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <div className={labelClass}>渠道名称 *</div>
+                            <input
+                                type="text"
+                                value={form.name}
+                                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                                placeholder="例: 美森限时达"
+                                className={inputClass}
+                            />
+                        </div>
+                        <div>
+                            <div className={labelClass}>承运商 / 货代</div>
+                            <input
+                                type="text"
+                                value={form.carrier || ''}
+                                onChange={e => setForm(f => ({ ...f, carrier: e.target.value }))}
+                                placeholder="例: 义乌仓"
+                                className={inputClass}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="bg-[#0a0a0a] border border-[#27272a] rounded-lg p-4">
+                        <div className="text-sm font-bold text-zinc-300 mb-3 flex items-center gap-2">
+                            <span>💰</span> 计费规则
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            {form.type === 'sea' ? (
+                                <div>
+                                    <div className={labelClass}>海运费 (¥/CBM)</div>
+                                    <input
+                                        type="number"
+                                        value={form.pricePerCbm || ''}
+                                        onChange={e => setForm(f => ({ ...f, pricePerCbm: parseFloat(e.target.value) }))}
+                                        className={inputClass}
+                                    />
+                                    <div className="mt-2">
+                                        <div className={labelClass}>海运费 (¥/KG) [可选]</div>
+                                        <input
+                                            type="number"
+                                            value={form.pricePerKg || ''}
+                                            onChange={e => setForm(f => ({ ...f, pricePerKg: parseFloat(e.target.value) }))}
+                                            placeholder="例如: 美森限时达"
+                                            className={inputClass}
+                                        />
+                                    </div>
+                                </div>
+                            ) : (
+                                <div>
+                                    <div className={labelClass}>运费单价 (¥/KG)</div>
+                                    <input
+                                        type="number"
+                                        value={form.pricePerKg || ''}
+                                        onChange={e => setForm(f => ({ ...f, pricePerKg: parseFloat(e.target.value) }))}
+                                        className={inputClass}
+                                    />
+                                </div>
+                            )}
+
+                            <div>
+                                <div className={labelClass}>材积除数 (Vol Divisor)</div>
+                                <select
+                                    value={form.volDivisor || 6000}
+                                    onChange={e => setForm(f => ({ ...f, volDivisor: parseInt(e.target.value) }))}
+                                    className={inputClass}
+                                >
+                                    <option value={6000}>6000 (标准)</option>
+                                    <option value={5000}>5000 (快递)</option>
+                                    <option value={0}>无 (纯实重)</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <div className={labelClass}>起运重量 (KG)</div>
+                                <input
+                                    type="number"
+                                    value={form.minWeight || ''}
+                                    onChange={e => setForm(f => ({ ...f, minWeight: parseFloat(e.target.value) }))}
+                                    placeholder="0"
+                                    className={inputClass}
+                                />
+                            </div>
+
+                            <div>
+                                <div className={labelClass}>关税率 (%)</div>
+                                <input
+                                    type="number"
+                                    value={form.taxRate || ''}
+                                    onChange={e => setForm(f => ({ ...f, taxRate: parseFloat(e.target.value) }))}
+                                    placeholder="0"
+                                    className={inputClass}
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <div className={labelClass}>预计时效 (天) *</div>
+                            <input
+                                type="number"
+                                value={form.deliveryDays || ''}
+                                onChange={e => setForm(f => ({ ...f, deliveryDays: parseInt(e.target.value) }))}
+                                className={inputClass}
+                            />
+                        </div>
+                        <div>
+                            <div className={labelClass}>最慢时效 (天)</div>
+                            <input
+                                type="number"
+                                value={form.slowDays || ''}
+                                onChange={e => setForm(f => ({ ...f, slowDays: parseInt(e.target.value) }))}
+                                placeholder="用于风险提示"
+                                className={inputClass}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        <div className={labelClass}>状态:</div>
+                        <button
+                            onClick={() => setForm(f => ({ ...f, status: f.status === 'active' ? 'disabled' : 'active' }))}
+                            className={`px-3 py-1 rounded text-xs font-bold ${form.status === 'active' ? 'bg-green-600 text-white' : 'bg-zinc-700 text-zinc-400'}`}
+                        >
+                            {form.status === 'active' ? '启用中' : '已停用'}
+                        </button>
+                    </div>
                 </div>
-            )}
-        </div>
+
+                <div className="flex gap-3 mt-6 pt-4 border-t border-[#27272a]">
+                    <Button variant="secondary" onClick={resetForm} className="flex-1">取消</Button>
+                    <Button onClick={handleSubmit} className="flex-1">保存</Button>
+                </div>
+            </Modal>
+        </PageShell>
     );
 };
 

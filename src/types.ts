@@ -6,7 +6,6 @@ export enum AppView {
   PROMOTION = 'PROMOTION',
   SIMULATION = 'SIMULATION',
   INVENTORY = 'INVENTORY',
-  TRAFFIC = 'TRAFFIC',
   TOOLBOX = 'TOOLBOX',
   DEDUCTION = 'DEDUCTION',
   REPLENISHMENT = 'REPLENISHMENT',
@@ -16,32 +15,67 @@ export enum AppView {
   SETTINGS = 'SETTINGS'
 }
 
-// ============ 产品库类型 ============
+// ============ 产品库类型 (Product) ============
 export interface ProductSpec {
-  id: string; // Internal UUID
-  displayId?: string; // User-facing ID (e.g. P-1001)
-  name: string;
-  sku: string;
+  id: string;              // Internal UUID
+  displayId?: string;      // User-facing ID (e.g. P-1001)
+  name: string;            // 产品名称
+  sku: string;             // SKU 编码
+  asin: string;            // ASIN (必填)
+
   // 规格尺寸
-  length: number;  // cm
-  width: number;   // cm
-  height: number;  // cm
-  weight: number;  // kg
-  pcsPerBox: number;
+  length: number;          // 长度 (cm)
+  width: number;           // 宽度 (cm)
+  height: number;          // 高度 (cm)
+  weight: number;          // 重量 (kg)
+  pcsPerBox: number;       // 每箱件数
+
   // 成本
-  unitCost: number;      // 采购单价 (¥)
-  defaultPrice: number;  // 默认售价 ($)
+  unitCost: number;        // 采购单价 (¥)
+  defaultPrice: number;    // 默认售价 ($)
+  defaultShippingRate?: number; // 默认头程运费单价 ($/kg)
+
   // 物流费率（可选，留空则用全局设置）
-  seaPriceCbm?: number;
-  airPriceKg?: number;
-  expPriceKg?: number;
+  seaPriceCbm?: number;    // 海运价格 ($/CBM)
+  airPriceKg?: number;     // 空运价格 ($/kg)
+  expPriceKg?: number;     // 快递价格 ($/kg)
+
   // 其他
-  asin?: string;
-  imageUrl?: string;
-  notes?: string;
-  tags?: string[];  // 产品标签
-  createdAt: number;
-  updatedAt: number;
+  imageUrl?: string;       // 产品图片 URL
+  notes?: string;          // 备注
+  tags?: string[];         // 产品标签
+  createdAt: number;       // 创建时间
+  updatedAt: number;       // 更新时间
+}
+
+// ============ 补货设置 (RestockSetting) ============
+export interface RestockSetting {
+  id: string;              // UUID
+  productId: string;       // 关联的产品 ID
+  bufferDays: number;      // 备货天数 (提前多少天开始备货)
+  safetyStockDays: number; // 安全库存天数 (最低库存覆盖天数)
+  targetTurnoverDays: number; // 目标周转天数
+  minOrderQty?: number;    // 最小起订量
+  maxOrderQty?: number;    // 最大订购量
+  createdAt: number;       // 创建时间
+  updatedAt: number;       // 更新时间
+}
+
+// ============ 推广推演 (PromotionPlan) ============
+export interface PromotionPlan {
+  id: string;              // UUID
+  productId: string;       // 关联的产品 ID
+  name?: string;           // 推广计划名称
+  targetSales: number;     // 目标销量 (单位: 件)
+  expectedCVR: number;     // 预估转化率 (0-1, 如 0.15 表示 15%)
+  budget: number;          // 预算 (USD)
+  dailyBudget?: number;    // 日预算 (USD)
+  targetAcos?: number;     // 目标 ACOS (0-1)
+  startDate?: number;      // 开始日期 (timestamp)
+  endDate?: number;        // 结束日期 (timestamp)
+  status?: 'draft' | 'active' | 'paused' | 'completed';
+  createdAt: number;       // 创建时间
+  updatedAt: number;       // 更新时间
 }
 
 // ============ 物流库类型 ============
@@ -168,15 +202,17 @@ export interface ProfitModelResults {
   costProdUSD: number;
 }
 
+// ============ 利润模型 (ProfitModel) ============
 export interface SavedProfitModel {
-  id: string;
-  productId?: string; // 关联的产品ID
-  productName: string;
-  asin?: string;
-  label: string; // 保留用于向后兼容
-  tags?: string[]; // 新增：多标签数组
-  note?: string;
-  timestamp: number;
+  id: string;              // UUID
+  productId: string;       // 关联的产品 ID (必填)
+  productName: string;     // 产品名称快照
+  asin?: string;           // ASIN 快照
+  label: string;           // 保留用于向后兼容
+  tags?: string[];         // 多标签数组
+  note?: string;           // 备注
+  timestamp: number;       // 保存时间
   inputs: ProfitModelInputs;
   results: ProfitModelResults;
 }
+

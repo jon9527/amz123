@@ -9,6 +9,7 @@ import { useProducts } from '../contexts/ProductContext';
 import { useLogistics } from '../contexts/LogisticsContext';
 import { r2, fmtUSD, fmtPct } from '../utils/formatters';
 import { getCommRate as getCommRateUtil, getRefundAdminFee, CommissionConfig } from '../utils/commissionUtils';
+import { calculateFBAFeeFromProduct } from '../utils/fbaCalculator.utils';
 
 import { ProfitHeader } from '../components/profit-calculator/ProfitHeader';
 import { ProfitInputs } from '../components/profit-calculator/ProfitInputs';
@@ -156,28 +157,16 @@ const ProfitCalculator: React.FC = () => {
   // If false, Plan B price follows Plan A price automatically
   const hasEditedPlanB = React.useRef(false);
 
-  // Fetch real-time exchange rate
-  const fetchRate = async () => {
-    try {
-      const res = await fetch('https://open.er-api.com/v6/latest/USD');
-      const data = await res.json();
-      if (data && data.rates && data.rates.CNY) {
-        return data.rates.CNY;
-      }
-    } catch (e) {
-      console.error("Failed to fetch rate", e);
-    }
-    return 7.02; // Fallback to current approx rate
-  };
-
   useEffect(() => {
-    fetchRate().then(rate => {
-      const rounded = r2(rate);
-      setExchangeRate(prev => {
-        if (prev === rounded) return prev;
-        return rounded;
+    // Use cached exchange rate service with offline fallback
+    import('../services/exchangeRateService').then(({ getExchangeRate }) => {
+      getExchangeRate().then(({ rate, source: _source }) => {
+        const rounded = r2(rate);
+        setExchangeRate(prev => {
+          if (prev === rounded) return prev;
+          return rounded;
+        });
       });
-      localStorage.setItem('exchangeRate', rounded.toString());
     });
   }, []); // Run once on mount
 
@@ -237,6 +226,14 @@ const ProfitCalculator: React.FC = () => {
         setActualPrice(product.defaultPrice);
         setActualPriceDisplay(product.defaultPrice.toString());
         hasEditedPlanB.current = false;
+      }
+      // 2. Auto-calculate FBA fee from product dimensions
+      const autoFbaFee = r2(calculateFBAFeeFromProduct(product));
+      setFbaFee(autoFbaFee);
+
+      // 3. Load default shipping rate if available
+      if (product.defaultShippingRate) {
+        setShippingUSD(product.defaultShippingRate);
       }
     }
   };
@@ -390,7 +387,7 @@ const ProfitCalculator: React.FC = () => {
 
     const model = {
       id: targetId,
-      productId: selectedProductId || undefined,
+      productId: selectedProductId || '', // fallback to empty string for backward compat
       productName: data.productName,
       asin: data.asin,
       label: data.label,

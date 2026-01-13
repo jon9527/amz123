@@ -191,6 +191,18 @@ const ProductLibrary: React.FC = () => {
         setShowForm(true);
     };
 
+    // 生成测试产品
+    const generateTestProducts = () => {
+        const testProducts = [
+            { name: '无线蓝牙耳机 Pro', sku: 'BT-HP-001', asin: 'B09TEST001', length: 18, width: 15, height: 8, weight: 0.35, pcsPerBox: 50, unitCost: 45, defaultPrice: 29.99, tags: ['电子', '热卖'] },
+            { name: '多功能数据线套装', sku: 'CB-SET-002', asin: 'B09TEST002', length: 12, width: 10, height: 3, weight: 0.15, pcsPerBox: 100, unitCost: 8, defaultPrice: 12.99, tags: ['配件'] },
+            { name: '智能手表保护壳', sku: 'WC-PRO-003', asin: 'B09TEST003', length: 6, width: 5, height: 2, weight: 0.05, pcsPerBox: 200, unitCost: 3.5, defaultPrice: 8.99, tags: ['配件', '新品'] },
+            { name: '便携式充电宝 20000mAh', sku: 'PB-20K-004', asin: 'B09TEST004', length: 15, width: 8, height: 3, weight: 0.45, pcsPerBox: 30, unitCost: 65, defaultPrice: 39.99, tags: ['电子', '热卖'] },
+            { name: '运动水壶 750ml', sku: 'WB-750-005', asin: 'B09TEST005', length: 25, width: 8, height: 8, weight: 0.25, pcsPerBox: 40, unitCost: 12, defaultPrice: 18.99, tags: ['运动', '新品'] },
+        ];
+        testProducts.forEach(p => addProduct(p));
+    };
+
     return (
         <PageShell
             title="产品库"
@@ -225,6 +237,12 @@ const ProductLibrary: React.FC = () => {
                         disabled={products.length === 0}
                     >
                         📥 导出CSV
+                    </Button>
+                    <Button
+                        variant="secondary"
+                        onClick={generateTestProducts}
+                    >
+                        🧪 生成测试产品
                     </Button>
                     <Button onClick={openAddForm}>
                         <span className="text-lg">+</span> 添加产品

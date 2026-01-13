@@ -45,6 +45,7 @@ describe('ProductRepository', () => {
             repo.add({
                 name: '测试产品',
                 sku: 'TEST-001',
+                asin: 'B0TEST001',
                 length: 10,
                 width: 10,
                 height: 10,
@@ -66,6 +67,7 @@ describe('ProductRepository', () => {
             const product = repo.add({
                 name: '新产品',
                 sku: 'NEW-001',
+                asin: 'B0NEW0001',
                 length: 5,
                 width: 5,
                 height: 5,
@@ -82,8 +84,8 @@ describe('ProductRepository', () => {
         });
 
         it('应递增 displayId', () => {
-            const p1 = repo.add({ name: 'P1', sku: '', length: 1, width: 1, height: 1, weight: 1, pcsPerBox: 1, unitCost: 1, defaultPrice: 1, updatedAt: 123 });
-            const p2 = repo.add({ name: 'P2', sku: '', length: 1, width: 1, height: 1, weight: 1, pcsPerBox: 1, unitCost: 1, defaultPrice: 1, updatedAt: 123 });
+            const p1 = repo.add({ name: 'P1', sku: '', asin: 'B0P1', length: 1, width: 1, height: 1, weight: 1, pcsPerBox: 1, unitCost: 1, defaultPrice: 1, updatedAt: 123 });
+            const p2 = repo.add({ name: 'P2', sku: '', asin: 'B0P2', length: 1, width: 1, height: 1, weight: 1, pcsPerBox: 1, unitCost: 1, defaultPrice: 1, updatedAt: 123 });
 
             expect(p1.displayId).toBe('P-0001');
             expect(p2.displayId).toBe('P-0002');
@@ -92,7 +94,7 @@ describe('ProductRepository', () => {
 
     describe('getById', () => {
         it('应返回指定ID的产品', () => {
-            const added = repo.add({ name: '查找测试', sku: '', length: 1, width: 1, height: 1, weight: 1, pcsPerBox: 1, unitCost: 1, defaultPrice: 1, updatedAt: 123 });
+            const added = repo.add({ name: '查找测试', sku: '', asin: 'B0FIND', length: 1, width: 1, height: 1, weight: 1, pcsPerBox: 1, unitCost: 1, defaultPrice: 1, updatedAt: 123 });
             const found = repo.getById(added.id);
 
             expect(found).toBeDefined();
@@ -106,7 +108,7 @@ describe('ProductRepository', () => {
 
     describe('update', () => {
         it('应更新指定产品的属性', () => {
-            const product = repo.add({ name: '原名称', sku: '', length: 1, width: 1, height: 1, weight: 1, pcsPerBox: 1, unitCost: 1, defaultPrice: 1, updatedAt: 123 });
+            const product = repo.add({ name: '原名称', sku: '', asin: 'B0UPD', length: 1, width: 1, height: 1, weight: 1, pcsPerBox: 1, unitCost: 1, defaultPrice: 1, updatedAt: 123 });
             const updated = repo.update(product.id, { name: '新名称', defaultPrice: 29.99 });
 
             expect(updated?.name).toBe('新名称');
@@ -120,7 +122,7 @@ describe('ProductRepository', () => {
 
     describe('delete', () => {
         it('应成功删除产品', () => {
-            const product = repo.add({ name: '待删除', sku: '', length: 1, width: 1, height: 1, weight: 1, pcsPerBox: 1, unitCost: 1, defaultPrice: 1, updatedAt: 123 });
+            const product = repo.add({ name: '待删除', sku: '', asin: 'B0DEL', length: 1, width: 1, height: 1, weight: 1, pcsPerBox: 1, unitCost: 1, defaultPrice: 1, updatedAt: 123 });
             const result = repo.delete(product.id);
 
             expect(result).toBe(true);
@@ -134,8 +136,8 @@ describe('ProductRepository', () => {
 
     describe('clear', () => {
         it('应清空所有产品', () => {
-            repo.add({ name: 'P1', sku: '', length: 1, width: 1, height: 1, weight: 1, pcsPerBox: 1, unitCost: 1, defaultPrice: 1, updatedAt: 123 });
-            repo.add({ name: 'P2', sku: '', length: 1, width: 1, height: 1, weight: 1, pcsPerBox: 1, unitCost: 1, defaultPrice: 1, updatedAt: 123 });
+            repo.add({ name: 'P1', sku: '', asin: 'B0CLR1', length: 1, width: 1, height: 1, weight: 1, pcsPerBox: 1, unitCost: 1, defaultPrice: 1, updatedAt: 123 });
+            repo.add({ name: 'P2', sku: '', asin: 'B0CLR2', length: 1, width: 1, height: 1, weight: 1, pcsPerBox: 1, unitCost: 1, defaultPrice: 1, updatedAt: 123 });
 
             repo.clear();
 
@@ -143,3 +145,4 @@ describe('ProductRepository', () => {
         });
     });
 });
+

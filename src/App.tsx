@@ -4,6 +4,7 @@ import { AppView } from './types';
 import Dashboard from './pages/Dashboard';
 import { ProductProvider } from './contexts/ProductContext';
 import { LogisticsProvider } from './contexts/LogisticsContext';
+import { OperationsProvider } from './contexts/OperationsContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import PinLockScreen from './components/PinLockScreen';
 import { NAVIGATION_ITEMS } from './constants';
@@ -88,11 +89,13 @@ const AppContent: React.FC = () => {
       {false && isLocked && <PinLockScreen />}
       <ProductProvider>
         <LogisticsProvider>
-          <Layout currentView={currentView} onViewChange={setCurrentView}>
-            <Suspense fallback={<PageLoader />}>
-              {renderContent()}
-            </Suspense>
-          </Layout>
+          <OperationsProvider>
+            <Layout currentView={currentView} onViewChange={setCurrentView}>
+              <Suspense fallback={<PageLoader />}>
+                {renderContent()}
+              </Suspense>
+            </Layout>
+          </OperationsProvider>
         </LogisticsProvider>
       </ProductProvider>
     </>

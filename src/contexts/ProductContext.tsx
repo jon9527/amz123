@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { ProductSpec } from '../types';
+import { STORAGE_KEYS } from '../repositories/StorageKeys';
 
 // ============ Context Types ============
 interface ProductContextType {
@@ -15,9 +16,6 @@ interface ProductContextType {
 
 const ProductContext = createContext<ProductContextType | undefined>(undefined);
 
-// ============ Storage Key ============
-const STORAGE_KEY = 'amazon_product_library';
-
 // ============ Provider ============
 export const ProductProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const [products, setProducts] = useState<ProductSpec[]>([]);
@@ -26,7 +24,7 @@ export const ProductProvider: React.FC<{ children: ReactNode }> = ({ children })
 
     // Load from localStorage
     useEffect(() => {
-        const saved = localStorage.getItem(STORAGE_KEY);
+        const saved = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
         if (saved) {
             try {
                 setProducts(JSON.parse(saved));
@@ -38,7 +36,7 @@ export const ProductProvider: React.FC<{ children: ReactNode }> = ({ children })
     // Save to localStorage (only after initial load)
     useEffect(() => {
         if (isInitialized) {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(products));
+            localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
         }
     }, [products, isInitialized]);
 

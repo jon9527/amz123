@@ -1,19 +1,11 @@
 // DataService - Unified data import/export for all localStorage data
 
-const STORAGE_KEYS = [
-    'amazon_product_library',
-    'amazon_logistics_channels_v1',
-    'amazon_profit_models',
-    'exchangeRate',
-    'amazon_replenishment_advisor_v1'
-];
+import { STORAGE_KEYS, BACKUP_EXCLUDED_KEYS } from '../repositories/StorageKeys';
 
-// Auth keys are excluded from backup to prevent PIN conflicts
-const EXCLUDED_KEYS = [
-    'amz123_auth_pin_hash',
-    'amz123_lock_state',
-    'amz123_last_activity'
-];
+// Build backup keys from STORAGE_KEYS, excluding auth-related keys
+const BACKUP_KEYS = Object.values(STORAGE_KEYS).filter(
+    key => !BACKUP_EXCLUDED_KEYS.includes(key as typeof BACKUP_EXCLUDED_KEYS[number])
+);
 
 export interface BackupData {
     version: string;
@@ -29,7 +21,7 @@ export const DataService = {
     exportAllData(): BackupData {
         const data: Record<string, unknown> = {};
 
-        STORAGE_KEYS.forEach(key => {
+        BACKUP_KEYS.forEach(key => {
             const value = localStorage.getItem(key);
             if (value) {
                 try {
@@ -85,10 +77,8 @@ export const DataService = {
 
             // Restore each key
             Object.entries(backup.data).forEach(([key, value]) => {
-                // Skip excluded keys
-                if (EXCLUDED_KEYS.includes(key)) return;
-
-                if (STORAGE_KEYS.includes(key)) {
+                // Only restore keys in BACKUP_KEYS
+                if ((BACKUP_KEYS as readonly string[]).includes(key)) {
                     localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
                     itemCount++;
                 }
@@ -109,7 +99,7 @@ export const DataService = {
      * Clear all app data (except auth)
      */
     clearAllData(): void {
-        STORAGE_KEYS.forEach(key => {
+        BACKUP_KEYS.forEach(key => {
             localStorage.removeItem(key);
         });
     },
@@ -123,17 +113,17 @@ export const DataService = {
         let channelCount = 0;
 
         try {
-            const products = localStorage.getItem('amazon_product_library');
+            const products = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
             if (products) productCount = JSON.parse(products).length;
         } catch { }
 
         try {
-            const models = localStorage.getItem('amazon_profit_models');
+            const models = localStorage.getItem(STORAGE_KEYS.PROFIT_MODELS);
             if (models) modelCount = JSON.parse(models).length;
         } catch { }
 
         try {
-            const channels = localStorage.getItem('amazon_logistics_channels_v1');
+            const channels = localStorage.getItem(STORAGE_KEYS.LOGISTICS_CHANNELS);
             if (channels) channelCount = JSON.parse(channels).length;
         } catch { }
 

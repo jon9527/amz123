@@ -2,9 +2,11 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ReplenishmentBatch, SavedProfitModel } from '../types';
 import { runSimulation, fmtDate } from './ReplenishmentEngine';
 import { ModuleState, SimulationResult, FinancialEvent, LogisticsCosts } from './ReplenishmentTypes';
+import { ProfitModelService } from '../services/profitModelService';
 import { useProducts } from '../contexts/ProductContext';
 import { useLogistics } from '../contexts/LogisticsContext';
-import { ProfitModelService } from '../services/profitModelService';
+
+import { STORAGE_KEYS } from '../repositories';
 import NumberStepper from '../components/NumberStepper';
 
 
@@ -78,7 +80,7 @@ const getDefaultState = (): ModuleState => ({
 });
 
 // ============ COMPONENT ============
-const STORAGE_KEY = 'replenishment_advice_state';
+const STORAGE_KEY = STORAGE_KEYS.REPLENISHMENT_STATE;
 
 const ReplenishmentAdvice: React.FC = () => {
     // ============ STATE ============
@@ -434,6 +436,52 @@ const ReplenishmentAdvice: React.FC = () => {
         }
     }, [state, logCosts, calcSimulation]);
 
+    // ============ SYNC TO STRATEGY HANDLER ============
+    const handleSyncToStrategy = useCallback(() => {
+        if (!selectedProductId || !selectedStrategyId || !simResult) return;
+
+        const currentStrategy = strategies.find(s => s.id === selectedStrategyId);
+        if (!currentStrategy) return;
+
+        const summary = {
+            totalQty: state.batches.reduce((acc, b) => acc + Math.round(b.qty * (1 + (b.extraPercent || 0) / 100)), 0),
+            totalCost: Math.abs(simResult.minCash),
+            breakevenDate: simResult.breakevenDate,
+            stockoutDays: simResult.totalStockoutDays,
+            minCash: simResult.minCash,
+            finalCash: simResult.finalCash,
+        };
+
+        const updates: Partial<SavedProfitModel> = {
+            replenishment: {
+                batches: [...state.batches],
+                summary,
+                simStart: state.simStart,
+                monthlyDailySales: [...state.monthlyDailySales],
+                seaChannelId: state.seaChannelId,
+                airChannelId: state.airChannelId,
+                expChannelId: state.expChannelId,
+                lastUpdated: Date.now()
+            }
+        };
+
+        ProfitModelService.update(selectedStrategyId, updates);
+
+        // Visual feedback
+        const btn = document.getElementById('btn-sync-strategy');
+        if (btn) {
+            const originalHTML = btn.innerHTML;
+            btn.innerHTML = '<span class="material-symbols-outlined text-[18px]">check</span> 已保存';
+            btn.classList.add('bg-green-600', 'hover:bg-green-500');
+            btn.classList.remove('bg-blue-600', 'hover:bg-blue-500');
+
+            setTimeout(() => {
+                btn.innerHTML = originalHTML;
+                btn.classList.add('bg-blue-600', 'hover:bg-blue-500');
+                btn.classList.remove('bg-green-600', 'hover:bg-green-500');
+            }, 2000);
+        }
+    }, [selectedProductId, selectedStrategyId, simResult, state, strategies]);
 
     // ============ CHARTS ============
     // 1. Cleanup Effect - Runs only on Unmount
@@ -1200,6 +1248,8 @@ const ReplenishmentAdvice: React.FC = () => {
                     </div>
                 </div>
 
+
+
                 {/* Tab Content */}
                 <div className="flex-1 p-4 flex flex-col min-h-0">
                     {activeTab === 'spec' && (
@@ -1914,9 +1964,12 @@ const ReplenishmentAdvice: React.FC = () => {
                             {products.map(p => (<option key={p.id} value={p.id}>{p.name} ({p.sku || 'SKU'})</option>))}
                         </select>
                         <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
-                            <span className="material-symbols-outlined text-zinc-500 text-[16px]">expand_more</span>
+                            <span className="material-symbols-outlined text-amber-500/50 text-[16px]">expand_more</span>
                         </div>
                     </div>
+
+                    {/* 保存策略按钮 */}
+
 
                     {/* 策略选择器 */}
                     <div className="relative shrink-0">
@@ -1939,10 +1992,19 @@ const ReplenishmentAdvice: React.FC = () => {
                                 );
                             })}
                         </select>
-                        <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
-                            <span className={`material-symbols-outlined text-[16px] ${strategies.length > 0 ? 'text-amber-400' : 'text-zinc-600'}`}>expand_more</span>
-                        </div>
                     </div>
+
+                    {/* 保存策略按钮 */}
+                    <button
+                        id="btn-sync-strategy"
+                        onClick={handleSyncToStrategy}
+                        disabled={!selectedStrategyId || !simResult}
+                        className="flex items-center gap-1 px-3 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-800 disabled:text-zinc-600 text-white text-xs font-bold rounded-lg transition-all shadow-lg shadow-blue-900/20 active:scale-95 shrink-0 ml-4"
+                        title="将当前补货模拟结果保存到该策略"
+                    >
+                        <span className="material-symbols-outlined text-[16px]">save_as</span>
+                        保存策略
+                    </button>
 
 
                     {/* 推演起始日期 */}
@@ -2072,8 +2134,10 @@ const ReplenishmentAdvice: React.FC = () => {
                         </div>
                     </div>
                 </div>
-            </main>
-        </div>
+            </main >
+
+
+        </div >
     );
 };
 

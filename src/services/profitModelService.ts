@@ -1,7 +1,6 @@
 
 import { SavedProfitModel } from '../types';
-
-const STORAGE_KEY = 'amz_profit_models';
+import { STORAGE_KEYS } from '../repositories/StorageKeys';
 
 /**
  * 产品利润模型数据服务
@@ -13,7 +12,7 @@ export class ProfitModelService {
      */
     static getAll(): SavedProfitModel[] {
         try {
-            const data = localStorage.getItem(STORAGE_KEY);
+            const data = localStorage.getItem(STORAGE_KEYS.PROFIT_MODELS);
             if (!data) return [];
             return JSON.parse(data) as SavedProfitModel[];
         } catch (error) {
@@ -37,7 +36,7 @@ export class ProfitModelService {
         try {
             const all = this.getAll();
             all.push(model);
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
+            localStorage.setItem(STORAGE_KEYS.PROFIT_MODELS, JSON.stringify(all));
             return true;
         } catch (error) {
             console.error('Failed to save profit model:', error);
@@ -55,7 +54,7 @@ export class ProfitModelService {
             if (index === -1) return false;
 
             all[index] = { ...all[index], ...updates };
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
+            localStorage.setItem(STORAGE_KEYS.PROFIT_MODELS, JSON.stringify(all));
             return true;
         } catch (error) {
             console.error('Failed to update profit model:', error);
@@ -70,7 +69,7 @@ export class ProfitModelService {
         try {
             const all = this.getAll();
             const filtered = all.filter(model => model.id !== id);
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
+            localStorage.setItem(STORAGE_KEYS.PROFIT_MODELS, JSON.stringify(filtered));
             return true;
         } catch (error) {
             console.error('Failed to delete profit model:', error);
@@ -85,7 +84,7 @@ export class ProfitModelService {
         try {
             const all = this.getAll();
             const filtered = all.filter(model => !ids.includes(model.id));
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
+            localStorage.setItem(STORAGE_KEYS.PROFIT_MODELS, JSON.stringify(filtered));
             return true;
         } catch (error) {
             console.error('Failed to batch delete profit models:', error);
@@ -145,7 +144,7 @@ export class ProfitModelService {
             const toImport = imported.filter(m => !existingIds.has(m.id));
 
             const merged = [...all, ...toImport];
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+            localStorage.setItem(STORAGE_KEYS.PROFIT_MODELS, JSON.stringify(merged));
             return true;
         } catch (error) {
             console.error('Failed to import profit models:', error);
@@ -158,7 +157,7 @@ export class ProfitModelService {
      */
     static clear(): boolean {
         try {
-            localStorage.removeItem(STORAGE_KEY);
+            localStorage.removeItem(STORAGE_KEYS.PROFIT_MODELS);
             return true;
         } catch (error) {
             console.error('Failed to clear profit models:', error);

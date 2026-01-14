@@ -15,6 +15,16 @@ export enum AppView {
   SETTINGS = 'SETTINGS'
 }
 
+// ============ 基础类型 ============
+/**
+ * 基础实体接口 - 所有持久化实体的公共字段
+ */
+export interface BaseEntity {
+  id: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 // ============ 产品库类型 (Product) ============
 export interface ProductSpec {
   id: string;              // Internal UUID
@@ -214,5 +224,47 @@ export interface SavedProfitModel {
   timestamp: number;       // 保存时间
   inputs: ProfitModelInputs;
   results: ProfitModelResults;
+  replenishment?: {
+    batches: ReplenishmentBatch[];
+    summary: ReplenishmentPlanSummary;
+    simStart: string;
+    monthlyDailySales: number[];
+    seaChannelId?: string;
+    airChannelId?: string;
+    expChannelId?: string;
+    lastUpdated: number;
+  };
 }
 
+// ============ 补货规划 (ReplenishmentPlan) ============
+export interface ReplenishmentPlanSummary {
+  totalQty: number;           // 总补货量
+  totalCost: number;          // 总成本 (USD)
+  breakevenDate?: string;     // 回本日期
+  stockoutDays: number;       // 断货天数
+  minCash: number;            // 最低资金
+  finalCash: number;          // 最终资金
+}
+
+export interface SavedReplenishmentPlan extends BaseEntity {
+  productId: string;          // 关联产品 ID
+  productName: string;        // 产品名称快照
+  strategyId?: string;        // 关联的利润策略 ID
+  strategyLabel?: string;     // 策略标签快照
+  name: string;               // 方案名称
+
+  // 核心数据快照
+  batches: ReplenishmentBatch[];
+  monthlyDailySales: number[];
+  prices: number[];
+  margins: number[];
+  simStart: string;           // 模拟开始日期
+
+  // 物流配置
+  seaChannelId?: string;
+  airChannelId?: string;
+  expChannelId?: string;
+
+  // 模拟结果摘要
+  summary: ReplenishmentPlanSummary;
+}

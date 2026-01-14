@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { LogisticsChannel } from '../types';
+import { STORAGE_KEYS } from '../repositories/StorageKeys';
 
 interface LogisticsContextType {
     channels: LogisticsChannel[];
@@ -10,8 +11,6 @@ interface LogisticsContextType {
 }
 
 const LogisticsContext = createContext<LogisticsContextType | undefined>(undefined);
-
-const STORAGE_KEY = 'amazon_logistics_channels_v1';
 
 // Default preset channels if none exist
 const DEFAULT_CHANNELS: LogisticsChannel[] = [
@@ -81,7 +80,7 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
     const [isInitialized, setIsInitialized] = useState(false);
 
     useEffect(() => {
-        const saved = localStorage.getItem(STORAGE_KEY);
+        const saved = localStorage.getItem(STORAGE_KEYS.LOGISTICS_CHANNELS);
         if (saved) {
             try {
                 setChannels(JSON.parse(saved));
@@ -95,7 +94,7 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
 
     useEffect(() => {
         if (isInitialized) {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(channels));
+            localStorage.setItem(STORAGE_KEYS.LOGISTICS_CHANNELS, JSON.stringify(channels));
         }
     }, [channels, isInitialized]);
 

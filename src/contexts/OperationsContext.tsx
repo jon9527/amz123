@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { RestockSetting, PromotionPlan } from '../types';
+import { STORAGE_KEYS } from '../repositories/StorageKeys';
 
 // ============ Context Types ============
 interface OperationsContextType {
@@ -20,10 +21,6 @@ interface OperationsContextType {
 
 const OperationsContext = createContext<OperationsContextType | undefined>(undefined);
 
-// ============ Storage Keys ============
-const RESTOCK_STORAGE_KEY = 'amazon_restock_settings';
-const PROMOTION_STORAGE_KEY = 'amazon_promotion_plans';
-
 // ============ Helpers ============
 const generateId = () => `ops_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -36,10 +33,10 @@ export const OperationsProvider: React.FC<{ children: ReactNode }> = ({ children
     // Load from localStorage
     useEffect(() => {
         try {
-            const savedRestock = localStorage.getItem(RESTOCK_STORAGE_KEY);
+            const savedRestock = localStorage.getItem(STORAGE_KEYS.RESTOCK_SETTINGS);
             if (savedRestock) setRestockSettings(JSON.parse(savedRestock));
 
-            const savedPromotion = localStorage.getItem(PROMOTION_STORAGE_KEY);
+            const savedPromotion = localStorage.getItem(STORAGE_KEYS.PROMOTION_PLANS);
             if (savedPromotion) setPromotionPlans(JSON.parse(savedPromotion));
         } catch { }
         setIsInitialized(true);
@@ -48,13 +45,13 @@ export const OperationsProvider: React.FC<{ children: ReactNode }> = ({ children
     // Save to localStorage
     useEffect(() => {
         if (isInitialized) {
-            localStorage.setItem(RESTOCK_STORAGE_KEY, JSON.stringify(restockSettings));
+            localStorage.setItem(STORAGE_KEYS.RESTOCK_SETTINGS, JSON.stringify(restockSettings));
         }
     }, [restockSettings, isInitialized]);
 
     useEffect(() => {
         if (isInitialized) {
-            localStorage.setItem(PROMOTION_STORAGE_KEY, JSON.stringify(promotionPlans));
+            localStorage.setItem(STORAGE_KEYS.PROMOTION_PLANS, JSON.stringify(promotionPlans));
         }
     }, [promotionPlans, isInitialized]);
 

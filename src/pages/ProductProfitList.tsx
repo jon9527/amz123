@@ -7,6 +7,7 @@ import { useProducts } from '../contexts/ProductContext';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { fmtUSD } from '../utils/formatters';
 import { getTagColor } from '../utils/tagColors';
+import { ReplenishmentModal } from '../components/ReplenishmentModal';
 
 type ViewMode = 'table' | 'comparison';
 
@@ -20,6 +21,7 @@ const ProductProfitList: React.FC = () => {
   const [viewMode, setViewMode] = useState<ViewMode>('table');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [toDeleteIds, setToDeleteIds] = useState<string[]>([]);
+  const [activeReplModel, setActiveReplModel] = useState<SavedProfitModel | null>(null);
 
   // Grouped view state
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
@@ -603,10 +605,16 @@ const ProductProfitList: React.FC = () => {
                             <td className="px-2 py-3 text-center text-emerald-400 font-black text-sm bg-emerald-500/10">${res.profit}</td>
 
                             {/* 操作 */}
-                            <td className="px-2 py-3 text-center">
+                            <td className="px-1 py-3 text-center flex items-center justify-center">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setActiveReplModel(model); }}
+                                className="p-0.5 text-blue-400 hover:text-blue-300 transition-colors rounded hover:bg-blue-500/10"
+                                title="补货计划">
+                                <span className="material-symbols-outlined text-[16px]">inventory_2</span>
+                              </button>
                               <button
                                 onClick={(e) => { e.stopPropagation(); handleDelete([model.id]); }}
-                                className="p-1.5 text-slate-600 hover:text-rose-500 transition-colors rounded hover:bg-[#334155]/50"
+                                className="p-0.5 text-slate-600 hover:text-rose-500 transition-colors rounded hover:bg-[#334155]/50"
                                 title="删除">
                                 <span className="material-symbols-outlined text-[16px]">close</span>
                               </button>
@@ -730,6 +738,19 @@ const ProductProfitList: React.FC = () => {
           </div>
         )
       }
+
+      {/* 补货 Modal */}
+      {activeReplModel && (
+        <ReplenishmentModal
+          strategies={groupedModels[activeReplModel.productName || '未命名产品'] || [activeReplModel]}
+          initialStrategyId={activeReplModel.id}
+          onClose={() => setActiveReplModel(null)}
+          onSave={(modelId: string, updates: Partial<SavedProfitModel>) => {
+            ProfitModelService.update(modelId, updates);
+            loadData(); // Refresh list
+          }}
+        />
+      )}
     </div >
   );
 };

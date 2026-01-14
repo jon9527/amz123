@@ -7,4 +7,6 @@ export * from './Storage';
 export * from './StorageKeys';
 export * from './ProductRepository';
 export * from './ProfitModelRepository';
-
+export * from './LogisticsRepository';
+export * from './OperationsRepository';
+export * from './ReplenishmentPlanRepository';

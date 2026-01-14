@@ -32,15 +32,13 @@ const Layout: React.FC<LayoutProps> = ({ currentView, onViewChange, children }) 
             <button
               key={item.view}
               onClick={() => onViewChange(item.view)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group ${
-                currentView === item.view
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group ${currentView === item.view
                   ? 'bg-blue-600 text-white shadow-md shadow-blue-600/15'
                   : 'text-zinc-400 hover:bg-[#18181b] hover:text-white'
-              }`}
+                }`}
             >
-              <span className={`material-symbols-outlined text-[20px] ${
-                currentView === item.view ? 'text-white' : 'text-zinc-500 group-hover:text-blue-400'
-              }`}>
+              <span className={`material-symbols-outlined text-[20px] ${currentView === item.view ? 'text-white' : 'text-zinc-500 group-hover:text-blue-400'
+                }`}>
                 {item.icon}
               </span>
               <span className="text-sm font-semibold tracking-tight">{item.label}</span>
@@ -51,7 +49,7 @@ const Layout: React.FC<LayoutProps> = ({ currentView, onViewChange, children }) 
         <div className="p-4 border-t border-[#27272a]">
           <div className="flex items-center gap-3 px-2 py-3">
             <div className="size-9 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center overflow-hidden">
-               <img src="https://picsum.photos/seed/amazonops/100/100" alt="Avatar" className="w-full h-full object-cover" />
+              <img src="https://picsum.photos/seed/amazonops/100/100" alt="Avatar" className="w-full h-full object-cover" />
             </div>
             <div className="flex flex-col">
               <p className="text-white text-sm font-bold">张小明 (运营主管)</p>
@@ -66,24 +64,24 @@ const Layout: React.FC<LayoutProps> = ({ currentView, onViewChange, children }) 
         {/* Top Header */}
         <header className="h-16 border-b border-[#27272a] bg-[#09090b]/80 backdrop-blur-md flex items-center justify-between px-8 sticky top-0 z-50">
           <div className="flex items-center gap-4">
-             <nav className="flex items-center text-sm text-zinc-500 font-mono">
+            <nav className="flex items-center text-sm text-zinc-500 font-mono">
               <span className="hover:text-white cursor-pointer">运营系统</span>
               <span className="mx-2 text-zinc-800">/</span>
               <span className="text-white font-medium">{NAVIGATION_ITEMS.find(n => n.view === currentView)?.label}</span>
             </nav>
           </div>
-          
+
           <div className="flex items-center gap-4">
-             <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
               </span>
               <span className="text-[10px] font-mono font-bold text-emerald-500 uppercase tracking-widest">系统正常 v1.0</span>
             </div>
-            
+
             <div className="h-6 w-px bg-[#27272a]"></div>
-            
+
             <button className="text-zinc-500 hover:text-white transition-colors relative p-1">
               <span className="material-symbols-outlined text-[22px]">notifications</span>
               <span className="absolute top-1 right-1 size-1.5 bg-orange-500 rounded-full border border-[#09090b]"></span>

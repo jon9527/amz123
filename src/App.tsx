@@ -1,4 +1,4 @@
-import React, { useState, Suspense } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import Layout from './components/Layout';
 import { AppView } from './types';
 import Dashboard from './pages/Dashboard';
@@ -8,6 +8,7 @@ import { OperationsProvider } from './contexts/OperationsContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import PinLockScreen from './components/PinLockScreen';
 import { NAVIGATION_ITEMS } from './constants';
+import { MigrationService } from './services/MigrationService';
 
 // Lazy load heavy components for code splitting
 const ProfitCalculator = React.lazy(() => import('./pages/ProfitCalculator'));
@@ -103,6 +104,38 @@ const AppContent: React.FC = () => {
 };
 
 const App: React.FC = () => {
+  const [migrationComplete, setMigrationComplete] = useState(false);
+
+  // Run migration on app startup
+  useEffect(() => {
+    if (MigrationService.needsMigration()) {
+      console.log('[App] Migration needed, starting...');
+      const result = MigrationService.migrate();
+
+      if (result.success) {
+        console.log('[App] Migration successful:', result);
+      } else {
+        console.warn('[App] Migration had errors:', result);
+        // 不阻止应用启动，但记录错误
+      }
+    } else {
+      console.log('[App] No migration needed');
+    }
+    setMigrationComplete(true);
+  }, []);
+
+  // 等待迁移完成后再渲染
+  if (!migrationComplete) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-black">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+          <span className="text-zinc-500 text-sm font-bold">正在检查数据...</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <AuthProvider>
       <AppContent />

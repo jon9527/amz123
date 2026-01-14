@@ -11,14 +11,27 @@ export const STORAGE_KEYS = {
     PROFIT_MODELS: 'amz_profit_models',
 
     // 物流渠道
-    LOGISTICS_CHANNELS: 'logistics_channels',
+    LOGISTICS_CHANNELS: 'amz_logistics_channels',
 
-    // 补货规划
-    REPLENISHMENT_STATE: 'replenishment_advice_state',
+    // 补货设置
+    RESTOCK_SETTINGS: 'amz_restock_settings',
+
+    // 推广计划
+    PROMOTION_PLANS: 'amz_promotion_plans',
+
+    // 补货规划状态
+    REPLENISHMENT_STATE: 'amz_replenishment_state',
+
+    // 补货规划方案
+    REPLENISHMENT_PLANS: 'amz_replenishment_plans',
 
     // 用户设置
-    EXCHANGE_RATE: 'exchangeRate',
-    THEME: 'app_theme',
+    EXCHANGE_RATE: 'amz_exchange_rate',
+    THEME: 'amz_theme',
+
+    // 日志
+    LOGGER_LOGS: 'amz_logger_logs',
+    LOGGER_SETTINGS: 'amz_logger_settings',
 
     // 认证（不参与数据备份）
     AUTH_PIN: 'amz_auth_pin',

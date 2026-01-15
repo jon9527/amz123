@@ -749,6 +749,14 @@ const ProductProfitList: React.FC = () => {
             ProfitModelService.update(modelId, updates);
             loadData(); // Refresh list
           }}
+          onDelete={(modelId: string) => {
+            // User requested to only delete replenishment plan, not the profit model itself
+            const model = models.find(m => m.id === modelId);
+            if (model) {
+              ProfitModelService.update(modelId, { replenishment: undefined });
+              loadData();
+            }
+          }}
         />
       )}
     </div >

@@ -33,8 +33,8 @@ const Layout: React.FC<LayoutProps> = ({ currentView, onViewChange, children }) 
               key={item.view}
               onClick={() => onViewChange(item.view)}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group ${currentView === item.view
-                  ? 'bg-blue-600 text-white shadow-md shadow-blue-600/15'
-                  : 'text-zinc-400 hover:bg-[#18181b] hover:text-white'
+                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/15'
+                : 'text-zinc-400 hover:bg-[#18181b] hover:text-white'
                 }`}
             >
               <span className={`material-symbols-outlined text-[20px] ${currentView === item.view ? 'text-white' : 'text-zinc-500 group-hover:text-blue-400'

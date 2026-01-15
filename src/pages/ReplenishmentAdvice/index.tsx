@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { runSimulation, fmtDate } from './ReplenishmentEngine';
-import { ModuleState, SimulationResult, FinancialEvent, LogisticsCosts } from './ReplenishmentTypes';
-import { ProfitModelService } from '../services/profitModelService';
-import { useProducts } from '../contexts/ProductContext';
-import { useLogistics } from '../contexts/LogisticsContext';
+import { ReplenishmentBatch, SavedProfitModel } from '../../types';
+import { runSimulation, fmtDate } from '../ReplenishmentEngine';
+import { ModuleState, SimulationResult, FinancialEvent, LogisticsCosts } from '../ReplenishmentTypes';
+import { ProfitModelService } from '../../services/profitModelService';
+import { useProducts } from '../../contexts/ProductContext';
+import { useLogistics } from '../../contexts/LogisticsContext';
 
-import { STORAGE_KEYS, replenishmentPlanRepository } from '../repositories';
-import { ReplenishmentBatch, SavedProfitModel, SavedReplenishmentPlan } from '../types';
-import NumberStepper from '../components/NumberStepper';
+import { STORAGE_KEYS } from '../../repositories';
+import NumberStepper from '../../components/NumberStepper';
 
 
 import {
@@ -47,37 +47,10 @@ ChartJS.register(
 
 // ============ HELPERS ============
 // fmtDate is imported from ReplenishmentEngine
-import { fmtMoney } from '../utils/formatters';
+import { fmtMoney } from '../../utils/formatters';
 
 
-const getDefaultState = (): ModuleState => ({
-    boxL: 60, boxW: 40, boxH: 40, boxWgt: 15,
-    pcsPerBox: 20,
-    seaPriceCbm: 450, seaPriceKg: 10, seaDays: 35, seaUnit: 'cbm',
-    airPriceKg: 42, airDays: 10,
-    expPriceKg: 38, expDays: 5,
-    // 默认选择的物流渠道
-    seaChannelId: '3',  // 普船海卡
-    airChannelId: '4',  // 空派专线
-    expChannelId: '5',  // 红单快递
-    safetyDays: 7, // 默认安全天数
-    simStart: new Date().toISOString().split('T')[0],
-    monthlyDailySales: [50, 55, 60, 55, 50, 45, 40, 40, 50, 60, 80, 100], // 1-12月日销量
-    seasonality: Array(12).fill(1.0), // 保留向后兼容
-    baseSales: Array(6).fill(50), // 保留向后兼容
-    prices: [19.99, 24.99, 29.99, 29.99, 29.99, 29.99],
-    margins: [-10, 10, 20, 20, 25, 25],
-    unitCost: 20,
-    sellCost: 0,
-    shippingUSD: 0,
-    profitUSD: 0,
-    exchRate: 7.2,
-    ratioDeposit: 0.3,
-    ratioBalance: 0.7,
-    prodDays: 15,
-    batches: [],
-    isFreeMode: false,
-});
+import { getDefaultState } from './utils';
 
 // ============ COMPONENT ============
 const STORAGE_KEY = STORAGE_KEYS.REPLENISHMENT_STATE;
@@ -90,139 +63,6 @@ const ReplenishmentAdvice: React.FC = () => {
     const [selectedStrategyId, setSelectedStrategyId] = useState<string>('');
     const { products } = useProducts();
     const { channels } = useLogistics();
-
-    // ============ PERSISTENCE STATE ============
-    const [isSaveDialogOpen, setIsSaveDialogOpen] = useState(false);
-    const [isLoadDrawerOpen, setIsLoadDrawerOpen] = useState(false);
-    const [planName, setPlanName] = useState('');
-    const [savedPlans, setSavedPlans] = useState<SavedReplenishmentPlan[]>([]);
-
-    // Refresh saved plans
-    const refreshSavedPlans = useCallback(() => {
-        if (selectedProductId) {
-            setSavedPlans(replenishmentPlanRepository.getByProductId(selectedProductId));
-        } else {
-            setSavedPlans([]);
-        }
-    }, [selectedProductId]);
-
-    // Open Load Drawer and fetch plans
-    const openLoadDrawer = () => {
-        refreshSavedPlans();
-        setIsLoadDrawerOpen(true);
-    };
-
-    // Save Plan Handler
-    const handleSavePlan = () => {
-        if (!planName.trim() || !selectedProductId || !simResult) return;
-
-        const summary = {
-            totalQty: state.batches.reduce((acc, b) => acc + Math.round(b.qty * (1 + (b.extraPercent || 0) / 100)), 0),
-            totalCost: Math.abs(simResult.minCash),
-            breakevenDate: simResult.breakevenDate,
-            stockoutDays: simResult.totalStockoutDays,
-            minCash: simResult.minCash,
-            finalCash: simResult.finalCash,
-        };
-
-        const newPlan: SavedReplenishmentPlan = {
-            id: `rp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-            productId: selectedProductId,
-            productName: products.find(p => p.id === selectedProductId)?.name || 'Unknown',
-            strategyId: selectedStrategyId,
-            strategyLabel: strategies.find(s => s.id === selectedStrategyId)?.label,
-            name: planName,
-            batches: [...state.batches],
-            monthlyDailySales: [...state.monthlyDailySales],
-            prices: [...state.prices],
-            margins: [...state.margins],
-            simStart: state.simStart,
-            seaChannelId: state.seaChannelId,
-            airChannelId: state.airChannelId,
-            expChannelId: state.expChannelId,
-            summary
-        };
-
-        replenishmentPlanRepository.save(newPlan);
-        setIsSaveDialogOpen(false);
-        setPlanName('');
-
-        // Show feedback
-        const btn = document.getElementById('btn-save-plan');
-        if (btn) {
-            const originalHTML = btn.innerHTML;
-            btn.innerHTML = '<span class="material-symbols-outlined text-[18px]">check</span> 已保存';
-            btn.classList.add('bg-green-600', 'hover:bg-green-500');
-            setTimeout(() => {
-                btn.innerHTML = originalHTML;
-                btn.classList.remove('bg-green-600', 'hover:bg-green-500');
-            }, 2000);
-        }
-    };
-
-    // Load Plan Handler
-    const handleLoadPlan = (plan: SavedReplenishmentPlan) => {
-        if (!plan) return;
-
-        // Restore State
-        const newState = {
-            ...state,
-            batches: plan.batches,
-            monthlyDailySales: plan.monthlyDailySales,
-            prices: plan.prices,
-            margins: plan.margins,
-            simStart: plan.simStart,
-            seaChannelId: plan.seaChannelId || state.seaChannelId,
-            airChannelId: plan.airChannelId || state.airChannelId,
-            expChannelId: plan.expChannelId || state.expChannelId,
-        };
-        setState(newState);
-
-        if (plan.strategyId) {
-            setSelectedStrategyId(plan.strategyId);
-            lastLoadedStrategyId.current = plan.strategyId;
-        } else {
-            lastLoadedStrategyId.current = null; // Clear if unknown source
-        }
-
-        // Also ensure product ID matches
-        if (plan.productId && plan.productId !== selectedProductId) {
-            handleProductSelect(plan.productId);
-            // Note: handleProductSelect might reset some state, but here we are overriding it.
-            // Ideally we should switch product, wait for it to load, THEN set state.
-            // But in this simple app, state is controlled here. 
-            // However, strategies list depends on selectedProductId.
-            // If we change product ID, we need to ensure strategies list updates.
-            // For now, let's assume the user picks from the right list or the effect hooks handle it.
-        }
-
-        // Update baseline for smart save
-        // CRITICAL: Must match the structure in handleSyncToStrategy EXACTLY, including value resolution
-        const savedSnapshot = {
-            batches: newState.batches,
-            monthlyDailySales: newState.monthlyDailySales,
-            simStart: newState.simStart,
-            prices: newState.prices,
-            margins: newState.margins,
-            seaChannelId: newState.seaChannelId,
-            airChannelId: newState.airChannelId,
-            expChannelId: newState.expChannelId,
-        };
-        lastSavedState.current = JSON.stringify(savedSnapshot);
-
-        setIsLoadDrawerOpen(false);
-    };
-
-    // Delete Plan Handler
-    const handleDeletePlan = (id: string, e: React.MouseEvent) => {
-        e.stopPropagation();
-        if (confirm('确定要删除这个补货方案吗？')) {
-            replenishmentPlanRepository.delete(id);
-            refreshSavedPlans();
-        }
-    };
 
     // 从localStorage加载初始状态
     const getInitialState = (): ModuleState => {
@@ -282,9 +122,6 @@ const ReplenishmentAdvice: React.FC = () => {
     };
 
     const [state, setState] = useState<ModuleState>(getInitialState);
-    const lastSavedState = useRef<string>("");
-    // Track the source strategy ID of the current data state to prevent cross-saving
-    const lastLoadedStrategyId = useRef<string | null>(null);
 
     // 从localStorage恢复选择状态
     useEffect(() => {
@@ -300,7 +137,6 @@ const ReplenishmentAdvice: React.FC = () => {
                     setStrategies(productModels);
                     if (parsed.selectedStrategyId) {
                         setSelectedStrategyId(parsed.selectedStrategyId);
-                        lastLoadedStrategyId.current = parsed.selectedStrategyId;
                     }
                 }
             }
@@ -326,7 +162,6 @@ const ReplenishmentAdvice: React.FC = () => {
     // 监听产品选择，自动填充数据
     const handleProductSelect = (pid: string) => {
         setSelectedProductId(pid);
-        lastSavedState.current = ""; // Reset baseline state
 
         // 重置策略
         setStrategies([]);
@@ -360,7 +195,6 @@ const ReplenishmentAdvice: React.FC = () => {
     // 监听策略选择 - 所有月份填充相同的售价和净利润
     const handleStrategySelect = (sid: string) => {
         setSelectedStrategyId(sid);
-        lastLoadedStrategyId.current = sid; // Data is now derived from this strategy
         if (!sid) return;
 
         const strategy = strategies.find(s => s.id === sid);
@@ -381,17 +215,6 @@ const ReplenishmentAdvice: React.FC = () => {
                 shippingUSD: strategy.inputs.shippingUSD || 0, // 头程USD
                 profitUSD: targetData.profit || 0, // 净利润USD
                 exchRate: strategy.inputs.exchangeRate || prev.exchRate, // 使用策略的汇率
-
-                // Load replenishment data if it exists in the strategy, otherwise reset to defaults
-                batches: strategy.replenishment?.batches || [
-                    { id: 0, name: '批次1', type: 'sea', qty: 1000, offset: 0, prodDays: 15 },
-                    { id: 1, name: '批次2', type: 'sea', qty: 1000, offset: 30, prodDays: 15 },
-                ],
-                monthlyDailySales: strategy.replenishment?.monthlyDailySales || [50, 55, 60, 55, 50, 45, 40, 40, 50, 60, 80, 100],
-                // Also sync logistics IDs if present
-                seaChannelId: strategy.replenishment?.seaChannelId || prev.seaChannelId,
-                airChannelId: strategy.replenishment?.airChannelId || prev.airChannelId,
-                expChannelId: strategy.replenishment?.expChannelId || prev.expChannelId,
             }));
         }
     };
@@ -587,7 +410,6 @@ const ReplenishmentAdvice: React.FC = () => {
     }, [state, logCosts, calcSimulation]);
 
     // ============ SYNC TO STRATEGY HANDLER ============
-    // ============ SYNC TO STRATEGY HANDLER ============
     const handleSyncToStrategy = useCallback(() => {
         if (!selectedProductId || !selectedStrategyId || !simResult) return;
 
@@ -603,35 +425,6 @@ const ReplenishmentAdvice: React.FC = () => {
             finalCash: simResult.finalCash,
         };
 
-        const currentStateSnapshot = {
-            batches: state.batches,
-            monthlyDailySales: state.monthlyDailySales,
-            simStart: state.simStart,
-            prices: state.prices,
-            margins: state.margins,
-            seaChannelId: state.seaChannelId,
-            airChannelId: state.airChannelId,
-            expChannelId: state.expChannelId,
-        };
-
-
-
-
-
-        // Strict ID Validation: Check if the current data source ID matches the selected target ID
-        // This prevents saving data Loaded from Strategy A into Strategy B
-        if (lastLoadedStrategyId.current && lastLoadedStrategyId.current !== selectedStrategyId) {
-            // Find labels for clearer error message
-            const originStrategy = strategies.find(s => s.id === lastLoadedStrategyId.current);
-            const targetStrategy = strategies.find(s => s.id === selectedStrategyId);
-
-            alert(`【策略匹配错误】\n\n当前补货数据的源头是策略: "${originStrategy?.label || '未知'}"\n但您正尝试保存到: "${targetStrategy?.label || '未知'}"\n\n请切换回正确的策略，或重新加载目标策略的数据。`);
-            return;
-        }
-
-        const currentStateStr = JSON.stringify(currentStateSnapshot);
-
-        // 1. Sync to Profit Model (Strategy)
         const updates: Partial<SavedProfitModel> = {
             replenishment: {
                 batches: [...state.batches],
@@ -644,55 +437,24 @@ const ReplenishmentAdvice: React.FC = () => {
                 lastUpdated: Date.now()
             }
         };
+
         ProfitModelService.update(selectedStrategyId, updates);
-
-        // 2. Smart Save Snapshot
-        let feedbackMsg = "策略已同步";
-        // If state has changed significantly since load/save
-        if (currentStateStr !== lastSavedState.current) {
-            // Create auto-snapshot
-            const timestamp = new Date().toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(/\//g, '-');
-            const autoName = `${currentStrategy.label || '策略'} @ ${timestamp}`;
-
-            const newPlan: SavedReplenishmentPlan = {
-                id: crypto.randomUUID(),
-                productId: selectedProductId,
-                productName: products.find(p => p.id === selectedProductId)?.name || 'Unknown Product',
-                strategyId: selectedStrategyId,
-                strategyLabel: `${currentStrategy.inputs.actualPrice} - ${((currentStrategy.results.planB?.margin || 0) * 100).toFixed(0)}%`,
-                name: autoName,
-                createdAt: Date.now(),
-                updatedAt: Date.now(),
-                ...currentStateSnapshot,
-                summary
-            };
-
-            replenishmentPlanRepository.save(newPlan);
-
-            // Update reference
-            lastSavedState.current = currentStateStr;
-            setSavedPlans(prev => [newPlan, ...prev]); // update local list
-
-            feedbackMsg = "策略已同步 & 新方案已归档";
-        } else {
-            feedbackMsg = "策略已同步 (无变更)";
-        }
 
         // Visual feedback
         const btn = document.getElementById('btn-sync-strategy');
         if (btn) {
             const originalHTML = btn.innerHTML;
-            const originalClass = btn.className;
-            btn.innerHTML = `<span class="material-symbols-outlined text-[16px]">check_circle</span> ${feedbackMsg}`;
-            btn.className = "flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-500 text-white text-xs font-bold rounded-lg transition-all shadow-lg shrink-0 whitespace-nowrap";
+            btn.innerHTML = '<span class="material-symbols-outlined text-[18px]">check</span> 已保存';
+            btn.classList.add('bg-green-600', 'hover:bg-green-500');
+            btn.classList.remove('bg-blue-600', 'hover:bg-blue-500');
 
             setTimeout(() => {
                 btn.innerHTML = originalHTML;
-                btn.className = originalClass;
-            }, 2500);
+                btn.classList.add('bg-blue-600', 'hover:bg-blue-500');
+                btn.classList.remove('bg-green-600', 'hover:bg-green-500');
+            }, 2000);
         }
-    }, [selectedProductId, selectedStrategyId, simResult, state, strategies, products]);
-
+    }, [selectedProductId, selectedStrategyId, simResult, state, strategies]);
 
     // ============ CHARTS ============
     // 1. Cleanup Effect - Runs only on Unmount
@@ -2146,19 +1908,19 @@ const ReplenishmentAdvice: React.FC = () => {
             {/* Main Content */}
             <main className="flex-1 flex flex-col overflow-hidden">
                 {/* KPI Bar with Product Selector */}
-                <div className="h-14 px-4 flex items-center gap-2 border-b border-[#27272a] bg-[#0a0a0a] flex-shrink-0 relative z-20">
+                <div className="h-14 px-6 flex items-center gap-4 border-b border-[#27272a] bg-[#0a0a0a] flex-shrink-0 overflow-hidden">
                     {/* KPI Metrics */}
-                    <div className="w-24 shrink-0">
+                    <div className="w-28 shrink-0">
                         <div className="text-[10px] text-zinc-500 uppercase font-bold">资金最大占用</div>
-                        <div className="text-sm font-black text-red-400">{simResult ? fmtMoney(Math.abs(simResult.minCash)) : '$0'}</div>
+                        <div className="text-base font-black text-red-400">{simResult ? fmtMoney(Math.abs(simResult.minCash)) : '$0'}</div>
                     </div>
-                    <div className="w-24 shrink-0">
+                    <div className="w-28 shrink-0">
                         <div className="text-[10px] text-zinc-500 uppercase font-bold">累计净利润</div>
-                        <div className="text-sm font-black text-green-400">{simResult ? fmtMoney(simResult.totalNetProfit) : '$0'}</div>
+                        <div className="text-base font-black text-green-400">{simResult ? fmtMoney(simResult.totalNetProfit) : '$0'}</div>
                     </div>
-                    <div className="w-16 shrink-0">
+                    <div className="w-20 shrink-0">
                         <div className="text-[10px] text-zinc-500 uppercase font-bold whitespace-nowrap">回本日期</div>
-                        <div className="text-sm font-black text-blue-400">{simResult?.breakevenDate || '--'}</div>
+                        <div className="text-base font-black text-blue-400">{simResult?.breakevenDate || '--'}</div>
                     </div>
 
                     {/* Spacer to push rest to right */}
@@ -2169,21 +1931,18 @@ const ReplenishmentAdvice: React.FC = () => {
                         <select
                             value={selectedProductId || ''}
                             onChange={(e) => handleProductSelect(e.target.value)}
-                            className="appearance-none bg-[#18181b] hover:bg-[#1f1f23] border border-[#27272a] hover:border-zinc-600 text-zinc-300 text-xs font-bold py-1.5 pl-2 pr-6 rounded-lg transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/50 w-[120px]"
+                            className="appearance-none bg-[#18181b] hover:bg-[#1f1f23] border border-[#27272a] hover:border-zinc-600 text-zinc-300 text-xs font-bold py-2 pl-3 pr-8 rounded-lg transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/50 w-[140px]"
                         >
                             <option value="">📦 选择产品</option>
-                            {products
-                                .filter(p => {
-                                    // Only show products with existing profit models
-                                    const models = ProfitModelService.getAll();
-                                    return models.some(m => m.productId === p.id);
-                                })
-                                .map(p => (<option key={p.id} value={p.id}>{p.name.slice(0, 10)}</option>))}
+                            {products.map(p => (<option key={p.id} value={p.id}>{p.name} ({p.sku || 'SKU'})</option>))}
                         </select>
-                        <div className="absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none">
+                        <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
                             <span className="material-symbols-outlined text-amber-500/50 text-[16px]">expand_more</span>
                         </div>
                     </div>
+
+                    {/* 保存策略按钮 */}
+
 
                     {/* 策略选择器 */}
                     <div className="relative shrink-0">
@@ -2191,17 +1950,17 @@ const ReplenishmentAdvice: React.FC = () => {
                             value={selectedStrategyId}
                             onChange={(e) => handleStrategySelect(e.target.value)}
                             disabled={strategies.length === 0}
-                            className={`appearance-none border text-xs font-bold py-1.5 pl-2 pr-6 rounded-lg transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-500/50 w-[140px] ${strategies.length > 0
+                            className={`appearance-none border text-xs font-bold py-2 pl-3 pr-8 rounded-lg transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-500/50 w-[180px] ${strategies.length > 0
                                 ? 'bg-amber-900/30 hover:bg-amber-900/50 border-amber-500/30 hover:border-amber-500/50 text-amber-100'
                                 : 'bg-[#18181b] border-[#27272a] text-zinc-500 cursor-not-allowed'
                                 }`}
                         >
-                            <option value="">⚡ {strategies.length > 0 ? '策略' : '无'}</option>
+                            <option value="">⚡ {strategies.length > 0 ? '选择策略' : '无策略'}</option>
                             {strategies.map(s => {
                                 const marginPct = (s.results?.planB?.margin ?? 0) * 100;
                                 return (
                                     <option key={s.id} value={s.id}>
-                                        ${s.inputs.actualPrice} - {marginPct.toFixed(0)}%
+                                        ${s.inputs.actualPrice} - {marginPct.toFixed(0)}% ({s.label || '无标签'})
                                     </option>
                                 );
                             })}
@@ -2213,122 +1972,22 @@ const ReplenishmentAdvice: React.FC = () => {
                         id="btn-sync-strategy"
                         onClick={handleSyncToStrategy}
                         disabled={!selectedStrategyId || !simResult}
-                        className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-800 disabled:text-zinc-600 text-white text-xs font-bold rounded-lg transition-all shadow-lg shrink-0 whitespace-nowrap"
-                        title="同步到策略，如有变更自动保存快照"
+                        className="flex items-center gap-1 px-3 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-800 disabled:text-zinc-600 text-white text-xs font-bold rounded-lg transition-all shadow-lg shadow-blue-900/20 active:scale-95 shrink-0 ml-4"
+                        title="将当前补货模拟结果保存到该策略"
                     >
                         <span className="material-symbols-outlined text-[16px]">save_as</span>
                         保存策略
                     </button>
 
-                    {/* 方案管理按钮 */}
-                    <div className="relative shrink-0 ml-2 border-l border-zinc-800 pl-2">
-                        <button
-                            onClick={() => setIsLoadDrawerOpen(!isLoadDrawerOpen)}
-                            className={`flex items-center gap-1 px-2 py-1.5 rounded-lg border text-xs font-bold transition-all whitespace-nowrap ${isLoadDrawerOpen
-                                ? 'bg-zinc-700 text-white border-zinc-500'
-                                : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white border-transparent'}`}
-                            title="加载已有方案"
-                        >
-                            <span className="material-symbols-outlined text-[16px]">history</span>
-                            加载
-                        </button>
-
-                        {/* Popover Content */}
-                        {isLoadDrawerOpen && (
-                            <div className="absolute top-full right-0 mt-2 w-[400px] max-h-[600px] overflow-y-auto bg-[#18181b] border border-zinc-700 rounded-xl shadow-2xl z-50 flex flex-col animate-in zoom-in-95 duration-100">
-                                <div className="p-3 border-b border-zinc-800 bg-[#18181b] sticky top-0 z-10 flex items-center justify-between">
-                                    <h4 className="text-xs font-bold text-zinc-400 flex items-center gap-1">
-                                        <span className="material-symbols-outlined text-[14px]">folder_open</span>
-                                        已保存方案
-                                    </h4>
-                                    <button onClick={() => setIsLoadDrawerOpen(false)} className="text-zinc-500 hover:text-white"><span className="material-symbols-outlined text-[16px]">close</span></button>
-                                </div>
-                                <div className="p-1 space-y-1">
-                                    {(() => {
-                                        // 1. Get all products that HAVE plans
-                                        const allPlans = replenishmentPlanRepository.getAll();
-                                        const distinctProds = Array.from(new Set(allPlans.map(p => p.productId)));
-                                        const prodsWithPlans = products.filter(p => distinctProds.includes(p.id));
-
-                                        if (prodsWithPlans.length === 0) {
-                                            return <div className="py-8 text-center text-[10px] text-zinc-600">暂无任何保存方案</div>;
-                                        }
-
-                                        return prodsWithPlans.map(prod => {
-                                            const plansForProd = allPlans.filter(p => p.productId === prod.id);
-                                            // Group by Strategy
-                                            const grouped = plansForProd.reduce((acc, p) => {
-                                                const k = p.strategyId || 'ungrouped';
-                                                if (!acc[k]) acc[k] = [];
-                                                acc[k].push(p);
-                                                return acc;
-                                            }, {} as Record<string, typeof plansForProd>);
-
-                                            return (
-                                                <div key={prod.id} className="border border-zinc-800/50 rounded-lg overflow-hidden bg-zinc-900/30">
-                                                    {/* Product Header (Collapsible) */}
-                                                    <details className="group">
-                                                        <summary className="flex items-center gap-2 px-2 py-1.5 bg-zinc-900 hover:bg-zinc-800 cursor-pointer select-none list-none transition-colors border-b border-zinc-800/50">
-                                                            <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0"></div>
-                                                            <span className="text-xs font-bold text-zinc-300 flex-1 truncate">{prod.name}</span>
-                                                            <span className="text-[10px] text-zinc-500 font-mono bg-zinc-950/50 px-1.5 py-0.5 rounded border border-zinc-800">{plansForProd.length}</span>
-                                                            <span className="material-symbols-outlined text-[16px] text-zinc-500 transition-transform group-open:rotate-180">expand_more</span>
-                                                        </summary>
-                                                        <div className="p-1 space-y-1 bg-black/20">
-                                                            {Object.entries(grouped).map(([sid, plans]) => {
-                                                                const label = plans[0].strategyLabel || (sid === 'ungrouped' ? '未关联策略' : '策略');
-
-                                                                return (
-                                                                    <details key={sid} className="group/s">
-                                                                        <summary className="flex items-center gap-1.5 py-1 px-2 cursor-pointer select-none list-none hover:bg-white/5 rounded transition-colors">
-                                                                            <span className="material-symbols-outlined text-[14px] text-amber-500/70">
-                                                                                {sid === 'ungrouped' ? 'draft' : 'bolt'}
-                                                                            </span>
-                                                                            <span className="text-[11px] font-bold text-zinc-400 flex-1 truncate">{label}</span>
-                                                                            <span className="material-symbols-outlined text-[14px] text-zinc-600 transition-transform group-open/s:rotate-180">expand_more</span>
-                                                                        </summary>
-                                                                        <div className="pl-6 pb-1 space-y-0.5 mt-0.5">
-                                                                            {plans.sort((a, b) => b.createdAt - a.createdAt).map(p => (
-                                                                                <div
-                                                                                    key={p.id}
-                                                                                    onClick={() => handleLoadPlan(p)}
-                                                                                    className="flex items-center justify-between p-1.5 rounded-md bg-zinc-800/40 hover:bg-blue-600/20 hover:border-blue-500/30 border border-transparent cursor-pointer group/item transition-all"
-                                                                                >
-                                                                                    <div className="flex flex-col min-w-0 pr-2">
-                                                                                        <span className="text-[11px] font-bold text-zinc-300 truncate group-hover/item:text-blue-300 transition-colors">{p.name}</span>
-                                                                                        <span className="text-[9px] text-zinc-600">{new Date(p.createdAt).toLocaleDateString()}</span>
-                                                                                    </div>
-                                                                                    <div className="text-[9px] font-mono text-zinc-500 flex flex-col items-end shrink-0">
-                                                                                        <span className="text-zinc-400">{p.summary?.totalQty} pcs</span>
-                                                                                        <span>{fmtMoney(p.summary?.totalCost || 0)}</span>
-                                                                                    </div>
-
-
-                                                                                </div>
-                                                                            ))}
-                                                                        </div>
-                                                                    </details>
-                                                                );
-                                                            })}
-                                                        </div>
-                                                    </details>
-                                                </div>
-                                            );
-                                        });
-                                    })()}
-                                </div>
-                            </div>
-                        )}
-                    </div>
 
                     {/* 推演起始日期 */}
-                    <div className="flex items-center gap-1 shrink-0 ml-2">
-                        <span className="text-zinc-500 text-[10px] font-bold whitespace-nowrap">推演开始</span>
+                    <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-zinc-500 text-xs font-bold hidden xl:block whitespace-nowrap">推演起始日期</span>
                         <input
                             type="date"
                             value={state.simStart}
                             onChange={(e) => setState((s) => ({ ...s, simStart: e.target.value }))}
-                            className="bg-[#18181b] hover:bg-[#1f1f23] border border-[#27272a] hover:border-zinc-600 text-zinc-300 text-xs font-bold py-1 px-2 rounded-lg transition-all focus:outline-none focus:ring-2 focus:ring-blue-500/50 font-mono w-[110px]"
+                            className="bg-[#18181b] hover:bg-[#1f1f23] border border-[#27272a] hover:border-zinc-600 text-zinc-300 text-xs font-bold py-1.5 px-3 rounded-lg transition-all focus:outline-none focus:ring-2 focus:ring-blue-500/50 font-mono w-[130px]"
                         />
                     </div>
                 </div>
@@ -2449,8 +2108,6 @@ const ReplenishmentAdvice: React.FC = () => {
                     </div>
                 </div>
             </main >
-
-
 
 
         </div >

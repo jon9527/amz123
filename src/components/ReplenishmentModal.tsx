@@ -7,6 +7,7 @@ interface ReplenishmentModalProps {
     initialStrategyId: string;
     onClose: () => void;
     onSave: (modelId: string, updates: Partial<SavedProfitModel>) => void;
+    onDelete?: (modelId: string) => void;
 }
 
 
@@ -15,6 +16,7 @@ export const ReplenishmentModal: React.FC<ReplenishmentModalProps> = ({
     strategies,
     initialStrategyId,
     onClose,
+    onDelete,
 }) => {
     const { getChannel } = useLogistics();
     const [expandedId, setExpandedId] = useState<string | null>(initialStrategyId);
@@ -188,12 +190,27 @@ export const ReplenishmentModal: React.FC<ReplenishmentModalProps> = ({
                                                     )}
                                                 </td>
                                                 <td className="px-6 py-5 text-right">
-                                                    <button
-                                                        onClick={() => setExpandedId(expandedId === strategy.id ? null : strategy.id)}
-                                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${expandedId === strategy.id ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-600 text-slate-300 hover:border-slate-400 hover:text-white'}`}
-                                                    >
-                                                        {expandedId === strategy.id ? '收起详情' : '查看详情'}
-                                                    </button>
+                                                    <div className="flex items-center justify-end gap-2">
+                                                        <button
+                                                            onClick={() => setExpandedId(expandedId === strategy.id ? null : strategy.id)}
+                                                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${expandedId === strategy.id ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-600 text-slate-300 hover:border-slate-400 hover:text-white'}`}
+                                                        >
+                                                            {expandedId === strategy.id ? '收起' : '详情'}
+                                                        </button>
+                                                        {onDelete && (
+                                                            <button
+                                                                onClick={() => {
+                                                                    if (confirm('确定要删除这个方案吗？')) {
+                                                                        onDelete(strategy.id);
+                                                                    }
+                                                                }}
+                                                                className="p-1.5 text-slate-500 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
+                                                                title="删除方案"
+                                                            >
+                                                                <span className="material-symbols-outlined text-[18px]">delete</span>
+                                                            </button>
+                                                        )}
+                                                    </div>
                                                 </td>
                                             </tr>
                                         );

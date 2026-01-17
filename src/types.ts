@@ -115,6 +115,7 @@ export interface ProfitModelInputs {
   fbaFee: number;
   miscFee: number;
   storageFee: number;
+  agedInventoryFee?: number; // 超龄库存费
   // New FBA Calculation Inputs
   storageMonth?: 'jan_sep' | 'oct_dec'; // 仓储月份 (Seasonality)
   placementMode?: 'minimal' | 'partial' | 'optimized'; // 入库配置模式
@@ -220,32 +221,7 @@ export interface CampaignData {
   orders: number;
 }
 
-export interface ProfitModelInputs {
-  // 运营目标
-  targetAcos: number;
-  targetMargin: number;
-  // 佣金设置
-  autoComm: boolean;
-  manualComm: number;
-  // 产品成本
-  purchaseRMB: number;
-  exchangeRate: number;
-  // 物流仓储
-  shippingUSD: number;
-  fbaFee: number;
-  miscFee: number;
-  storageFee: number;
-  // New FBA Calculation Inputs
-  storageMonth?: 'jan_sep' | 'oct_dec'; // 仓储月份 (Seasonality)
-  placementMode?: 'minimal' | 'partial' | 'optimized'; // 入库配置模式
-  // 退货损耗
-  returnRate: number;
-  unsellableRate: number;
-  retProcFee: number;
-  retRemFee: number;
-  // Plan B 售价
-  actualPrice: number;
-}
+// NOTE: ProfitModelInputs 已在上方定义 (line 103)
 
 export interface ProfitModelResults {
   planA: {

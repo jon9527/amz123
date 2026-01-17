@@ -29,8 +29,8 @@ const AdsAnalysis: React.FC = () => {
   const [selectedModelId, setSelectedModelId] = useState<string>('');
 
   // Manual Inputs (Used if no model selected)
-  const [manualPrice, setManualPrice] = useState<number>(29.99);
-  const [manualCost, setManualCost] = useState<number>(18.50);
+  const [manualPrice] = useState<number>(29.99);
+  const [manualCost] = useState<number>(18.50);
 
   // Load Saved Models on mount
   useEffect(() => {
@@ -124,76 +124,41 @@ const AdsAnalysis: React.FC = () => {
       </div>
 
       {/* --- Module 1: Advertising Simulator --- */}
-      <section className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="bg-purple-600/10 p-2.5 rounded-xl border border-purple-600/20">
-              <span className="material-symbols-outlined text-purple-500">science</span>
-            </div>
-            <h3 className="text-xl font-black text-white">投放模拟器</h3>
-          </div>
-
-          {/* Manual Inputs (only show if no model selected) */}
-          {!selectedModelId && (
-            <div className="flex items-center gap-3 bg-zinc-900/50 border border-zinc-700/50 rounded-xl px-3 py-2">
-              <div className="flex items-center gap-1">
-                <span className="text-[10px] text-zinc-500">售价 $</span>
-                <input
-                  type="number"
-                  value={manualPrice}
-                  onChange={e => setManualPrice(Number(e.target.value))}
-                  className="w-16 bg-zinc-800 border border-zinc-700 rounded text-xs font-bold text-white text-center py-1"
-                />
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="text-[10px] text-zinc-500">成本 $</span>
-                <input
-                  type="number"
-                  value={manualCost}
-                  onChange={e => setManualCost(Number(e.target.value))}
-                  className="w-16 bg-zinc-800 border border-zinc-700 rounded text-xs font-bold text-white text-center py-1"
-                />
-              </div>
-            </div>
-          )}
+      {/* The Simulator Panel & Sensitivity Matrix */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+        {/* Left: Input & Analysis Panel - High Priority Updates */}
+        <div className="w-full">
+          <MemoizedAdPanel
+            sellingPrice={context.price}
+            productCost={context.price - context.grossProfit} // Panel 内部用 price - cost = grossProfit
+            // Direct State (Immediate Response)
+            budget={simBudget}
+            onBudgetChange={setSimBudget}
+            cpc={simCpc}
+            onCpcChange={setSimCpc}
+            cvr={simCvr}
+            onCvrChange={setSimCvr}
+          />
         </div>
 
-        {/* The Simulator Panel & Sensitivity Matrix */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-          {/* Left: Input & Analysis Panel - High Priority Updates */}
-          <div className="w-full">
-            <MemoizedAdPanel
-              sellingPrice={context.price}
-              productCost={context.price - context.grossProfit} // Panel 内部用 price - cost = grossProfit
-              // Direct State (Immediate Response)
-              budget={simBudget}
-              onBudgetChange={setSimBudget}
-              cpc={simCpc}
-              onCpcChange={setSimCpc}
-              cvr={simCvr}
-              onCvrChange={setSimCvr}
-            />
-          </div>
-
-          {/* Right: Sensitivity Matrix (New) - Defer updates to prevent input lag */}
-          <div className="w-full h-full">
-            <MemoizedSensitivityMatrix
-              basePrice={context.price}
-              baseCpc={deferredCpc} // Deferred
-              baseCvr={deferredCvr} // Deferred
-              totalBudget={deferredBudget} // Deferred
-              fixedCost={context.fixedCost}
-              commRate={context.commRate}
-            />
-          </div>
+        {/* Right: Sensitivity Matrix (New) - Defer updates to prevent input lag */}
+        <div className="w-full h-full">
+          <MemoizedSensitivityMatrix
+            basePrice={context.price}
+            baseCpc={deferredCpc} // Deferred
+            baseCvr={deferredCvr} // Deferred
+            totalBudget={deferredBudget} // Deferred
+            fixedCost={context.fixedCost}
+            commRate={context.commRate}
+          />
         </div>
-      </section >
+      </div>
 
       {/* Divider */}
-      < div className="w-full h-px bg-gradient-to-r from-transparent via-zinc-800 to-transparent" ></div >
+      <div className="w-full h-px bg-gradient-to-r from-transparent via-zinc-800 to-transparent"></div>
 
       {/* --- Module 2: Campaign Reports (Mock Data) --- */}
-      < section className="space-y-6 opacity-60 hover:opacity-100 transition-opacity duration-300" >
+      <section className="space-y-6 opacity-60 hover:opacity-100 transition-opacity duration-300">
         <div className="flex items-center gap-3 mb-6">
           <div className="bg-zinc-800 p-2 rounded-lg">
             <span className="material-symbols-outlined text-zinc-400">table_chart</span>
@@ -271,8 +236,8 @@ const AdsAnalysis: React.FC = () => {
             </table>
           </div>
         </div>
-      </section >
-    </div >
+      </section>
+    </div>
   );
 };
 

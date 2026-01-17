@@ -310,11 +310,11 @@ const ReplenishmentAdvice: React.FC = () => {
         if (product) {
             setState(prev => ({
                 ...prev,
-                // 填充规格
-                boxL: product.length || prev.boxL,
-                boxW: product.width || prev.boxW,
-                boxH: product.height || prev.boxH,
-                boxWgt: product.weight || prev.boxWgt,
+                // 填充规格 (优先使用整箱规格)
+                boxL: product.boxLength || prev.boxL,
+                boxW: product.boxWidth || prev.boxW,
+                boxH: product.boxHeight || prev.boxH,
+                boxWgt: product.boxWeight || (product.weight * (product.pcsPerBox || 1)) || prev.boxWgt,
                 pcsPerBox: product.pcsPerBox || prev.pcsPerBox,
                 // 填充成本
                 unitCost: product.unitCost || prev.unitCost,
@@ -1508,46 +1508,115 @@ const ReplenishmentAdvice: React.FC = () => {
                 {/* Tab Content */}
                 <div className="flex-1 p-4 flex flex-col min-h-0">
                     {activeTab === 'spec' && (
-                        <div className="flex-1 flex flex-col gap-4">
-                            {/* 财务核心指标 - Full Width */}
+                        <div className="flex-1 flex flex-col gap-5 overflow-y-auto">
+
+                            {/* ========== 财务核心指标区域 ========== */}
                             {simResult && (
-                                <div className="bg-[#0f0f12] border border-[#1e1e24] rounded-lg p-4">
-                                    <div className="flex items-center gap-2 mb-3">
-                                        <div className="w-8 h-8 bg-blue-600/20 rounded-lg flex items-center justify-center">
-                                            <span className="text-blue-400 text-sm">📊</span>
+                                <div className="bg-gradient-to-b from-[#0f0f14] to-[#0a0a0e] border border-[#1e1e28] rounded-2xl p-4">
+                                    {/* Header */}
+                                    <div className="flex items-center gap-3 mb-4">
+                                        <div className="w-10 h-10 bg-gradient-to-br from-blue-600/30 to-indigo-600/20 rounded-xl flex items-center justify-center border border-blue-500/20">
+                                            <span className="text-lg">📊</span>
                                         </div>
-                                        <h3 className="text-sm font-bold text-white">财务核心指标</h3>
+                                        <div>
+                                            <h3 className="text-sm font-black text-white tracking-wide">财务核心指标</h3>
+                                            <p className="text-[10px] text-zinc-500 font-medium">Financial KPIs</p>
+                                        </div>
                                     </div>
+
+                                    {/* Metrics Grid - 3x2 Premium Cards */}
                                     <div className="grid grid-cols-3 gap-3">
                                         {(() => {
-                                            // Calculate New Metrics
                                             const duration = simResult.xMax || 365;
                                             const roi = simResult.minCash !== 0 ? Math.abs(simResult.totalNetProfit / simResult.minCash) : 0;
                                             const annualRoi = (roi / duration) * 365;
-
-                                            // Avg Inventory
                                             const sumInv = simResult.invPoints.reduce((acc, p) => acc + p.y, 0);
                                             const avgInv = duration > 0 ? sumInv / duration : 0;
-                                            // Turnover Ratio = Sold Qty / Avg Inv
                                             const invTurnoverRatio = avgInv > 0 ? simResult.totalSoldQty / avgInv : 0;
-                                            const turnDays = invTurnoverRatio > 0 ? 365 / invTurnoverRatio : 0;
+                                            const turnDays = invTurnoverRatio > 0 ? duration / invTurnoverRatio : 0;
 
                                             const metrics = [
-                                                { label: '资金最大占用', val: fmtMoney(Math.abs(simResult.minCash)), color: 'text-red-400', sub: '需准备本金' },
-                                                { label: 'ROI', val: (roi * 100).toFixed(1) + '%', color: 'text-green-400', sub: '总利润 / 占用' },
-                                                { label: '年化回报率', val: (annualRoi * 100).toFixed(1) + '%', color: 'text-orange-400', sub: '年化复利参考' },
-                                                { label: '资金周转率', val: (simResult.minCash !== 0 ? (simResult.totalGMV / Math.abs(simResult.minCash)).toFixed(2) : 0), color: 'text-blue-400', sub: 'GMV / 占用' },
-                                                { label: '净利率', val: (simResult.totalGMV !== 0 ? (simResult.totalNetProfit / simResult.totalGMV * 100).toFixed(1) : 0) + '%', color: 'text-emerald-400', sub: '总利润 / GMV' },
-                                                { label: '库存周转天数', val: turnDays.toFixed(0) + '天', color: 'text-purple-400', sub: '平均售罄周期' }
+                                                {
+                                                    label: '资金最大占用',
+                                                    val: fmtMoney(Math.abs(simResult.minCash)),
+                                                    color: 'from-red-500 to-orange-500',
+                                                    textColor: 'text-red-400',
+                                                    borderColor: 'border-red-500/20',
+                                                    bgColor: 'bg-red-500/5',
+                                                    sub: '需准备本金',
+                                                    icon: '💰'
+                                                },
+                                                {
+                                                    label: 'ROI',
+                                                    val: (roi * 100).toFixed(1) + '%',
+                                                    color: 'from-green-500 to-emerald-500',
+                                                    textColor: 'text-green-400',
+                                                    borderColor: 'border-green-500/20',
+                                                    bgColor: 'bg-green-500/5',
+                                                    sub: '总利润 / 占用',
+                                                    icon: '📈'
+                                                },
+                                                {
+                                                    label: '年化回报率',
+                                                    val: (annualRoi * 100).toFixed(1) + '%',
+                                                    color: 'from-orange-500 to-amber-500',
+                                                    textColor: 'text-orange-400',
+                                                    borderColor: 'border-orange-500/20',
+                                                    bgColor: 'bg-orange-500/5',
+                                                    sub: '年化回报参考',
+                                                    icon: '🚀'
+                                                },
+                                                {
+                                                    label: '资金周转率',
+                                                    val: (simResult.minCash !== 0 ? (simResult.totalGMV / Math.abs(simResult.minCash)).toFixed(2) : '0'),
+                                                    color: 'from-blue-500 to-cyan-500',
+                                                    textColor: 'text-blue-400',
+                                                    borderColor: 'border-blue-500/20',
+                                                    bgColor: 'bg-blue-500/5',
+                                                    sub: 'GMV / 占用',
+                                                    icon: '🔄'
+                                                },
+                                                {
+                                                    label: '净利率',
+                                                    val: (simResult.totalGMV !== 0 ? (simResult.totalNetProfit / simResult.totalGMV * 100).toFixed(1) : '0') + '%',
+                                                    color: 'from-emerald-500 to-teal-500',
+                                                    textColor: 'text-emerald-400',
+                                                    borderColor: 'border-emerald-500/20',
+                                                    bgColor: 'bg-emerald-500/5',
+                                                    sub: '总利润 / GMV',
+                                                    icon: '💎'
+                                                },
+                                                {
+                                                    label: '库存周转天数',
+                                                    val: turnDays.toFixed(0) + '天',
+                                                    color: 'from-purple-500 to-violet-500',
+                                                    textColor: 'text-purple-400',
+                                                    borderColor: 'border-purple-500/20',
+                                                    bgColor: 'bg-purple-500/5',
+                                                    sub: '平均售罄周期',
+                                                    icon: '⏱️'
+                                                }
                                             ];
 
                                             return metrics.map((item, i) => (
-                                                <div key={i}>
-                                                    <div className="text-[10px] text-zinc-500 uppercase font-bold mb-1">{item.label}</div>
-                                                    <div className="bg-[#18181b] border border-[#27272a] rounded-md px-3 py-2">
-                                                        <span className={`text-lg font-black ${item.color} font-mono block truncate`}>{item.val}</span>
+                                                <div
+                                                    key={i}
+                                                    className={`relative rounded-xl border ${item.borderColor} ${item.bgColor} p-3 flex flex-col items-center justify-center text-center`}
+                                                >
+
+                                                    {/* Label with Icon */}
+                                                    <div className="flex items-center gap-1.5 mb-2">
+                                                        <span className="text-xs opacity-70">{item.icon}</span>
+                                                        <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">{item.label}</span>
                                                     </div>
-                                                    <div className="text-[9px] text-zinc-600 mt-1">{item.sub}</div>
+
+                                                    {/* Main Value */}
+                                                    <div className={`text-xl font-black ${item.textColor} font-mono tracking-tight mb-1`}>
+                                                        {item.val}
+                                                    </div>
+
+                                                    {/* Sub Label */}
+                                                    <div className="text-[9px] text-zinc-600">{item.sub}</div>
                                                 </div>
                                             ));
                                         })()}
@@ -1555,51 +1624,29 @@ const ReplenishmentAdvice: React.FC = () => {
                                 </div>
                             )}
 
-                            {/* 关键时间点 - Full Width */}
-                            {simResult && (
-                                <div className="bg-[#0f0f12] border border-[#1e1e24] rounded-lg p-4">
-                                    <div className="flex items-center gap-2 mb-3">
-                                        <div className="w-8 h-8 bg-amber-600/20 rounded-lg flex items-center justify-center">
-                                            <span className="text-amber-400 text-sm">⏳</span>
-                                        </div>
-                                        <h3 className="text-sm font-bold text-white">关键时间点</h3>
+                            {/* ========== 头程物流区域 ========== */}
+                            <div className="bg-gradient-to-b from-[#0f0f14] to-[#0a0a0e] border border-[#1e1e28] rounded-2xl p-4 flex-1 flex flex-col">
+                                {/* Header */}
+                                <div className="flex items-center gap-3 mb-4">
+                                    <div className="w-10 h-10 bg-gradient-to-br from-cyan-600/30 to-blue-600/20 rounded-xl flex items-center justify-center border border-cyan-500/20">
+                                        <span className="text-lg">🚚</span>
                                     </div>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <div className="text-[10px] text-zinc-500 uppercase font-bold mb-1 truncate" title="回本日期 (CASH > 0)">回本日期</div>
-                                            <div className="bg-[#18181b] border border-[#27272a] rounded-md px-3 py-2">
-                                                <span className="text-lg font-black text-blue-400 font-mono">{simResult.breakevenDate}</span>
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <div className="text-[10px] text-zinc-500 uppercase font-bold mb-1">盈利日期 (PROFIT &gt; 0)</div>
-                                            <div className="bg-[#18181b] border border-[#27272a] rounded-md px-3 py-2">
-                                                <span className="text-lg font-black text-green-400 font-mono">{simResult.profBeDateStr}</span>
-                                            </div>
-                                        </div>
+                                    <div>
+                                        <h3 className="text-sm font-black text-white tracking-wide">头程物流</h3>
+                                        <p className="text-[10px] text-zinc-500 font-medium">First-Mile Logistics</p>
                                     </div>
                                 </div>
-                            )}
 
-                            {/* 头程运费 */}
-                            <div className="flex-1 bg-[#0f0f12] border border-[#1e1e24] rounded-lg p-4 flex flex-col">
-                                <div className="flex items-center gap-2 mb-4">
-                                    <div className="w-8 h-8 bg-orange-600/20 rounded-lg flex items-center justify-center">
-                                        <span className="text-orange-400 text-sm">🚚</span>
-                                    </div>
-                                    <h3 className="text-sm font-bold text-white">头程运费</h3>
-                                </div>
-                                <div className="flex-1 grid grid-cols-3 gap-2">
+                                {/* Logistics Cards - 3 Column, fill remaining height */}
+                                <div className="grid grid-cols-3 gap-3 flex-1 min-h-0">
                                     {[
-                                        { emoji: '🚢', name: '海运', priceKey: 'seaPriceCbm', daysKey: 'seaDays', channelKey: 'seaChannelId', type: 'sea' as const },
-                                        { emoji: '✈️', name: '空派', priceKey: 'airPriceKg', daysKey: 'airDays', channelKey: 'airChannelId', type: 'air' as const },
-                                        { emoji: '🚀', name: '快递', priceKey: 'expPriceKg', daysKey: 'expDays', channelKey: 'expChannelId', type: 'exp' as const },
-                                    ].map(({ emoji, name, daysKey, channelKey, type }) => {
+                                        { emoji: '🚢', name: '海运', nameEn: 'Sea', priceKey: 'seaPriceCbm', daysKey: 'seaDays', channelKey: 'seaChannelId', type: 'sea' as const, color: 'text-blue-400', gradientFrom: 'from-blue-600', gradientTo: 'to-cyan-600', borderColor: 'border-blue-500/30', bgColor: 'bg-blue-500/5' },
+                                        { emoji: '✈️', name: '空派', nameEn: 'Air', priceKey: 'airPriceKg', daysKey: 'airDays', channelKey: 'airChannelId', type: 'air' as const, color: 'text-sky-400', gradientFrom: 'from-sky-600', gradientTo: 'to-teal-600', borderColor: 'border-sky-500/30', bgColor: 'bg-sky-500/5' },
+                                        { emoji: '🚀', name: '快递', nameEn: 'Express', priceKey: 'expPriceKg', daysKey: 'expDays', channelKey: 'expChannelId', type: 'exp' as const, color: 'text-purple-400', gradientFrom: 'from-purple-600', gradientTo: 'to-pink-600', borderColor: 'border-purple-500/30', bgColor: 'bg-purple-500/5' },
+                                    ].map(({ emoji, name, nameEn, daysKey, channelKey, priceKey, type, color, borderColor, bgColor }) => {
                                         const currentChanId = (state as any)[channelKey];
                                         const channel = channels.find(c => c.id === currentChanId);
-                                        const costUSD = logCosts[type] / state.exchRate;
 
-                                        // 判定海运当前模式
                                         const isSea = type === 'sea';
                                         let useKg = !isSea;
                                         if (isSea) {
@@ -1607,67 +1654,165 @@ const ReplenishmentAdvice: React.FC = () => {
                                             else useKg = state.seaUnit === 'kg';
                                         }
 
-                                        // 决定显示的价格值
+                                        const volDivisor = channel ? (channel.volDivisor || 6000) : (type === 'exp' ? 5000 : 6000);
+                                        const dimVol = state.boxL * state.boxW * state.boxH;
+                                        const volWgt = dimVol / volDivisor;
+
+                                        const chargeWgt = Math.max(state.boxWgt, volWgt);
+
+                                        let unitPriceRMB = 0;
+                                        let unitLabel = '';
+
                                         if (channel) {
-                                            // displayPrice = useKg ? (channel.pricePerKg || 0) : (channel.pricePerCbm || 0);
+                                            if (isSea) {
+                                                if (useKg) {
+                                                    unitPriceRMB = channel.pricePerKg || 0;
+                                                    unitLabel = `¥${unitPriceRMB}/kg`;
+                                                } else {
+                                                    unitPriceRMB = channel.pricePerCbm || 0;
+                                                    unitLabel = `¥${unitPriceRMB}/m³`;
+                                                }
+                                            } else {
+                                                unitPriceRMB = channel.pricePerKg || 0;
+                                                unitLabel = `¥${unitPriceRMB}/kg`;
+                                            }
                                         } else {
-                                            // displayPrice = (isSea && useKg) ? state.seaPriceKg : (state as any)[priceKey];
+                                            if (isSea) {
+                                                if (useKg) {
+                                                    unitPriceRMB = state.seaPriceKg || 0;
+                                                    unitLabel = `¥${unitPriceRMB}/kg`;
+                                                } else {
+                                                    unitPriceRMB = state.seaPriceCbm || 0;
+                                                    unitLabel = `¥${unitPriceRMB}/m³`;
+                                                }
+                                            } else {
+                                                unitPriceRMB = (state as any)[priceKey] || 0;
+                                                unitLabel = `¥${unitPriceRMB}/kg`;
+                                            }
                                         }
 
+                                        let costPerBoxRMB = 0;
+                                        if (isSea && !useKg) {
+                                            // Match calcOne logic: use 167 divisor for CBM conversion from Chargeable Weight
+                                            costPerBoxRMB = (chargeWgt / 167) * unitPriceRMB;
+                                        } else {
+                                            costPerBoxRMB = unitPriceRMB * chargeWgt;
+                                        }
+
+                                        const costPerBoxUSD = costPerBoxRMB / state.exchRate;
+                                        const costPerUnitUSD = costPerBoxUSD / state.pcsPerBox;
+                                        const manualValue = isSea && useKg ? state.seaPriceKg : (state as any)[priceKey];
+                                        const manualKey = isSea && useKg ? 'seaPriceKg' : priceKey;
+
                                         return (
-                                            <div key={type} className={`rounded-lg border p-3 flex flex-col transition-colors overflow-hidden ${currentChanId ? 'bg-blue-900/10 border-blue-500/30' : 'bg-[#18181b]/30 border-[#27272a]/50'}`}>
-                                                <div className="flex items-center justify-between mb-2">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-xl">{emoji}</span>
-                                                        <span className="text-sm font-bold text-zinc-300">{name}</span>
+                                            <div
+                                                key={type}
+                                                className={`relative rounded-xl border ${borderColor} ${bgColor} flex flex-col overflow-hidden h-full`}
+                                            >
+
+                                                {/* 1. 运输方式 */}
+                                                <div className="flex-1 flex items-center justify-center gap-2 py-2 border-b border-zinc-800/30">
+                                                    <div className={`w-7 h-7 rounded-md ${bgColor} border ${borderColor} flex items-center justify-center`}>
+                                                        <span className="text-sm">{emoji}</span>
                                                     </div>
-                                                    {/* 海运手动模式切换单位 */}
-                                                    {isSea && !currentChanId && (
-                                                        <button
-                                                            onClick={() => setState(s => ({ ...s, seaUnit: s.seaUnit === 'cbm' ? 'kg' : 'cbm' }))}
-                                                            className="text-[10px] bg-zinc-800 px-1.5 py-0.5 rounded text-zinc-400 hover:text-white border border-zinc-700"
+                                                    <div>
+                                                        <div className={`text-xs font-black ${color}`}>{name}</div>
+                                                        <div className="text-[9px] text-zinc-600">{nameEn}</div>
+                                                    </div>
+                                                </div>
+
+                                                {/* 2. 选项 (渠道选择) */}
+                                                <div className="flex-1 flex items-center justify-center py-2 border-b border-zinc-800/30">
+                                                    <div className="flex items-center gap-1.5">
+                                                        {isSea && !currentChanId && (
+                                                            <button
+                                                                onClick={() => setState(s => ({ ...s, seaUnit: s.seaUnit === 'cbm' ? 'kg' : 'cbm' }))}
+                                                                className="text-[9px] bg-zinc-800 px-1.5 py-0.5 rounded text-zinc-400 hover:text-white border border-zinc-700"
+                                                            >
+                                                                {useKg ? 'KG' : 'CBM'}
+                                                            </button>
+                                                        )}
+                                                        <select
+                                                            value={currentChanId || ''}
+                                                            onChange={(e) => {
+                                                                const newId = e.target.value;
+                                                                const ch = channels.find(c => c.id === newId);
+                                                                const updates: any = { [channelKey]: newId };
+                                                                if (ch) updates[daysKey] = ch.deliveryDays;
+                                                                setState(s => ({ ...s, ...updates }));
+                                                            }}
+                                                            className="appearance-none bg-zinc-800 text-[10px] text-zinc-300 font-bold focus:outline-none cursor-pointer px-2 py-1 rounded border border-zinc-700"
                                                         >
-                                                            {useKg ? '按KG' : '按CBM'}
-                                                        </button>
-                                                    )}
-                                                </div>
-
-                                                {/* 渠道选择 */}
-                                                <select
-                                                    value={currentChanId || ''}
-                                                    onChange={(e) => {
-                                                        const newId = e.target.value;
-                                                        const ch = channels.find(c => c.id === newId);
-                                                        // 切换渠道时自动更新Days
-                                                        const updates: any = { [channelKey]: newId };
-                                                        if (ch) updates[daysKey] = ch.deliveryDays;
-                                                        setState(s => ({ ...s, ...updates }));
-                                                    }}
-                                                    className={`w-full bg-[#0a0a0a] border rounded text-xs text-white py-1.5 px-2 mb-3 focus:outline-none focus:border-blue-500 ${!currentChanId ? 'border-red-500/50' : 'border-[#27272a]'}`}
-                                                >
-                                                    <option value="" disabled>🚫 请选择渠道</option>
-                                                    {channels.filter(c => c.type === type && c.status === 'active').map(c => (
-                                                        <option key={c.id} value={c.id}>{c.name.slice(0, 8)}</option>
-                                                    ))}
-                                                </select>
-
-                                                {/* 价格展示 (只读) */}
-                                                <div className="text-center mb-2 h-[20px] flex items-center justify-center">
-                                                    {channel ? (
-                                                        <span className="text-xs text-zinc-400">
-                                                            {useKg ? `¥${channel.pricePerKg}/kg` : `¥${channel.pricePerCbm}/m³`}
-                                                        </span>
-                                                    ) : (
-                                                        <span className="text-[10px] text-zinc-600">-- 未选择 --</span>
-                                                    )}
-                                                </div>
-
-                                                <div className="text-center flex-1 flex flex-col justify-center border-t border-zinc-800 pt-2">
-                                                    <div className="text-base font-black text-emerald-400 font-mono whitespace-nowrap">
-                                                        {costUSD > 0 ? `$${costUSD.toFixed(2)}` : '--'}/个
+                                                            {channels.filter(c => c.type === type && c.status === 'active').map(c => (
+                                                                <option key={c.id} value={c.id}>{c.name.slice(0, 8)}</option>
+                                                            ))}
+                                                        </select>
                                                     </div>
-                                                    <div className="text-[10px] text-zinc-500 mt-0.5">
-                                                        {(state as any)[daysKey]}天到货
+                                                </div>
+
+                                                {/* 3. 单个运费 (突出显示) */}
+                                                <div className="flex-1 flex items-center justify-center border-b border-zinc-800/30">
+                                                    <div className="text-center">
+                                                        <div className="flex items-baseline justify-center gap-0.5">
+                                                            <span className={`text-2xl font-black font-mono ${costPerUnitUSD > 0 ? color : 'text-zinc-700'}`}>
+                                                                {costPerUnitUSD > 0 ? `$${costPerUnitUSD.toFixed(2)}` : '--'}
+                                                            </span>
+                                                            <span className="text-[9px] text-zinc-600">/个</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* 4. 物流价格 + 时效 */}
+                                                <div className="flex-1 flex flex-col items-center justify-center py-2 border-b border-zinc-800/30">
+                                                    <div className="text-[10px] text-zinc-500 mb-1">物流价格</div>
+                                                    {channel ? (
+                                                        <span className="text-[13px] text-zinc-200 font-mono font-bold">{unitLabel}</span>
+                                                    ) : (
+                                                        <div className="flex items-center gap-1">
+                                                            <NumberStepper
+                                                                value={manualValue}
+                                                                onChange={(v) => setState(s => ({ ...s, [manualKey]: v }))}
+                                                                step={useKg ? 0.5 : 50}
+                                                                decimals={useKg ? 2 : 0}
+                                                                min={0}
+                                                                className="w-14 h-5 bg-zinc-800 border border-zinc-700 rounded text-center text-[10px] text-white"
+                                                            />
+                                                            <span className="text-[9px] text-zinc-500">{useKg ? '/kg' : '/m³'}</span>
+                                                        </div>
+                                                    )}
+                                                    {channel && (
+                                                        <div className="text-[11px] text-zinc-400 mt-1">{(state as any)[daysKey]}天</div>
+                                                    )}
+                                                </div>
+
+                                                {/* 5. 重量 */}
+                                                <div className="flex-1 flex items-center justify-center px-3 py-2 border-b border-zinc-800/30">
+                                                    <div className="flex items-center gap-4">
+                                                        <div className="text-center">
+                                                            <div className="text-[9px] text-zinc-500">箱重</div>
+                                                            <div className="text-[11px] text-zinc-300 font-mono">{state.boxWgt}kg</div>
+                                                        </div>
+                                                        <div className="text-center">
+                                                            <div className="text-[9px] text-zinc-500">抛重</div>
+                                                            <div className="text-[11px] text-zinc-300 font-mono">{volWgt.toFixed(1)}kg</div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* 6. 单箱运费 */}
+                                                {/* 6. 单箱运费 + 装箱数 */}
+                                                <div className="flex-1 grid grid-cols-2 items-center py-2 bg-zinc-900/30 border-t border-zinc-800/30">
+                                                    <div className="flex flex-col items-center justify-center border-r border-zinc-800/50 px-1">
+                                                        <div className="text-[10px] text-zinc-500 mb-0.5 scale-90">单箱运费</div>
+                                                        <span className={`text-xs font-black font-mono tracking-tight ${costPerBoxUSD > 0 ? 'text-white' : 'text-zinc-700'}`}>
+                                                            {costPerBoxUSD > 0 ? `$${costPerBoxUSD.toFixed(2)}` : '--'}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex flex-col items-center justify-center px-1">
+                                                        <div className="text-[10px] text-zinc-500 mb-0.5 scale-90">装箱 /pcs</div>
+                                                        <span className="text-xs font-black font-mono text-zinc-300 tracking-tight">
+                                                            {state.pcsPerBox}
+                                                        </span>
                                                     </div>
                                                 </div>
                                             </div>
@@ -1675,6 +1820,7 @@ const ReplenishmentAdvice: React.FC = () => {
                                     })}
                                 </div>
                             </div>
+
                         </div>
                     )}
 
@@ -2211,6 +2357,10 @@ const ReplenishmentAdvice: React.FC = () => {
                     <div className="w-16 shrink-0">
                         <div className="text-[10px] text-zinc-500 uppercase font-bold whitespace-nowrap">回本日期</div>
                         <div className="text-sm font-black text-blue-400">{simResult?.breakevenDate || '--'}</div>
+                    </div>
+                    <div className="w-16 shrink-0">
+                        <div className="text-[10px] text-zinc-500 uppercase font-bold whitespace-nowrap">盈利日期</div>
+                        <div className="text-sm font-black text-green-400">{simResult?.profBeDateStr || '--'}</div>
                     </div>
 
                     {/* Spacer to push rest to right */}

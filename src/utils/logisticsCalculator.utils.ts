@@ -9,11 +9,14 @@ import { r2 } from './formatters';
 export interface LogisticsChannel {
     id: string;
     name: string;
-    type: 'sea' | 'air' | 'express';
+    type: 'sea' | 'air' | 'exp';
     pricePerCbm?: number;    // 海运 $/CBM
-    pricePerKg: number;      // 空运/快递 $/kg
-    transitDays: number;     // 运输天数
+    pricePerKg?: number;     // 空运/快递 $/kg (可选)
+    transitDays?: number;    // 运输天数 (Optional in utils, required in types, keeping lenient)
     minWeight?: number;      // 最低计费重量
+    volDivisor?: number;     // 体积重除数
+    deliveryDays?: number;   // Alias for transitDays if coming from repo
+    status?: 'active' | 'disabled'; // 状态
 }
 
 // ============ 包装规格 ============
@@ -37,10 +40,10 @@ export interface ShippingCostResult {
 
 /**
  * 计算体积重 (kg)
- * 国际标准: L x W x H (cm) / 5000
+ * @param divisor 体积重除数 (默认 6000)
  */
-export const calculateVolumeWeight = (length: number, width: number, height: number): number => {
-    return r2((length * width * height) / 5000);
+export const calculateVolumeWeight = (length: number, width: number, height: number, divisor: number = 6000): number => {
+    return r2((length * width * height) / divisor);
 };
 
 /**
@@ -53,15 +56,23 @@ export const calculateShippingCost = (
     pkg: PackageSpec,
     channel: LogisticsChannel
 ): ShippingCostResult => {
-    const volumeWeight = calculateVolumeWeight(pkg.length, pkg.width, pkg.height);
+    // 确定体积重除数
+    let divisor = channel.volDivisor || 6000;
+    if (!channel.volDivisor) {
+        if (channel.type === 'exp') divisor = 5000;
+        else divisor = 6000; // Sea & Air default
+    }
+
+    const volumeWeight = calculateVolumeWeight(pkg.length, pkg.width, pkg.height, divisor);
     const actualWeight = pkg.weight;
 
     // 计费重量取较大者
     const billableWeight = Math.max(volumeWeight, actualWeight, channel.minWeight || 0);
     const method = volumeWeight > actualWeight ? 'volume' : 'weight';
 
-    // 海运使用 CBM 计价
+    // 海运使用 CBM 计价 (必须有 CBM 报价)
     if (channel.type === 'sea' && channel.pricePerCbm) {
+        // CBM = cm3 / 1,000,000
         const cbm = (pkg.length * pkg.width * pkg.height) / 1000000;
         const perBox = r2(cbm * channel.pricePerCbm);
         return {
@@ -74,8 +85,8 @@ export const calculateShippingCost = (
         };
     }
 
-    // 空运/快递使用 kg 计价
-    const perBox = r2(billableWeight * channel.pricePerKg);
+    // 其他情况 (空运/快递/海运按KG) 使用 kg 计价
+    const perBox = r2(billableWeight * (channel.pricePerKg || 0));
     return {
         perUnit: r2(perBox / pkg.pcsPerBox),
         perBox,

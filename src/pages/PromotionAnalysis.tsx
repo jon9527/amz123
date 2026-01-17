@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
 import { ProfitModelService } from '../services/profitModelService';
 import { SavedProfitModel } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList } from 'recharts';
@@ -60,37 +60,59 @@ const VolumeStepper = ({ value, onChange }: { value: number, onChange: (v: numbe
     );
 };
 
+// 预加载初始数据 (同步，避免闪烁)
+const getInitialState = () => {
+    const models = ProfitModelService.getAll().sort((a, b) => b.timestamp - a.timestamp);
+    if (models.length === 0) {
+        return { models: [], modelId: '', price: 0, cpc: 0.90 };
+    }
+    const model = models[0];
+    const pb = model.results.planB;
+    const inputs = model.inputs;
+    const commRate = pb.commRate || 0.15;
+    const purchaseCost = model.results.costProdUSD;
+    const firstMile = inputs.shippingUSD;
+    const fbaFee = inputs.fbaFee;
+    const storageMisc = (inputs.miscFee || 0) + (inputs.agedInventoryFee || 0) + (inputs.storageFee || 0);
+    const retRate = inputs.returnRate ?? 5;
+    const commission = pb.price * commRate;
+    const adminFee = Math.min(5.00, commission * 0.20);
+    const lossSellable = (inputs.retProcFee ?? 0) + adminFee + fbaFee;
+    const returnsCost = lossSellable * (retRate / 100);
+    const baseCost = purchaseCost + firstMile + fbaFee + storageMisc + returnsCost;
+    const grossProfit = pb.price - baseCost - commission;
+    const defaultCvr = 11; // 与下面 simCvr 初始值一致
+    const breakEvenCpc = grossProfit * (defaultCvr / 100);
+    return {
+        models,
+        modelId: model.id,
+        price: pb.price,
+        cpc: breakEvenCpc > 0 ? parseFloat(breakEvenCpc.toFixed(2)) : 0.90
+    };
+};
+
 const PromotionAnalysis: React.FC = () => {
-    // State
-    const [savedModels, setSavedModels] = useState<SavedProfitModel[]>([]);
-    const [selectedModelId, setSelectedModelId] = useState<string>('');
+    // Lazy initialization - 同步读取，首次渲染就有数据
+    const [initialState] = useState(getInitialState);
+
+    // State - 使用预计算的初始值
+    const [savedModels] = useState<SavedProfitModel[]>(initialState.models);
+    const [selectedModelId, setSelectedModelId] = useState<string>(initialState.modelId);
 
     // Inputs (Internal State only, UI removed for per-unit)
-    const [simPrice, setSimPrice] = useState<number>(0);
+    const [simPrice, setSimPrice] = useState<number>(initialState.price);
     const [simTacos, _setSimTacos] = useState<number>(15.0); // Default 15%
 
     // Volume Input
     const [targetVolume, setTargetVolume] = useState<number>(100);
 
     // Strategy Inputs (Lifted State for Breakdown & Charts)
-    const [simCpc, setSimCpc] = useState<number>(0.90);
+    const [simCpc, setSimCpc] = useState<number>(initialState.cpc);
     const [simCtr, setSimCtr] = useState<number>(0.5);
     const [simCvr, setSimCvr] = useState<number>(11);
     // Dropdown State
     const [isExporting, setIsExporting] = useState(false);
     const contentRef = useRef<HTMLDivElement>(null);
-
-    // Load Models
-    useEffect(() => {
-        const models = ProfitModelService.getAll().sort((a, b) => b.timestamp - a.timestamp);
-        setSavedModels(models);
-        if (models.length > 0) {
-            setSelectedModelId(models[0].id);
-            // Default to Saved Price (Plan B)
-            setSimPrice(models[0].results.planB.price);
-            // 默认折叠所有分组
-        }
-    }, []);
 
     // Get selected model for display
     const selectedModel = savedModels.find(m => m.id === selectedModelId);
@@ -103,8 +125,28 @@ const PromotionAnalysis: React.FC = () => {
         const model = savedModels.find(m => m.id === id);
         if (model) {
             setSimPrice(model.results.planB.price);
+            // 计算并设置盈亏 CPC
+            const pb = model.results.planB;
+            const inputs = model.inputs;
+            const commRate = pb.commRate || 0.15;
+            const purchaseCost = model.results.costProdUSD;
+            const firstMile = inputs.shippingUSD;
+            const fbaFee = inputs.fbaFee;
+            const storageMisc = (inputs.miscFee || 0) + (inputs.agedInventoryFee || 0) + (inputs.storageFee || 0);
+            // 简化的退货成本估算
+            const retRate = inputs.returnRate ?? 5;
+            const commission = pb.price * commRate;
+            const adminFee = Math.min(5.00, commission * 0.20);
+            const lossSellable = (inputs.retProcFee ?? 0) + adminFee + fbaFee;
+            const returnsCost = lossSellable * (retRate / 100);
+            const baseCost = purchaseCost + firstMile + fbaFee + storageMisc + returnsCost;
+            const grossProfit = pb.price - baseCost - commission;
+            const breakEvenCpc = grossProfit * (simCvr / 100);
+            if (breakEvenCpc > 0) {
+                setSimCpc(parseFloat(breakEvenCpc.toFixed(2)));
+            }
         }
-    }, [savedModels]);
+    }, [savedModels, simCvr]);
 
     // Export PDF
     const handleExportPDF = async () => {
@@ -292,12 +334,7 @@ const PromotionAnalysis: React.FC = () => {
         };
     }, [selectedModelId, savedModels, simPrice, simTacos, targetVolume, simCvr]);
 
-    // 当切换模型时，自动将 simCpc 设置为盈亏 CPC
-    useEffect(() => {
-        if (calc && calc.unit.breakEvenCpc > 0) {
-            setSimCpc(parseFloat(calc.unit.breakEvenCpc.toFixed(2)));
-        }
-    }, [selectedModelId]);
+    // 注意：simCpc 初始化已移到 handleModelChange 中，避免闪烁
 
     // Guard: If no calc data (no saved models), show empty state
     if (!calc) {
@@ -313,7 +350,7 @@ const PromotionAnalysis: React.FC = () => {
     }
 
     return (
-        <div ref={contentRef} className="p-8 space-y-12 max-w-[1800px] mx-auto animate-in fade-in duration-500 pb-24">
+        <div ref={contentRef} className="p-8 space-y-12 max-w-[1800px] mx-auto pb-24">
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">

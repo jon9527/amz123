@@ -5,7 +5,7 @@ import { SavedProfitModel } from '../types';
 import { ProfitModelService } from '../services/profitModelService';
 import { useProducts } from '../contexts/ProductContext';
 
-import { fmtUSD } from '../utils/formatters';
+
 import { getTagColor } from '../utils/tagColors';
 import { ReplenishmentModal } from '../components/ReplenishmentModal';
 
@@ -48,14 +48,6 @@ const ProductProfitList: React.FC = () => {
       }
       return next;
     });
-  };
-
-  const expandAllGroups = () => {
-    setExpandedGroups(new Set(Object.keys(groupedModels)));
-  };
-
-  const collapseAllGroups = () => {
-    setExpandedGroups(new Set());
   };
 
   useEffect(() => {
@@ -185,19 +177,7 @@ const ProductProfitList: React.FC = () => {
     }
   };
 
-  const getComparisonData = () => {
-    const selected = filteredModels.filter(m => selectedIds.has(m.id));
-    if (selected.length === 0) return [];
 
-    return selected.map(m => ({
-      name: `${m.label}\n${fmtUSD(m.inputs.actualPrice)}`,
-      product: m.productName,
-      利润率: (m.results.planB.margin * 100),
-      净利润: m.results.planB.profit,
-      售价: m.inputs.actualPrice,
-      成本: m.results.planB.sellCost,
-    }));
-  };
 
   return (
     <div className="p-8 space-y-6 max-w-[1700px] mx-auto animate-in fade-in duration-700">

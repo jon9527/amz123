@@ -173,26 +173,7 @@ const FBA_2026_STANDARD_RATES = {
     }
 };
 
-// 3. Inbound Placement Service Fees (2026)
-// Minimal Split (Most Expensive)
-const INBOUND_PLACEMENT_MINIMAL_2026 = {
-    small_standard: [
-        { maxWeight: 0.125, fee: 0.16 }, // < 2oz
-        { maxWeight: 0.25, fee: 0.19 }, // 4oz
-        { maxWeight: 0.375, fee: 0.22 }, // 6oz
-        { maxWeight: 0.50, fee: 0.23 }, // 8oz
-        { maxWeight: 0.625, fee: 0.24 }, // 10oz
-        { maxWeight: 0.75, fee: 0.25 }, // 12oz
-        { maxWeight: 0.875, fee: 0.32 }, // 14oz (Est from table gap) -> Use scraped ranges if precise
-        { maxWeight: 1.0, fee: 0.32 }, // 16oz
-    ],
-    large_standard: [
-        { maxWeight: 1.0, fee: 0.36 }, // < 1lb
-        { maxWeight: 2.0, fee: 0.42 }, // < 2lb
-        { maxWeight: 3.0, fee: 0.48 },
-        // Logic simplifies to average for brevity, or full table
-    ]
-};
+// NOTE: INBOUND_PLACEMENT_MINIMAL_2026 data removed - use getInboundPlacementFee() instead
 
 // 4. Monthly Storage Fees (2026)
 const MONTHLY_STORAGE_RATES = {
@@ -326,7 +307,7 @@ export const getReturnsProcessingFee = (tier: ProductTier, weightLb: number, cat
  * @param category Product category (apparel exempt 181-270 days)
  */
 export const getAgedInventorySurcharge = (
-    tier: ProductTier,
+    _tier: ProductTier,
     lengthIn: number,
     widthIn: number,
     heightIn: number,

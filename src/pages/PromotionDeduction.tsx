@@ -1,12 +1,12 @@
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { ProfitModelService } from '../services/profitModelService';
 import { SavedProfitModel } from '../types';
 import PromotionProfitChart from '../components/PromotionProfitChart';
 import StepperInput from '../components/StepperInput';
-import { fmtUSD, fmtPct } from '../utils/formatters';
+import { fmtUSD, fmtPct, fmtUSDCompact } from '../utils/formatters';
 import { getCommRate as getCommRateUtil, getReturnCost as getReturnCostUtil, ReturnCostParams } from '../utils/commissionUtils';
 import { ProductSchemeDropdown, CurrentSchemeDisplay } from '../components/shared';
 
@@ -31,39 +31,93 @@ const DEFAULT_MONTHS: MonthConfig[] = [
     { id: 6, label: 'M6', subLabel: '成熟', dailyUnits: 60, adShare: 30, price: 14.99, cvr: 10, cpc: 1.20 },
 ];
 
+// 预加载初始数据 (同步，避免闪烁)
+const getInitialDeductionState = () => {
+    const models = ProfitModelService.getAll().sort((a, b) => b.timestamp - a.timestamp);
+    if (models.length === 0) {
+        return {
+            models: [] as SavedProfitModel[],
+            modelId: '',
+            baseData: {
+                prod: 2.82, firstMile: 0.90, misc: 0, fba: 5.69, storage: 0, aged: 0,
+                retRate: 0.1, unsellable: 0.2, retProc: 2.62, retRem: 2.24,
+                planBProfit: 2.50, productName: 'Manual Mock'
+            },
+            months: DEFAULT_MONTHS.slice(0, 3)
+        };
+    }
+
+    const model = models[0];
+    const p = model.inputs;
+    const prodCostUSD = model.results.costProdUSD;
+
+    const baseData = {
+        prod: prodCostUSD,
+        firstMile: p.shippingUSD,
+        misc: p.miscFee,
+        fba: p.fbaFee,
+        storage: p.storageFee,
+        aged: p.agedInventoryFee || 0,
+        retRate: p.returnRate / 100,
+        unsellable: p.unsellableRate / 100,
+        retProc: p.retProcFee,
+        retRem: p.retRemFee,
+        planBProfit: model.results.planB.profit,
+        productName: model.productName
+    };
+
+    // Calculate break-even CPC
+    const actualPrice = p.actualPrice;
+    const commRate = getCommRateUtil(actualPrice, 'standard');
+    const commVal = actualPrice * commRate;
+    const returnParams = {
+        retProcFee: p.retProcFee,
+        retRemFee: p.retRemFee,
+        fbaFee: p.fbaFee,
+        prodCostUSD: prodCostUSD,
+        shippingUSD: p.shippingUSD,
+        returnRate: p.returnRate,
+        unsellableRate: p.unsellableRate
+    };
+    const retCost = getReturnCostUtil(actualPrice, commRate, returnParams);
+    const totalFixed = prodCostUSD + p.shippingUSD + p.fbaFee + p.storageFee + p.miscFee + (p.agedInventoryFee || 0) + commVal + retCost;
+    const grossProfitPerUnit = actualPrice - totalFixed;
+
+    // Initialize months with calculated values
+    const months = DEFAULT_MONTHS.slice(0, 3).map(m => {
+        const beCpc = Math.max(0, grossProfitPerUnit * (m.cvr / 100));
+        return {
+            ...m,
+            price: actualPrice,
+            cpc: Number(beCpc.toFixed(2))
+        };
+    });
+
+    return { models, modelId: model.id, baseData, months };
+};
+
 const PromotionDeduction: React.FC = () => {
+    // Lazy initialization - 同步读取
+    const [initialState] = useState(getInitialDeductionState);
+
     // --- State: Data Source ---
-    const [savedModels, setSavedModels] = useState<SavedProfitModel[]>([]);
-    const [selectedModelId, setSelectedModelId] = useState<string>('');
+    const [savedModels] = useState<SavedProfitModel[]>(initialState.models);
+    const [selectedModelId, setSelectedModelId] = useState<string>(initialState.modelId);
     const contentRef = useRef<HTMLDivElement>(null);
     const [isExporting, setIsExporting] = useState(false);
 
     // --- State: Dynamic Months ---
-    const [months, setMonths] = useState<MonthConfig[]>(DEFAULT_MONTHS.slice(0, 3));
+    const [months, setMonths] = useState<MonthConfig[]>(initialState.months);
 
     // --- State: Supply Chain ---
     const [leadTime, setLeadTime] = useState<number>(45);
 
     // --- State: Commission Settings (Legacy - now using category-based system) ---
-    // Keeping state for loading from saved models, but not actively used
     const [_autoComm, setAutoComm] = useState<boolean>(true);
     const [_manualComm, setManualComm] = useState<number>(15);
 
     // --- State: Base Data ---
-    const [baseData, setBaseData] = useState({
-        prod: 2.82, firstMile: 0.90, misc: 0, fba: 5.69, storage: 0, aged: 0,
-        retRate: 0.1, unsellable: 0.2, retProc: 2.62, retRem: 2.24,
-        planBProfit: 2.50, productName: 'Manual Mock'
-    });
-
-    // --- Load Models ---
-    useEffect(() => {
-        const models = ProfitModelService.getAll().sort((a, b) => b.timestamp - a.timestamp);
-        setSavedModels(models);
-        if (models.length > 0) {
-            setSelectedModelId(models[0].id);
-        }
-    }, []);
+    const [baseData, setBaseData] = useState(initialState.baseData);
 
     // Get selected model for display
     const selectedModel = savedModels.find(m => m.id === selectedModelId);
@@ -234,7 +288,8 @@ const PromotionDeduction: React.FC = () => {
         revenue: acc.revenue + curr.res.revenue,
         spend: acc.spend + curr.res.spend,
         profit: acc.profit + curr.res.totalProfit,
-    }), { units: 0, revenue: 0, spend: 0, profit: 0 });
+        grossProfit: acc.grossProfit + (curr.res.totalUnits * curr.res.unit.grossOrganic),
+    }), { units: 0, revenue: 0, spend: 0, profit: 0, grossProfit: 0 });
 
     // 5. Recovery (Filling the Hole)
     const planBProfit = baseData.planBProfit || 1.0;
@@ -436,7 +491,7 @@ const PromotionDeduction: React.FC = () => {
     };
 
     return (
-        <div ref={contentRef} className="p-8 space-y-8 max-w-[1600px] mx-auto animate-in fade-in duration-500">
+        <div ref={contentRef} className="p-6 space-y-4 max-w-[1600px] mx-auto">
 
             {/* Header */}
             <div className="flex items-center justify-between">
@@ -470,9 +525,9 @@ const PromotionDeduction: React.FC = () => {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-8">
+            <div className="grid grid-cols-1 gap-4">
                 {/* --- MAIN SECTION --- */}
-                <div className="flex flex-col gap-8">
+                <div className="flex flex-col gap-4">
                     <div className="space-y-6">
 
                         <div className="flex items-center justify-between mb-2">
@@ -507,7 +562,7 @@ const PromotionDeduction: React.FC = () => {
                         {/* Month Cards Row */}
                         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-2 w-full">
                             {evaluatedMonths.map((m, idx) => (
-                                <div key={idx} className="bg-[#111111] border border-[#27272a] rounded-xl p-3 hover:border-blue-500/30 transition-colors shadow-lg animate-in zoom-in-95 duration-300">
+                                <div key={idx} className="bg-[#111111] border border-[#27272a] rounded-xl p-3 hover:border-blue-500/30 transition-colors shadow-lg">
                                     <div className="flex justify-between items-center mb-3 border-b border-zinc-800 pb-2">
                                         <span className="font-black text-white text-sm">{m.label}</span>
                                         <div className="flex items-center gap-2">
@@ -556,11 +611,11 @@ const PromotionDeduction: React.FC = () => {
                                         </div>
                                     </div>
 
-                                    <div className="mt-2 pt-2 border-t border-dashed border-zinc-800">
+                                    <div className="mt-2 pt-2">
                                         <div className="space-y-1.5">
-                                            <div className="flex justify-between items-center text-[10px]">
-                                                <span className="text-zinc-300">售价 Revenue</span>
-                                                <span className="font-mono text-white font-bold">{fmtUSD(m.res.unit.price)}</span>
+                                            <div className="flex justify-between items-center text-[10px] text-zinc-500">
+                                                <span>  售价</span>
+                                                <span>{fmtUSD(m.res.unit.price)}</span>
                                             </div>
                                             <div className="flex justify-between items-center text-[10px] text-zinc-500">
                                                 <span>- 采购成本</span>
@@ -611,14 +666,14 @@ const PromotionDeduction: React.FC = () => {
                                     </div>
 
                                     <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-zinc-800">
-                                        <div className="bg-[#18181b] border border-[#27272a] rounded flex flex-col justify-center items-center h-[72px]">
+                                        <div className="bg-[#18181b] border border-[#27272a] rounded flex flex-col justify-center items-center h-[72px] overflow-hidden">
                                             <div className="text-[10px] text-zinc-500 font-bold mb-0.5">月销售额</div>
-                                            <div className="text-sm font-black text-white font-mono leading-none">{fmtUSD(m.res.revenue)}</div>
+                                            <div className="text-xs font-black text-white font-mono leading-none truncate max-w-full px-1">{fmtUSDCompact(m.res.revenue)}</div>
                                         </div>
                                         <div className="bg-[#18181b] border border-[#27272a] rounded flex flex-col h-[72px] overflow-hidden">
                                             <div className="flex-1 flex flex-col justify-center items-center">
                                                 <div className="text-[10px] text-zinc-500 font-bold mb-0.5">月广告费</div>
-                                                <div className="text-sm font-black text-orange-500 font-mono leading-none">{fmtUSD(m.res.spend)}</div>
+                                                <div className="text-xs font-black text-orange-500 font-mono leading-none truncate">{fmtUSDCompact(m.res.spend)}</div>
                                             </div>
                                             <div className="bg-zinc-800/50 border-t border-[#27272a] h-[22px] flex justify-center items-center">
                                                 <div className="text-[9px] text-zinc-400 font-mono">TACoS: {fmtPct(m.res.tacos)}</div>
@@ -626,19 +681,19 @@ const PromotionDeduction: React.FC = () => {
                                         </div>
                                     </div>
 
-                                    <div className="my-2 border-t border-dashed border-zinc-800/50"></div>
+                                    <div className="my-2 border-t border-zinc-800"></div>
 
                                     <div className="grid grid-cols-2 gap-2">
                                         <div className="bg-[#18181b] border border-[#27272a] rounded p-2 text-center flex flex-col justify-between h-[60px]">
                                             <div className="text-[10px] text-zinc-500 font-bold mb-0.5">月总毛利</div>
-                                            <div className="text-sm font-black text-emerald-500 font-mono leading-none">
-                                                {fmtUSD(m.res.totalUnits * m.res.unit.grossOrganic)}
+                                            <div className="text-xs font-black text-emerald-500 font-mono leading-none truncate max-w-full px-1">
+                                                {fmtUSDCompact(m.res.totalUnits * m.res.unit.grossOrganic)}
                                             </div>
                                         </div>
                                         <div className={`border rounded p-2 text-center flex flex-col justify-between h-[60px] ${m.res.totalProfit >= 0 ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-red-500/10 border-red-500/20'}`}>
                                             <div className={`text-[10px] font-bold mb-0.5 ${m.res.totalProfit >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>月净盈亏</div>
-                                            <div className={`text-lg font-black font-mono leading-none ${m.res.totalProfit >= 0 ? 'text-emerald-400 drop-shadow-sm' : 'text-red-500 drop-shadow-sm'}`}>
-                                                {fmtUSD(m.res.totalProfit)}
+                                            <div className={`text-sm font-black font-mono leading-none truncate max-w-full px-1 ${m.res.totalProfit >= 0 ? 'text-emerald-400 drop-shadow-sm' : 'text-red-500 drop-shadow-sm'}`}>
+                                                {fmtUSDCompact(m.res.totalProfit)}
                                             </div>
                                         </div>
                                     </div>
@@ -648,25 +703,28 @@ const PromotionDeduction: React.FC = () => {
                         </div>
 
                         {/* Summary Bar */}
-                        <div className="bg-zinc-900 border border-[#27272a] rounded-2xl p-6 grid grid-cols-2 md:grid-cols-5 gap-6">
+                        <div className="bg-zinc-900 border border-[#27272a] rounded-2xl p-6 flex justify-between items-center divide-x divide-zinc-700">
                             {[
-                                { l: '总销量 (Units)', v: totalPromoPeriod.units, c: 'text-white' },
-                                { l: '总销售额 (Revenue)', v: fmtUSD(totalPromoPeriod.revenue), c: 'text-white' },
-                                { l: '总广告费 (Spend)', v: fmtUSD(totalPromoPeriod.spend), c: 'text-orange-400' },
-                                { l: '推广期总盈亏', v: fmtUSD(totalPromoPeriod.profit), c: totalPromoPeriod.profit >= 0 ? 'text-emerald-500' : 'text-red-500', big: true },
+                                { l: '总销量', v: totalPromoPeriod.units.toLocaleString(), c: 'text-white' },
+                                { l: '总销售额', v: fmtUSDCompact(totalPromoPeriod.revenue), c: 'text-white' },
+                                { l: '总毛利', v: fmtUSDCompact(totalPromoPeriod.grossProfit), c: 'text-emerald-400' },
+                                { l: '总广告费', v: fmtUSDCompact(totalPromoPeriod.spend), c: 'text-orange-400' },
+                                { l: '推广期总盈亏', v: fmtUSDCompact(totalPromoPeriod.profit), c: totalPromoPeriod.profit >= 0 ? 'text-emerald-500' : 'text-red-500', big: true },
                                 {
                                     l: '综合 ROI',
                                     v: (totalPromoPeriod.spend > 0 ? (totalPromoPeriod.profit / totalPromoPeriod.spend).toFixed(2) : '0.00'),
                                     c: (totalPromoPeriod.spend > 0 && totalPromoPeriod.profit > 0) ? 'text-emerald-500' : (totalPromoPeriod.spend > 0 && totalPromoPeriod.profit < 0) ? 'text-red-500' : 'text-zinc-400',
-                                    sub: (totalPromoPeriod.spend > 0 && totalPromoPeriod.profit > 0) ? '盈利' : (totalPromoPeriod.spend > 0 && totalPromoPeriod.profit < 0) ? '亏损' : '持平'
+                                    sub: (totalPromoPeriod.spend > 0 && totalPromoPeriod.profit > 0) ? '盈利' : (totalPromoPeriod.spend > 0 && totalPromoPeriod.profit < 0) ? '亏损' : '持平',
+                                    hint: '净盈亏 ÷ 广告费'
                                 }
                             ].map((item, i) => (
-                                <div key={i} className="flex flex-col items-center text-center">
-                                    <span className="text-[10px] uppercase font-bold text-zinc-500 mb-1">{item.l}</span>
+                                <div key={i} className="flex-1 flex flex-col items-center text-center px-4">
+                                    <span className="text-xs uppercase font-bold text-zinc-500 mb-1">{item.l}</span>
                                     <div className="flex items-center gap-2">
-                                        <span className={`font-mono font-black ${item.c} ${item.big ? 'text-2xl' : 'text-xl'} `}>{item.v}</span>
-                                        {item.sub && <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${item.c.replace('text-', 'bg-')}/10 ${item.c}`}>{item.sub}</span>}
+                                        <span className={`font-mono font-black ${item.c} ${item.big ? 'text-3xl' : 'text-2xl'}`}>{item.v}</span>
+                                        {item.sub && <span className={`text-xs font-bold px-2 py-0.5 rounded ${item.c.replace('text-', 'bg-')}/10 ${item.c}`}>{item.sub}</span>}
                                     </div>
+                                    {item.hint && <span className="text-[9px] text-zinc-600 mt-1">{item.hint}</span>}
                                 </div>
                             ))}
                         </div>

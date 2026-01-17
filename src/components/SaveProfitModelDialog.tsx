@@ -17,11 +17,11 @@ const SaveProfitModelDialog: React.FC<SaveProfitModelDialogProps> = ({ isOpen, o
     const [productName, setProductName] = useState(initialProductName);
     const [asin, setAsin] = useState(initialAsin);
     const [label, setLabel] = useState(initialLabel);
-    const [note, setNote] = useState('');
+    const [_note, setNote] = useState('');
     const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
     // 重复检测状态
-    const [duplicateId, setDuplicateId] = useState<string | null>(null);
+    const [_duplicateId, setDuplicateId] = useState<string | null>(null);
 
 
     const [saveAsNew, setSaveAsNew] = useState(false);

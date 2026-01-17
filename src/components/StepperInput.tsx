@@ -13,7 +13,7 @@ interface StepperInputProps {
     min?: number;
     max?: number;
     disabled?: boolean;
-    color?: 'white' | 'blue' | 'emerald';
+    color?: 'white' | 'blue' | 'emerald' | 'zinc';
     height?: 'compact' | 'normal' | 'large';
 }
 
@@ -73,7 +73,9 @@ const StepperInput: React.FC<StepperInputProps> = ({
             ? 'text-emerald-500'
             : color === 'blue'
                 ? 'text-blue-400'
-                : 'text-white';
+                : color === 'zinc'
+                    ? 'text-zinc-400'
+                    : 'text-white';
 
     const heightClass = height === 'large' ? 'h-8' : height === 'normal' ? 'h-[32px]' : INPUT_H;
     const disabledClass = disabled ? 'bg-zinc-900/50 border-zinc-800 cursor-not-allowed opacity-30' : '';

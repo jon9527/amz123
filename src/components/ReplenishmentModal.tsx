@@ -238,7 +238,6 @@ export const ReplenishmentModal: React.FC<ReplenishmentModalProps> = ({
                             const turnoverRatio = summary.turnoverRatio ?? 0;
                             const netMargin = summary.netMargin ?? 0;
                             const turnoverDays = summary.turnoverDays ?? 0;
-                            const _stockoutDays = summary.stockoutDays ?? 0;
                             const profitDate = summary.profitDate ?? '-';
 
                             // Pad batches to ensure 6 columns

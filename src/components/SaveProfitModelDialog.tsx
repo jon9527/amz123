@@ -130,8 +130,7 @@ const SaveProfitModelDialog: React.FC<SaveProfitModelDialogProps> = ({ isOpen, o
             onSave({
                 productName: productName.trim(),
                 asin: asin.trim().toUpperCase(),
-                label: label.trim(),
-                note: note.trim() || undefined
+                label: label.trim()
             }, saveAsNew, forceUpdateId || undefined);
         }
     };
@@ -191,19 +190,7 @@ const SaveProfitModelDialog: React.FC<SaveProfitModelDialogProps> = ({ isOpen, o
                         )}
                     </div>
 
-                    {/* ASIN */}
-                    <div>
-                        <label className="block text-xs font-black text-zinc-400 uppercase tracking-wider mb-2">
-                            ASIN (可选)
-                        </label>
-                        <input
-                            type="text"
-                            value={asin}
-                            onChange={(e) => setAsin(e.target.value)}
-                            placeholder="例如: B0C1234567"
-                            className="w-full bg-[#111111] border border-[#27272a] rounded-xl px-4 py-2.5 text-sm text-white focus:border-blue-500 outline-none transition-all"
-                        />
-                    </div>
+
 
                     {/* 方案标签 */}
                     <div>
@@ -211,21 +198,6 @@ const SaveProfitModelDialog: React.FC<SaveProfitModelDialogProps> = ({ isOpen, o
                             <label className="block text-xs font-black text-zinc-400 uppercase tracking-wider">
                                 方案标签 <span className="text-red-500">*</span>
                             </label>
-                            <button
-                                onClick={() => {
-                                    if (productName) {
-                                        const date = new Date();
-                                        const autoLabel = `${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')} 测算`;
-                                        setLabel(autoLabel);
-                                        // Clear duplicate status if we auto-changed label
-                                        if (duplicateId) setDuplicateId(null);
-                                    }
-                                }}
-                                className="text-[10px] text-blue-500 hover:text-blue-400 font-bold flex items-center gap-1 transition-colors"
-                            >
-                                <span className="material-symbols-outlined text-[12px]">auto_fix</span>
-                                自动生成
-                            </button>
                         </div>
 
                         <input
@@ -241,19 +213,7 @@ const SaveProfitModelDialog: React.FC<SaveProfitModelDialogProps> = ({ isOpen, o
                         )}
                     </div>
 
-                    {/* 备注 */}
-                    <div>
-                        <label className="block text-xs font-black text-zinc-400 uppercase tracking-wider mb-2">
-                            备注（可选）
-                        </label>
-                        <textarea
-                            value={note}
-                            onChange={(e) => setNote(e.target.value)}
-                            placeholder="添加一些备注信息..."
-                            rows={2}
-                            className="w-full bg-[#111111] border border-[#27272a] rounded-xl px-4 py-2.5 text-sm text-white focus:border-blue-500 outline-none transition-all min-h-[80px] resize-none"
-                        />
-                    </div>
+
 
                     {/* 另存为选项 - 仅在初始更新模式(且非强制更新)显示 */}
                     {initialIsUpdate && !forceUpdateId && (

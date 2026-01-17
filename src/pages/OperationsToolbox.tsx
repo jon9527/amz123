@@ -23,7 +23,20 @@ const OperationsToolbox: React.FC = () => {
     const [activeTab, setActiveTab] = useState<TabId>('bid');
 
     return (
-        <div className="p-6 max-w-5xl mx-auto space-y-6">
+        <div className="p-8 max-w-5xl mx-auto space-y-6">
+            {/* Header */}
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-orange-600 flex items-center justify-center shadow-lg shadow-orange-600/20">
+                        <span className="material-symbols-outlined text-white">handyman</span>
+                    </div>
+                    <div>
+                        <h1 className="text-2xl font-black text-white">运营工具箱</h1>
+                        <p className="text-zinc-500 text-xs uppercase tracking-widest font-bold">Operations Toolbox</p>
+                    </div>
+                </div>
+            </div>
+
             {/* Tabs */}
             <Tabs
                 tabs={TOOLBOX_TABS}

@@ -8,8 +8,18 @@ import { ProfitModelInputs, ProfitModelResults, SavedProfitModel } from '../type
 import { useProducts } from '../contexts/ProductContext';
 import { useLogistics } from '../contexts/LogisticsContext';
 import { r2, fmtUSD, fmtPct } from '../utils/formatters';
-import { getCommRate as getCommRateUtil, getRefundAdminFee, CommissionConfig } from '../utils/commissionUtils';
-import { calculateFBAFeeFromProduct } from '../utils/fbaCalculator.utils';
+import { getCommRate as getCommRateUtil, getRefundAdminFee } from '../utils/commissionUtils';
+import {
+  calculateFBAFeeFromProduct,
+  getProductTier,
+  getInboundPlacementFee,
+  getMonthlyStorageFee,
+  getRemovalDisposalFee,
+  getReturnsProcessingFee,
+  getAgedInventorySurcharge,
+  cmToInch,
+  kgToLb
+} from '../utils/fbaCalculator.utils';
 
 import { ProfitHeader } from '../components/profit-calculator/ProfitHeader';
 import { ProfitInputs } from '../components/profit-calculator/ProfitInputs';
@@ -33,21 +43,76 @@ const ProfitCalculator: React.FC = () => {
   const [selectedChannelId, setSelectedChannelId] = useState<string>('3'); // 默认: 普船海卡
   const [targetAcos, setTargetAcos] = useState(15);
   const [targetMargin, setTargetMargin] = useState(15);
-  const [autoComm, setAutoComm] = useState(true);
-  const [manualComm, setManualComm] = useState(15);
+  // Remove manual comm states
+  const [category, setCategory] = useState<'standard' | 'apparel'>('standard');
   const [purchaseRMB, setPurchaseRMB] = useState(19.99);
+  // Exchange Rate Logic
+  const [liveRate, setLiveRate] = useState(6.97); // Default fallback
   const [exchangeRate, setExchangeRate] = useState(() => {
     const cached = localStorage.getItem('exchangeRate');
-    return cached ? r2(parseFloat(cached)) : 7.1;
+    return cached ? r2(parseFloat(cached)) : 6.97;
   });
+  const [isManualExchangeRate, setIsManualExchangeRate] = useState(() => {
+    // If cached value differs from live rate, assume it was manually set
+    // Note: This logic might need adjustment as live rate changes, but for now simple diff check is ok
+    return !!localStorage.getItem('isManualExchangeRate');
+  });
+
+  // Fetch Live Rate
+  useEffect(() => {
+    const fetchRate = async () => {
+      try {
+        const res = await fetch('https://open.er-api.com/v6/latest/USD');
+        const data = await res.json();
+        if (data && data.rates && data.rates.CNY) {
+          const rate = r2(data.rates.CNY);
+          setLiveRate(rate);
+
+          // Optional: Auto-update if not manual? 
+          // User said: "Default equals live rate".
+          // If user hasn't set manual override (which we track via isManualExchangeRate), update it.
+          const isManual = localStorage.getItem('isManualExchangeRate') === 'true';
+          if (!isManual) {
+            setExchangeRate(rate);
+            localStorage.setItem('exchangeRate', rate.toString());
+          }
+        }
+      } catch (e) {
+        console.error("Failed to fetch exchange rate", e);
+      }
+    };
+    fetchRate();
+  }, []);
+
+  const handleExchangeRateChange = (val: number) => {
+    setExchangeRate(val);
+    setIsManualExchangeRate(true);
+    localStorage.setItem('exchangeRate', val.toString());
+    localStorage.setItem('isManualExchangeRate', 'true');
+  };
+
+  const handleUseLiveRate = () => {
+    setExchangeRate(liveRate);
+    setIsManualExchangeRate(false);
+    localStorage.setItem('exchangeRate', liveRate.toString());
+    localStorage.removeItem('isManualExchangeRate');
+  };
   const [shippingUSD, setShippingUSD] = useState(0.9);
   const [fbaFee, setFbaFee] = useState(5.69);
   const [miscFee, setMiscFee] = useState(0);
   const [storageFee, setStorageFee] = useState(0);
+  const [agedInventoryFee, setAgedInventoryFee] = useState(0);
   const [returnRate, setReturnRate] = useState(10);
   const [unsellableRate, setUnsellableRate] = useState(20);
   const [retProcFee, setRetProcFee] = useState(2.62);
   const [retRemFee, setRetRemFee] = useState(2.24);
+  const [disposalFee, setDisposalFee] = useState(0);
+
+  // New FBA States
+  const [storageMonth, setStorageMonth] = useState<'jan_sep' | 'oct_dec'>('jan_sep');
+  const [placementMode, setPlacementMode] = useState<'minimal' | 'partial' | 'optimized'>('optimized');
+  const [inventoryDays, setInventoryDays] = useState(0);
+
   const [actualPrice, setActualPrice] = useState(17.99);
   const [actualPriceDisplay, setActualPriceDisplay] = useState('17.99');
   const [showSaveDialog, setShowSaveDialog] = useState(false);
@@ -82,16 +147,17 @@ const ProfitCalculator: React.FC = () => {
     return JSON.stringify({
       // 运营目标（只有 targetAcos 影响 Plan B）
       tAcos: inputs.targetAcos,
-      aComm: inputs.autoComm,
-      mComm: inputs.manualComm,
+      cat: category, // Hash checks category
       // 产品成本
       pRMB: inputs.purchaseRMB,
       rate: inputs.exchangeRate,
       // 物流仓储
       ship: inputs.shippingUSD,
       fba: inputs.fbaFee,
-      misc: inputs.miscFee,
-      stor: inputs.storageFee,
+      misc: inputs.miscFee, // Now driven by Placement
+      stor: inputs.storageFee, // Now driven by Season
+      storMonth: inputs.storageMonth,
+      placeMode: inputs.placementMode,
       // 退货损耗
       ret: inputs.returnRate,
       unsel: inputs.unsellableRate,
@@ -102,11 +168,9 @@ const ProfitCalculator: React.FC = () => {
     });
   };
 
-  // Helper to generate label: 价格-时间 格式 (e.g., "20.99-22:31:45")
+  // Helper to generate label: 仅保存售价
   const getUniqueLabel = (baseLabel: string, _currentProductName: string) => {
-    const now = new Date();
-    const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')} `;
-    return `${baseLabel} -${time} `;
+    return baseLabel;
   };
 
   // ... (existing code)
@@ -130,8 +194,18 @@ const ProfitCalculator: React.FC = () => {
     setActualPriceDisplay(model.inputs.actualPrice.toString());
     setTargetAcos(model.inputs.targetAcos);
     setTargetMargin(model.inputs.targetMargin);
-    setAutoComm(model.inputs.autoComm);
-    setManualComm(model.inputs.manualComm);
+
+    // Restore new FBA states if they were saved in inputs (need to check type update)
+    // Assuming we added them to ProfitModelInputs
+    if (model.inputs.storageMonth) setStorageMonth(model.inputs.storageMonth);
+    if (model.inputs.placementMode) setPlacementMode(model.inputs.placementMode);
+
+    // Let's rely on re-selecting product to get accurate category, otherwise default standard.
+    // If we saved category in inputs, use it.
+    // Hack: Infer from product or default
+    const p = products.find(p => p.id === model.productId);
+    if (p && p.category) setCategory(p.category);
+    else setCategory('standard');
 
     setProductName(model.productName);
     setLoadedLabel(model.label || '');
@@ -170,7 +244,7 @@ const ProfitCalculator: React.FC = () => {
     });
   }, []); // Run once on mount
 
-  // Auto-calculate shippingUSD from selected channel + product dimensions
+  // Auto-calculate shippingUSD from selected channel + carton dimensions
   useEffect(() => {
     if (!selectedChannelId) return; // Manual mode, don't override
 
@@ -179,32 +253,93 @@ const ProfitCalculator: React.FC = () => {
 
     if (!channel) return;
 
-    // Get dimensions (from product or use defaults)
-    const length = product?.length || 30;
-    const width = product?.width || 20;
-    const height = product?.height || 15;
-    const weight = product?.weight || 1;
+    // 使用整箱规格计算头程运费（如果没有整箱数据则用单品乘以装箱数估算）
     const pcsPerBox = product?.pcsPerBox || 1;
 
-    const dimVol = length * width * height; // cm³
+    // 优先使用整箱规格
+    let boxLength: number, boxWidth: number, boxHeight: number, boxWeight: number;
+
+    if (product?.boxLength && product?.boxWidth && product?.boxHeight && product?.boxWeight) {
+      // 有整箱数据，直接使用
+      boxLength = product.boxLength;
+      boxWidth = product.boxWidth;
+      boxHeight = product.boxHeight;
+      boxWeight = product.boxWeight;
+    } else {
+      // 没有整箱数据，用单品规格估算（不太准确）
+      boxLength = (product?.length || 30);
+      boxWidth = (product?.width || 20);
+      boxHeight = (product?.height || 15);
+      boxWeight = (product?.weight || 0.5) * pcsPerBox;
+    }
+
+    // 整箱体积 cm³
+    const boxVolume = boxLength * boxWidth * boxHeight;
+
+    // 体积重（空运/快递用）
     const volDivisor = channel.volDivisor || (channel.type === 'sea' ? 0 : 6000);
-    const volWgt = volDivisor > 0 ? dimVol / volDivisor : 0;
-    const chgWgt = Math.max(weight, volWgt);
+    const volWeight = volDivisor > 0 ? boxVolume / volDivisor : 0;
+    const chargeWeight = Math.max(boxWeight, volWeight);
 
     let costPerPcsRMB: number;
     if (channel.type === 'sea') {
-      // Sea: CBM-based
-      const cbm = dimVol / 1000000;
+      // 海运：按整箱 CBM 计算
+      const cbm = boxVolume / 1000000;
       costPerPcsRMB = (cbm * (channel.pricePerCbm || 0)) / pcsPerBox;
     } else {
-      // Air/Exp: Weight-based
-      costPerPcsRMB = (chgWgt * (channel.pricePerKg || 0)) / pcsPerBox;
+      // 空运/快递：按整箱计费重计算
+      costPerPcsRMB = (chargeWeight * (channel.pricePerKg || 0)) / pcsPerBox;
     }
 
     // Convert to USD
     const costPerPcsUSD = r2(costPerPcsRMB / exchangeRate);
     setShippingUSD(costPerPcsUSD);
   }, [selectedChannelId, selectedProductId, channels, products, exchangeRate]);
+
+  // Effect: Auto-Calculate FBA Ancillary Fees (Storage, Placement, Returns, Removal, Aged, Disposal)
+  useEffect(() => {
+    if (!selectedProductId) return;
+    const product = products.find(p => p.id === selectedProductId);
+    if (!product) return;
+
+    // 1. Prepare Dims
+    const dims = {
+      length: product.length,
+      width: product.width,
+      height: product.height,
+      weight: product.weight
+    };
+    const lengthIn = cmToInch(dims.length);
+    const widthIn = cmToInch(dims.width);
+    const heightIn = cmToInch(dims.height);
+    const weightLb = kgToLb(dims.weight);
+    const tier = getProductTier(dims);
+
+    // 2. Storage Fee (Based on Month)
+    const sFee = getMonthlyStorageFee(tier, lengthIn, widthIn, heightIn, storageMonth);
+    setStorageFee(sFee);
+
+    // 3. Misc Fee (Placement Mode)
+    const placeFee = getInboundPlacementFee(tier, weightLb, placementMode);
+    setMiscFee(placeFee);
+
+    // 4. Returns Processing Fee (Category dependent)
+    const procFee = getReturnsProcessingFee(tier, weightLb, category);
+    setRetProcFee(procFee);
+
+    // 5. Removal Fee
+    const remFee = getRemovalDisposalFee(tier, weightLb);
+    setRetRemFee(remFee);
+
+    // 6. Disposal Fee (same rates as removal)
+    setDisposalFee(remFee);
+
+    // 7. Aged Inventory Surcharge (Based on inventoryDays)
+    const agedFee = getAgedInventorySurcharge(tier, lengthIn, widthIn, heightIn, inventoryDays, category);
+    setAgedInventoryFee(agedFee);
+
+  }, [selectedProductId, products, storageMonth, placementMode, category, inventoryDays]);
+
 
   const handleProductSelect = (pid: string) => {
     setSelectedProductId(pid);
@@ -228,26 +363,35 @@ const ProfitCalculator: React.FC = () => {
         hasEditedPlanB.current = false;
       }
       // 2. Auto-calculate FBA fee from product dimensions
-      const autoFbaFee = r2(calculateFBAFeeFromProduct(product));
-      setFbaFee(autoFbaFee);
+      // Prioritize Manual Override if set
+      let finalFbaFee = 0;
+      if (product.fbaFeeManual && product.fbaFeeManual > 0) {
+        finalFbaFee = product.fbaFeeManual;
+      } else {
+        finalFbaFee = r2(calculateFBAFeeFromProduct(product));
+      }
+      setFbaFee(finalFbaFee);
 
       // 3. Load default shipping rate if available
       if (product.defaultShippingRate) {
         setShippingUSD(product.defaultShippingRate);
       }
+
+      // 4. Set Category & FBA Defaults
+      if (product.category) {
+        setCategory(product.category);
+      } else {
+        setCategory('standard');
+      }
+
+      // Set FBA Config Defaults
+      if (product.inboundPlacementMode) setPlacementMode(product.inboundPlacementMode);
+      if (product.defaultStorageMonth) setStorageMonth(product.defaultStorageMonth);
     }
   };
 
 
 
-
-  // Grouped models state
-  const [groupedModels, setGroupedModels] = useState<Record<string, SavedProfitModel[]>>({});
-  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
-
-  const toggleGroup = (groupName: string) => {
-    setExpandedGroups(prev => ({ ...prev, [groupName]: !prev[groupName] }));
-  };
 
   useEffect(() => {
     // Load and group models
@@ -258,15 +402,6 @@ const ProfitCalculator: React.FC = () => {
     setAllModels(models);
     setRecentProducts(models);
 
-    // Grouping logic
-    const groups: Record<string, SavedProfitModel[]> = {};
-    models.forEach(m => {
-      const name = m.productName || '未命名产品';
-      if (!groups[name]) groups[name] = [];
-      groups[name].push(m);
-    });
-    setGroupedModels(groups);
-
   }, [showLoadMenu]); // Reload on menu open
 
 
@@ -276,7 +411,9 @@ const ProfitCalculator: React.FC = () => {
     const currentInputs: ProfitModelInputs = {
       purchaseRMB, exchangeRate, shippingUSD, fbaFee, miscFee, storageFee,
       returnRate, unsellableRate, retProcFee, retRemFee,
-      actualPrice, targetAcos, targetMargin, autoComm, manualComm
+      actualPrice, targetAcos, targetMargin, autoComm: true, manualComm: 0
+      // Keeping legacy fields in type for now to avoid breaking type definition elsewhere, 
+      // but value is dummy. Ideally update type definition.
     };
     const currentHash = generateContentHash(currentInputs);
 
@@ -333,8 +470,8 @@ const ProfitCalculator: React.FC = () => {
     const inputs: ProfitModelInputs = {
       targetAcos,
       targetMargin,
-      autoComm,
-      manualComm,
+      autoComm: true, // Legacy
+      manualComm: 0,  // Legacy
       purchaseRMB,
       exchangeRate,
       shippingUSD,
@@ -430,10 +567,10 @@ const ProfitCalculator: React.FC = () => {
     const costFba = fbaFee;
     const costMisc = miscFee;
     const costStorage = storageFee;
+    const costAged = agedInventoryFee;
 
     // Helper: Determine Commission Rate based on Price - 使用统一工具函数
-    const commConfig: CommissionConfig = { autoComm, manualComm };
-    const getCommRate = (price: number) => getCommRateUtil(price, commConfig);
+    const getCommRate = (price: number) => getCommRateUtil(price, category);
 
     /**
      * Unified Solver for True Break-Even Price
@@ -460,11 +597,11 @@ const ProfitCalculator: React.FC = () => {
         const lossUnsellable = lossSellable + costProdUSD + costShip + retRemFee;
         const avgRetCost = ((lossSellable * (1 - unsellableRate / 100)) + (lossUnsellable * (unsellableRate / 100))) * (returnRate / 100);
 
-        const totalVariableCost = costProdUSD + costShip + costMisc + costStorage + costFba + commVal + avgRetCost;
+        const totalVariableCost = costProdUSD + costShip + costMisc + costStorage + costFba + costAged + commVal + avgRetCost;
 
         // Profit at 'mid' (BE excludes advertising usually, or assumes ACOS=0 for "Technical BE")
         // If we want "Zero Profit Break Even", we assume ACOS is 0?
-        // The user's previous simple formula was: Fixed / (1 - Comm). This implies ACOS=0 for BE.
+        // The user's previous simple formula was: Fixed / (1 - Comm). This implies ACOS is 0 for BE.
         const profit = mid - totalVariableCost;
 
         if (profit > 0) {
@@ -486,7 +623,7 @@ const ProfitCalculator: React.FC = () => {
       const lossUnsellable = r2(lossSellable + costProdUSD + costShip + retRemFee);
       const avgRetCost = r2(((lossSellable * (1 - unsellableRate / 100)) + (lossUnsellable * (unsellableRate / 100))) * (returnRate / 100));
       const adsVal = r2(price * (targetAcos / 100));
-      const sellCost = r2(costProdUSD + costShip + costMisc + costStorage + costFba + commVal + avgRetCost);
+      const sellCost = r2(costProdUSD + costShip + costMisc + costStorage + costFba + costAged + commVal + avgRetCost);
       const profit = r2(price - sellCost - adsVal);
       const margin = price > 0 ? profit / price : 0;
 
@@ -522,28 +659,36 @@ const ProfitCalculator: React.FC = () => {
 
     // Plan A Solver: Prioritize Lower Commission Tiers (Most Competitive Price)
     // We check tiers from lowest cost (5%) to highest (17%) to find the first valid price point.
-    if (autoComm) {
-      // 1. Try 5% Tier (Price < $15)
+    // Plan A Solver: Prioritize Lower Commission Tiers (Most Competitive Price)
+    // We check tiers from lowest cost (5%) to highest (17%) to find the first valid price point.
+    // Logic updated to use auto category logic.
+
+    // More complex Plan A solver depending on category logic?
+    // More complex Plan A solver depending on category logic?
+    // Since getCommRate depends on PRICE, we can iterative solve or check ranges.
+    // For Apparel: check <15 (5%), 15-20 (10%), >20 (17%)
+
+    if (category === 'apparel') {
       const p1 = checkTier(0.05);
       if (p1 < 15) {
         planA_Price = p1;
       } else {
-        // 2. Try 10% Tier ($15 <= Price <= $20)
         const p2 = checkTier(0.10);
         if (p2 >= 15 && p2 <= 20) {
           planA_Price = p2;
         } else {
-          // 3. Fallback to 17% Tier (Price > $20)
           const p3 = checkTier(0.17);
           planA_Price = p3;
         }
       }
     } else {
-      planA_Price = checkTier(manualComm / 100);
+      // Standard: Flat 15% (mostly)
+      // If standard has tiers in future, add here.
+      planA_Price = checkTier(0.15);
     }
 
     return { costProdUSD, planA: calcPlan(r2(planA_Price)), planB: calcPlan(actualPrice) };
-  }, [purchaseRMB, exchangeRate, shippingUSD, fbaFee, miscFee, storageFee, targetAcos, targetMargin, autoComm, manualComm, actualPrice, returnRate, unsellableRate, retProcFee, retRemFee]);
+  }, [purchaseRMB, exchangeRate, shippingUSD, fbaFee, miscFee, storageFee, targetAcos, targetMargin, actualPrice, returnRate, unsellableRate, retProcFee, retRemFee, category]);
 
   // Sync Plan B Price - REMOVED per user request to prevent overwriting manual input
   // useEffect(() => {
@@ -555,31 +700,33 @@ const ProfitCalculator: React.FC = () => {
 
   const waterfallData = useMemo(() => {
     const pb = results.planB;
-    const costProdUSD = results.costProdUSD;
+    const costProdUSD = results.planB.costProdUSD;
     const firstMile = r2(shippingUSD);
-    const logistics = r2(fbaFee + miscFee); // FBA + 杂费
-    const storage = r2(storageFee);
+    const costFba = r2(fbaFee);
+    // Combine Misc + Aged + Storage
+    const costStorageMisc = r2(miscFee + agedInventoryFee + storageFee);
+
     const p1 = pb.price;
     const p2 = r2(p1 - costProdUSD);
     const p3 = r2(p2 - firstMile);
-    const p4 = r2(p3 - logistics);
-    const p5 = r2(p4 - storage);
+    const p4 = r2(p3 - costFba);
+    const p5 = r2(p4 - costStorageMisc);
     const p6 = r2(p5 - pb.commVal);
     const p7 = r2(p6 - pb.ret);
     const p8 = r2(p7 - pb.adsVal);
 
     return [
       { name: '销售总额', val: pb.price, range: [0, p1] as [number, number], color: '#334155' },
-      { name: '采购成本', val: -costProdUSD, range: [p2, p1] as [number, number], color: '#3b82f6' },
-      { name: '头程', val: -firstMile, range: [p3, p2] as [number, number], color: '#0ea5e9' },
-      { name: '物流杂费', val: -logistics, range: [p4, p3] as [number, number], color: '#a855f7' },
-      { name: '月仓储费', val: -storage, range: [p5, p4] as [number, number], color: '#6366f1' },
-      { name: '销售佣金', val: -pb.commVal, range: [p6, p5] as [number, number], color: '#f59e0b' },
-      { name: '退货损耗', val: -pb.ret, range: [p7, p6] as [number, number], color: '#ef4444' },
-      { name: '广告成本', val: -pb.adsVal, range: [p8, p7] as [number, number], color: '#eab308' },
-      { name: '净利润', val: pb.profit, range: [0, pb.profit] as [number, number], color: '#22c55e' }
+      { name: '采购成本', val: -costProdUSD, range: [p2, p1] as [number, number], color: '#3b82f6' }, // blue-500
+      { name: '头程物流', val: -firstMile, range: [p3, p2] as [number, number], color: '#0ea5e9' }, // sky-500
+      { name: 'FBA配送费', val: -costFba, range: [p4, p3] as [number, number], color: '#9333ea' }, // purple-600
+      { name: '仓储杂费', val: -costStorageMisc, range: [p5, p4] as [number, number], color: '#818cf8' }, // indigo-400
+      { name: '销售佣金', val: -pb.commVal, range: [p6, p5] as [number, number], color: '#f97316' }, // orange-500
+      { name: '退货损耗', val: -pb.ret, range: [p7, p6] as [number, number], color: '#f43f5e' }, // rose-500
+      { name: '广告成本', val: -pb.adsVal, range: [p8, p7] as [number, number], color: '#fbbf24' }, // amber-400
+      { name: '实际利润', val: pb.profit, range: [0, pb.profit] as [number, number], color: '#10b981' } // emerald-500
     ];
-  }, [results.planB, results.costProdUSD, shippingUSD, miscFee, storageFee, fbaFee]);
+  }, [results.planB, shippingUSD, miscFee, storageFee, agedInventoryFee, fbaFee]);
 
 
 
@@ -591,12 +738,9 @@ const ProfitCalculator: React.FC = () => {
         products={products}
         selectedProductId={selectedProductId}
         onProductSelect={handleProductSelect}
-        showLoadMenu={showLoadMenu}
-        setShowLoadMenu={setShowLoadMenu}
+        showLoadMenu={false}
+        setShowLoadMenu={() => { }}
         recentProducts={recentProducts}
-        groupedModels={groupedModels}
-        expandedGroups={expandedGroups}
-        toggleGroup={toggleGroup}
         onLoadModel={handleLoadModel}
         onSaveClick={onInfosSaveClick}
       />
@@ -610,14 +754,15 @@ const ProfitCalculator: React.FC = () => {
             setTargetAcos={setTargetAcos}
             targetMargin={targetMargin}
             setTargetMargin={setTargetMargin}
-            autoComm={autoComm}
-            setAutoComm={setAutoComm}
-            manualComm={manualComm}
-            setManualComm={setManualComm}
+
+            category={category}
             purchaseRMB={purchaseRMB}
             setPurchaseRMB={setPurchaseRMB}
             exchangeRate={exchangeRate}
-            setExchangeRate={setExchangeRate}
+            setExchangeRate={handleExchangeRateChange}
+            liveExchangeRate={liveRate}
+            onUseLiveRate={handleUseLiveRate}
+            isManualExchangeRate={isManualExchangeRate}
             selectedChannelId={selectedChannelId}
             setSelectedChannelId={setSelectedChannelId}
             channels={channels}
@@ -629,6 +774,8 @@ const ProfitCalculator: React.FC = () => {
             setMiscFee={setMiscFee}
             storageFee={storageFee}
             setStorageFee={setStorageFee}
+            agedInventoryFee={agedInventoryFee}
+            setAgedInventoryFee={setAgedInventoryFee}
             returnRate={returnRate}
             setReturnRate={setReturnRate}
             unsellableRate={unsellableRate}
@@ -637,7 +784,15 @@ const ProfitCalculator: React.FC = () => {
             setRetProcFee={setRetProcFee}
             retRemFee={retRemFee}
             setRetRemFee={setRetRemFee}
+            disposalFee={disposalFee}
+            setDisposalFee={setDisposalFee}
             adminFee={getRefundAdminFee(actualPrice, results.planB.commRate)}
+            storageMonth={storageMonth}
+            setStorageMonth={setStorageMonth}
+            placementMode={placementMode}
+            setPlacementMode={setPlacementMode}
+            inventoryDays={inventoryDays}
+            setInventoryDays={setInventoryDays}
           />
         </div>
 
@@ -652,9 +807,9 @@ const ProfitCalculator: React.FC = () => {
             <div className="p-4 flex-1 flex flex-col bg-[#0d0d0f]">
               <div className="flex-1 flex flex-col justify-between">
                 <DistributionRow label="采购成本" value={results.planA.costProdUSD} price={results.planA.price} color="bg-blue-500" />
-                <DistributionRow label="头程" value={r2(shippingUSD)} price={results.planA.price} color="bg-sky-500" />
-                <DistributionRow label="物流杂费" value={r2(fbaFee + miscFee)} price={results.planA.price} color="bg-purple-500" />
-                <DistributionRow label="月仓储费" value={r2(storageFee)} price={results.planA.price} color="bg-indigo-400" />
+                <DistributionRow label="头程物流" value={r2(shippingUSD)} price={results.planA.price} color="bg-sky-500" />
+                <DistributionRow label="FBA配送费" value={r2(fbaFee)} price={results.planA.price} color="bg-purple-600" />
+                <DistributionRow label="仓储杂费" value={r2(miscFee + agedInventoryFee + storageFee)} price={results.planA.price} color="bg-indigo-400" />
                 <DistributionRow label="销售佣金" value={results.planA.commVal} price={results.planA.price} color="bg-orange-500" />
                 <DistributionRow label="退货损耗" value={results.planA.ret} price={results.planA.price} color="bg-rose-500" />
                 <DistributionRow label="广告成本" value={results.planA.adsVal} price={results.planA.price} color="bg-amber-400" />
@@ -727,9 +882,9 @@ const ProfitCalculator: React.FC = () => {
             <div className="p-4 flex-1 flex flex-col bg-[#0d0d0f]">
               <div className="flex-1 flex flex-col justify-between">
                 <DistributionRow label="采购成本" value={results.planB.costProdUSD} price={results.planB.price} color="bg-blue-500" />
-                <DistributionRow label="头程" value={r2(shippingUSD)} price={results.planB.price} color="bg-sky-500" />
-                <DistributionRow label="物流杂费" value={r2(fbaFee + miscFee)} price={results.planB.price} color="bg-purple-500" />
-                <DistributionRow label="月仓储费" value={r2(storageFee)} price={results.planB.price} color="bg-indigo-400" />
+                <DistributionRow label="头程物流" value={r2(shippingUSD)} price={results.planB.price} color="bg-sky-500" />
+                <DistributionRow label="FBA配送费" value={r2(fbaFee)} price={results.planB.price} color="bg-purple-600" />
+                <DistributionRow label="仓储杂费" value={r2(miscFee + agedInventoryFee + storageFee)} price={results.planB.price} color="bg-indigo-400" />
                 <DistributionRow label="销售佣金" value={results.planB.commVal} price={results.planB.price} color="bg-orange-500" />
                 <DistributionRow label="退货损耗" value={results.planB.ret} price={results.planB.price} color="bg-rose-500" />
                 <DistributionRow label="广告成本" value={results.planB.adsVal} price={results.planB.price} color="bg-amber-400" />

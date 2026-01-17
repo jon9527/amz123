@@ -1,9 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { calculateProfit, calculateTargetPrice, ProfitCalcParams } from '../utils/profitCalculator.utils';
-import { CommissionConfig, ReturnCostParams } from '../utils/commissionUtils';
+import { ReturnCostParams } from '../utils/commissionUtils';
 
 describe('profitCalculator.utils', () => {
-    const commConfig: CommissionConfig = { autoComm: true, manualComm: 15 };
     const returnParams: ReturnCostParams = {
         retProcFee: 2.62,
         retRemFee: 2.24,
@@ -20,7 +19,7 @@ describe('profitCalculator.utils', () => {
         fbaFee: 5.69,
         miscFee: 0,
         storageFee: 0.5,
-        commConfig,
+        category: 'apparel', // Use category string instead of CommissionConfig
         returnParams,
         targetAcos: 15,
     };
@@ -30,12 +29,12 @@ describe('profitCalculator.utils', () => {
             const result = calculateProfit({ ...baseParams, price: 19.99 });
 
             expect(result.price).toBe(19.99);
-            expect(result.commRate).toBe(0.10);  // $15-20 区间
+            expect(result.commRate).toBe(0.10);  // $15-20 区间 (Apparel)
             expect(result.commValue).toBeCloseTo(2.00, 1);
             expect(result.netProfit).toBeLessThan(result.grossProfit);
         });
 
-        it('应处理不同价格区间的佣金率', () => {
+        it('应处理不同价格区间的佣金率 (Apparel)', () => {
             const low = calculateProfit({ ...baseParams, price: 10 });
             const mid = calculateProfit({ ...baseParams, price: 18 });
             const high = calculateProfit({ ...baseParams, price: 25 });
@@ -59,6 +58,13 @@ describe('profitCalculator.utils', () => {
 
             expect(withAds.totalCost).toBeGreaterThan(noAds.totalCost);
             expect(withAds.netProfit).toBeLessThan(noAds.netProfit);
+        });
+
+        it('Standard category 应使用 15% 固定佣金', () => {
+            const standardParams = { ...baseParams, category: 'standard' as const };
+            const result = calculateProfit({ ...standardParams, price: 10 });
+
+            expect(result.commRate).toBe(0.15); // Standard uses flat 15%
         });
     });
 

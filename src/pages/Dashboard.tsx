@@ -20,6 +20,8 @@ const Dashboard: React.FC = () => {
     <PageShell
       title="总览面板"
       subtitle="亚马逊店铺实时运营数据监控"
+      icon="dashboard"
+      useMaterialIcon
       maxWidth="wide"
       actions={
         <Button variant="ghost" icon="edit_square">编辑布局</Button>

@@ -48,12 +48,22 @@ export class ProfitModelService {
      * 更新已存在的利润模型
      */
     static update(id: string, updates: Partial<SavedProfitModel>): boolean {
+        console.log('[Debug] ProfitModelService.update', id, updates);
         try {
             const all = this.getAll();
             const index = all.findIndex(model => model.id === id);
             if (index === -1) return false;
 
-            all[index] = { ...all[index], ...updates };
+            const updatedModel = { ...all[index], ...updates };
+
+            // Explicitly handle replenishment deletion to ensure clean state
+            // Only strictly delete if null is passed (explicit delete instruction)
+            // Ignore if undefined (which means field is not being updated)
+            if (updates.replenishment === null) {
+                delete (updatedModel as any).replenishment;
+            }
+
+            all[index] = updatedModel;
             localStorage.setItem(STORAGE_KEYS.PROFIT_MODELS, JSON.stringify(all));
             return true;
         } catch (error) {

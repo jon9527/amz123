@@ -11,6 +11,7 @@ export interface IReplenishmentPlanRepository {
     getAll(): SavedReplenishmentPlan[];
     getById(id: string): SavedReplenishmentPlan | undefined;
     getByProductId(productId: string): SavedReplenishmentPlan[];
+    getByStrategyId(strategyId: string): SavedReplenishmentPlan[];
     save(plan: SavedReplenishmentPlan): boolean;
     update(id: string, updates: Partial<SavedReplenishmentPlan>): boolean;
     delete(id: string): boolean;
@@ -33,6 +34,10 @@ export class ReplenishmentPlanRepository implements IReplenishmentPlanRepository
 
     getByProductId(productId: string): SavedReplenishmentPlan[] {
         return this.getAll().filter(p => p.productId === productId);
+    }
+
+    getByStrategyId(strategyId: string): SavedReplenishmentPlan[] {
+        return this.getAll().filter(p => p.strategyId === strategyId);
     }
 
     save(plan: SavedReplenishmentPlan): boolean {

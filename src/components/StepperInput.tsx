@@ -11,6 +11,7 @@ interface StepperInputProps {
     onChange: (v: number) => void;
     step?: number;
     min?: number;
+    max?: number;
     disabled?: boolean;
     color?: 'white' | 'blue' | 'emerald';
     height?: 'compact' | 'normal' | 'large';
@@ -25,6 +26,7 @@ const StepperInput: React.FC<StepperInputProps> = ({
     onChange,
     step = 1,
     min = 0,
+    max,
     disabled = false,
     color = 'white',
     height = 'compact'
@@ -45,7 +47,11 @@ const StepperInput: React.FC<StepperInputProps> = ({
         if (!/^\d*\.?\d*$/.test(val)) return;
         setDisplayValue(val);
         const num = parseFloat(val);
-        if (!isNaN(num)) onChange(Math.max(min, num));
+        if (!isNaN(num)) {
+            let next = Math.max(min, num);
+            if (max !== undefined) next = Math.min(max, next);
+            onChange(next);
+        }
     };
 
     const handleBlur = () => {
@@ -53,9 +59,11 @@ const StepperInput: React.FC<StepperInputProps> = ({
         if (displayValue === '' || isNaN(parseFloat(displayValue))) {
             setDisplayValue(min.toString()); onChange(min);
         } else {
-            const num = parseFloat(displayValue);
+            let num = parseFloat(displayValue);
+            num = Math.max(min, num);
+            if (max !== undefined) num = Math.min(max, num);
             setDisplayValue(num.toString());
-            onChange(Math.max(min, num));
+            onChange(num);
         }
     };
 
@@ -84,7 +92,12 @@ const StepperInput: React.FC<StepperInputProps> = ({
             {!disabled && (
                 <div className="absolute right-0 top-0 bottom-0 flex flex-col justify-center gap-0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none pr-1 bg-[#0d0d0f]">
                     <button
-                        onClick={() => { const next = r2(value + step); onChange(next); setDisplayValue(next.toString()); }}
+                        onClick={() => {
+                            let next = r2(value + step);
+                            if (max !== undefined) next = Math.min(max, next);
+                            onChange(next);
+                            setDisplayValue(next.toString());
+                        }}
                         className="pointer-events-auto material-symbols-outlined text-[14px] text-zinc-600 hover:text-zinc-300 leading-none block h-3"
                     >
                         expand_less

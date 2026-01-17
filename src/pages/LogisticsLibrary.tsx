@@ -80,7 +80,8 @@ export const LogisticsLibrary: React.FC = () => {
         <PageShell
             title="物流渠道库"
             subtitle="管理头程物流渠道及费率规则"
-            icon="🏗️"
+            icon="local_shipping"
+            useMaterialIcon
             maxWidth="full"
             fullHeight
             actions={

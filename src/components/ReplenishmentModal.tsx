@@ -1,34 +1,136 @@
-import React, { useMemo, useState } from 'react';
-import { SavedProfitModel } from '../types';
+import React, { useEffect, useMemo, useState } from 'react';
+import { SavedProfitModel, SavedReplenishmentPlan, ReplenishmentPlanSummary } from '../types';
 import { useLogistics } from '../contexts/LogisticsContext';
+import { replenishmentPlanRepository } from '../repositories/ReplenishmentPlanRepository';
 
 interface ReplenishmentModalProps {
     strategies: SavedProfitModel[];
-    initialStrategyId: string;
+    currentStrategyId?: string; // Optional: just for context of what user is currently looking at
+    productId: string;
+    productName?: string;
+    currentPlan?: any; // Live editing state from parent
     onClose: () => void;
     onSave: (modelId: string, updates: Partial<SavedProfitModel>) => void;
     onDelete?: (modelId: string) => void;
+    onResetActive?: () => void; // New callback to clear active plan
 }
 
-
+// Unified interface for display
+interface DisplayPlan {
+    id: string;
+    sourceType: 'strategy_active' | 'strategy_embedded' | 'saved_plan';
+    name: string;
+    tags?: string[];
+    updatedAt: number; // For sorting
+    replenishment: {
+        batches: any[];
+        summary: ReplenishmentPlanSummary;
+        simStart: string;
+        seaChannelId?: string;
+        airChannelId?: string;
+        expChannelId?: string;
+    };
+    originalObject: any; // SavedProfitModel or SavedReplenishmentPlan
+}
 
 export const ReplenishmentModal: React.FC<ReplenishmentModalProps> = ({
     strategies,
-    initialStrategyId,
+    currentStrategyId,
+    productId,
+    productName,
+    currentPlan,
     onClose,
-    onDelete,
+    onSave,
+    onResetActive,
 }) => {
     const { getChannel } = useLogistics();
-    const [expandedId, setExpandedId] = useState<string | null>(initialStrategyId);
 
-    // Filter strategies that have replenishment data
-    const validStrategies = useMemo(() => {
-        return strategies.filter(s => s.replenishment && s.replenishment.batches.length > 0);
-    }, [strategies]);
+    // 1. Get the current strategy for context (optional)
+    const currentStrategy = useMemo(() => strategies.find(s => s.id === currentStrategyId), [strategies, currentStrategyId]);
 
-    // Helper to process strategy data for display
-    const getStrategyMetrics = (strategy: SavedProfitModel) => {
-        const repl = strategy.replenishment!;
+    // 2. Fetch related saved plans BY PRODUCT ID (Synchronous Init to prevent flicker)
+    const [savedPlans, setSavedPlans] = useState<SavedReplenishmentPlan[]>(() => {
+        if (productId) {
+            return replenishmentPlanRepository.getByProductId(productId);
+        }
+        return [];
+    });
+
+    // Keep effect for updates if productId changes while modal is open
+    useEffect(() => {
+        if (productId) {
+            const related = replenishmentPlanRepository.getByProductId(productId);
+            setSavedPlans(related);
+        }
+    }, [productId]);
+
+    // 3. Merge into unified display list
+    const displayList = useMemo(() => {
+        const list: DisplayPlan[] = [];
+
+        // Priority 1: Use Live Current Plan (if passed)
+        if (currentPlan) {
+            list.push({
+                id: 'live_current',
+                sourceType: 'strategy_active',
+                name: '当前编辑 (未保存)',
+                tags: ['Editing', 'Unsaved'],
+                updatedAt: Date.now() + 1000, // Always top
+                replenishment: currentPlan,
+                originalObject: currentPlan
+            });
+        }
+
+        // Restoration: Include Legacy Strategy Embedded Plans
+        // These are plans stored directly inside the SavedProfitModel, not as separate "SavedReplenishmentPlan" entities.
+        strategies.forEach(strategy => {
+            if (strategy.replenishment) {
+                // 从策略中提取售价和利润率信息
+                const price = strategy.inputs?.actualPrice || strategy.results?.planB?.price || 0;
+                const margin = (strategy.results?.planB?.margin || 0) * 100;
+                const displayName = `定价: $${price.toFixed(2)} (${margin.toFixed(0)}%)`;
+
+                list.push({
+                    id: strategy.id, // Use strategy ID to identify this plan source
+                    sourceType: 'strategy_embedded',
+                    name: displayName,
+                    tags: ['策略基准', ...(strategy.tags || [])],
+                    updatedAt: strategy.timestamp || 0,
+                    replenishment: strategy.replenishment,
+                    originalObject: strategy
+                });
+            }
+        });
+
+        // Add Saved Plans
+        savedPlans.forEach(plan => {
+            // Avoid duplicate if saved plan is identical to active (optional, but keep simple for now)
+            list.push({
+                id: plan.id,
+                sourceType: 'saved_plan',
+                name: plan.name,
+                tags: ['历史方案'],
+                updatedAt: plan.updatedAt || 0,
+                replenishment: {
+                    batches: plan.batches,
+                    summary: plan.summary,
+                    simStart: plan.simStart,
+                    seaChannelId: plan.seaChannelId,
+                    airChannelId: plan.airChannelId,
+                    expChannelId: plan.expChannelId
+                },
+                originalObject: plan
+            });
+        });
+
+        // Sort by Time Desc (Newest First)
+        return list.sort((a, b) => b.updatedAt - a.updatedAt);
+    }, [strategies, currentStrategy, savedPlans, currentPlan]);
+
+
+    // Helper to process metrics
+    const getMetrics = (plan: DisplayPlan) => {
+        const repl = plan.replenishment;
         const batches = repl.batches;
 
         // Logistics Mix
@@ -37,14 +139,10 @@ export const ReplenishmentModal: React.FC<ReplenishmentModalProps> = ({
         const exp = batches.filter(b => b.type === 'exp').length;
 
         // Timeline
-        // Find earliest ship date and latest arrival date
-        let firstShip = '';
-        let lastArr = '';
         let startTs = Infinity;
         let endTs = -Infinity;
 
         batches.forEach(b => {
-            // Re-calculate dates based on offsets
             const channelId = (b.type === 'sea' ? repl.seaChannelId :
                 b.type === 'air' ? repl.airChannelId : repl.expChannelId) || '';
             const channel = getChannel(channelId);
@@ -53,248 +151,218 @@ export const ReplenishmentModal: React.FC<ReplenishmentModalProps> = ({
             const shipOffset = b.offset + b.prodDays;
             const arrOffset = shipOffset + delivery;
 
-            // Simple approximation for sorting
             if (shipOffset < startTs) startTs = shipOffset;
             if (arrOffset > endTs) endTs = arrOffset;
         });
 
-        // Convert offset to date string using simStart
         const dStart = new Date(repl.simStart);
-        dStart.setDate(dStart.getDate() + startTs);
-        firstShip = `${dStart.getMonth() + 1}/${dStart.getDate()}`;
+        dStart.setDate(dStart.getDate() + (startTs === Infinity ? 0 : startTs));
+        const firstShip = `${dStart.getMonth() + 1}/${dStart.getDate()}`;
 
         const dEnd = new Date(repl.simStart);
-        dEnd.setDate(dEnd.getDate() + endTs);
-        lastArr = `${dEnd.getMonth() + 1}/${dEnd.getDate()}`;
+        dEnd.setDate(dEnd.getDate() + (endTs === -Infinity ? 0 : endTs));
+        const lastArr = `${dEnd.getMonth() + 1}/${dEnd.getDate()}`;
 
         return {
             mix: { sea, air, exp },
-            timeline: { firstShip, lastArr, duration: endTs - startTs },
+            timeline: { firstShip, lastArr, duration: (endTs - startTs) },
             summary: repl.summary
         };
     };
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-[#0f172a] border border-[#1e293b] rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 ring-1 ring-white/10">
+            <div className="bg-[#0f172a] border border-[#1e293b] rounded-2xl shadow-2xl w-[1200px] max-w-[95vw] h-[600px] max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 ring-1 ring-white/10">
                 {/* Header */}
-                <div className="px-8 py-5 border-b border-[#1e293b] flex justify-between items-center bg-[#0f172a]">
+                <div className="px-4 py-3 border-b border-[#1e293b] flex justify-between items-center bg-[#0f172a]">
                     <div>
-                        <h2 className="text-2xl font-black text-white flex items-center gap-3">
-                            <span className="material-symbols-outlined text-indigo-500 text-3xl">compare_arrows</span>
+                        <h2 className="text-lg font-black text-white flex items-center gap-2">
+                            <span className="material-symbols-outlined text-indigo-500 text-xl">compare_arrows</span>
                             补货方案对比
                         </h2>
-                        <p className="text-sm text-slate-500 mt-1 font-medium">
-                            关联产品: <span className="text-slate-200">{strategies[0]?.productName}</span>
-                            <span className="mx-3 text-slate-700">|</span>
-                            共 <span className="text-white font-bold">{validStrategies.length}</span> 个有效方案
+                        <p className="text-xs text-slate-500 font-medium">
+                            产品: <span className="text-slate-200">{productName || 'Unknown'}</span>
+                            <span className="mx-2 text-slate-700">|</span>
+                            共 <span className="text-white font-bold">{displayList.length}</span> 个关联方案
                         </p>
                     </div>
-                    <button onClick={onClose} className="p-2 hover:bg-[#1e293b] rounded-xl text-slate-400 hover:text-white transition-colors">
-                        <span className="material-symbols-outlined">close</span>
+                    <button onClick={onClose} className="p-1.5 hover:bg-[#1e293b] rounded-lg text-slate-400 hover:text-white transition-colors">
+                        <span className="material-symbols-outlined text-xl">close</span>
                     </button>
                 </div>
 
-                {/* Table Content */}
-                <div className="flex-1 overflow-y-auto p-8">
-                    {validStrategies.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-64 border-2 border-dashed border-[#1e293b] rounded-2xl bg-[#1e293b]/30">
+                <div className="flex-1 overflow-x-auto overflow-y-auto p-3 bg-[#1e293b]/20 flex flex-col gap-2">
+                    {/* Header Row - Always Visible */}
+                    {/* Header Row - Always Visible */}
+                    <div className="flex w-full px-1 mb-1 shrink-0">
+                        <div className="w-[140px] shrink-0 text-xs text-slate-500 font-bold uppercase pl-2">方案信息</div>
+                        <div className="w-[60px] shrink-0 text-center text-xs text-slate-500 font-bold uppercase border-l border-transparent">总数</div>
+                        <div className="flex-1 grid grid-cols-6 gap-2 text-center text-xs text-slate-500 font-bold uppercase px-3 border-l border-transparent">
+                            {[1, 2, 3, 4, 5, 6].map(i => <div key={i}>批次{i}</div>)}
+                        </div>
+                        <div className="w-auto shrink-0 flex text-center text-xs text-slate-500 font-bold uppercase divide-x divide-transparent">
+                            {[
+                                { label: '资金占用', w: 'w-20' },
+                                { label: 'ROI', w: 'w-14' },
+                                { label: '年化', w: 'w-14' },
+                                { label: '周转率', w: 'w-14' },
+                                { label: '净利率', w: 'w-14' },
+                                { label: '周转天', w: 'w-14' },
+                                { label: '回本', w: 'w-16' },
+                                { label: '盈利', w: 'w-16' },
+                            ].map((h, i) => (
+                                <div key={i} className={`${h.w} flex justify-center`}>{h.label}</div>
+                            ))}
+                        </div>
+                        <div className="w-[40px] shrink-0 text-center text-xs text-slate-500 font-bold uppercase">操作</div>
+                    </div>
+
+                    {displayList.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center flex-1 h-full border-2 border-dashed border-[#1e293b] rounded-2xl bg-[#1e293b]/30 w-full shrink-0">
                             <span className="material-symbols-outlined text-5xl text-slate-600 mb-4">pending</span>
                             <p className="text-slate-400 font-bold">暂无补货数据</p>
                             <p className="text-xs text-slate-600 mt-2">请先在补货建议模块生成并保存方案</p>
                         </div>
                     ) : (
-                        <div className="rounded-xl border border-[#1e293b] overflow-hidden bg-[#1e293b]/20">
-                            <table className="w-full text-left border-collapse">
-                                <thead>
-                                    <tr className="bg-[#1e293b] text-xs uppercase tracking-wider text-slate-400 font-bold">
-                                        <th className="px-6 py-4">方案名称</th>
-                                        <th className="px-6 py-4">物流配比 (批次)</th>
-                                        <th className="px-6 py-4">时间周期 (发货→到货)</th>
-                                        <th className="px-6 py-4 text-right">总成本 / 预估资金</th>
-                                        <th className="px-6 py-4 text-center">断货风险</th>
-                                        <th className="px-6 py-4 text-right">操作</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-[#1e293b]">
-                                    {validStrategies.map(strategy => {
-                                        const metrics = getStrategyMetrics(strategy);
-                                        const isBestCost = validStrategies.every(s => s.replenishment!.summary.totalCost >= metrics.summary.totalCost);
+                        displayList.map(plan => {
+                            const metrics = getMetrics(plan);
+                            const isActive = plan.sourceType === 'strategy_active';
+                            const summary = metrics.summary;
 
+                            // 使用 summary 中已有的数据
+                            const maxCapital = Math.abs(summary.minCash); // 资金最大占用
 
-                                        return (
-                                            <tr key={strategy.id} className="hover:bg-[#1e293b]/50 transition-colors group">
-                                                <td className="px-6 py-5">
-                                                    <div className="font-bold text-white text-base">{strategy.label}</div>
-                                                    <div className="flex gap-2 mt-1.5">
-                                                        {strategy.tags?.map(t => (
-                                                            <span key={t} className="px-1.5 py-0.5 bg-[#334155]/50 text-slate-400 rounded text-[10px] font-medium">{t}</span>
-                                                        ))}
-                                                    </div>
-                                                </td>
-                                                <td className="px-6 py-5">
-                                                    <div className="flex items-center gap-3">
-                                                        {metrics.mix.sea > 0 && (
-                                                            <div className="flex items-center gap-1.5 text-slate-300 bg-blue-500/10 px-2 py-1 rounded-lg border border-blue-500/20">
-                                                                <span className="material-symbols-outlined text-[16px] text-blue-400">sailing</span>
-                                                                <span className="text-xs font-bold">{metrics.mix.sea}</span>
-                                                            </div>
-                                                        )}
-                                                        {metrics.mix.air > 0 && (
-                                                            <div className="flex items-center gap-1.5 text-slate-300 bg-sky-500/10 px-2 py-1 rounded-lg border border-sky-500/20">
-                                                                <span className="material-symbols-outlined text-[16px] text-sky-400">flight</span>
-                                                                <span className="text-xs font-bold">{metrics.mix.air}</span>
-                                                            </div>
-                                                        )}
-                                                        {metrics.mix.exp > 0 && (
-                                                            <div className="flex items-center gap-1.5 text-slate-300 bg-purple-500/10 px-2 py-1 rounded-lg border border-purple-500/20">
-                                                                <span className="material-symbols-outlined text-[16px] text-purple-400">rocket_launch</span>
-                                                                <span className="text-xs font-bold">{metrics.mix.exp}</span>
-                                                            </div>
-                                                        )}
-                                                        <span className="text-xs text-slate-500 ml-1">共 {strategy.replenishment!.batches.length} 批</span>
-                                                    </div>
-                                                </td>
-                                                <td className="px-6 py-5">
-                                                    <div className="flex flex-col gap-1">
-                                                        <div className="flex items-center gap-2 text-sm text-slate-200 font-mono">
-                                                            <span>{metrics.timeline.firstShip}</span>
-                                                            <span className="text-slate-600">→</span>
-                                                            <span>{metrics.timeline.lastArr}</span>
-                                                        </div>
-                                                        <div className="text-[10px] text-slate-500 font-medium">
-                                                            周期: {Math.round(metrics.timeline.duration / 30 * 10) / 10} 个月
-                                                        </div>
-                                                    </div>
-                                                </td>
-                                                <td className="px-6 py-5 text-right">
-                                                    <div className="font-bold text-white text-base">${Math.abs(metrics.summary.totalCost).toLocaleString()}</div>
-                                                    <div className="text-xs text-amber-500 font-medium mt-1">
-                                                        峰值占用: ${Math.abs(metrics.summary.minCash).toLocaleString()}
-                                                    </div>
-                                                    {isBestCost && <div className="text-[10px] text-green-500 font-bold mt-1">✨ 成本最低</div>}
-                                                </td>
-                                                <td className="px-6 py-5 text-center">
-                                                    {metrics.summary.stockoutDays > 0 ? (
-                                                        <div className="inline-flex flex-col items-center">
-                                                            <span className="px-2.5 py-1 rounded-full bg-red-500/10 text-red-500 font-bold text-sm border border-red-500/20">
-                                                                缺货 {metrics.summary.stockoutDays} 天
-                                                            </span>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="inline-flex flex-col items-center">
-                                                            <span className="px-2.5 py-1 rounded-full bg-green-500/10 text-green-500 font-bold text-sm border border-green-500/20">
-                                                                完美接力
-                                                            </span>
-                                                        </div>
-                                                    )}
-                                                </td>
-                                                <td className="px-6 py-5 text-right">
-                                                    <div className="flex items-center justify-end gap-2">
-                                                        <button
-                                                            onClick={() => setExpandedId(expandedId === strategy.id ? null : strategy.id)}
-                                                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${expandedId === strategy.id ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-600 text-slate-300 hover:border-slate-400 hover:text-white'}`}
-                                                        >
-                                                            {expandedId === strategy.id ? '收起' : '详情'}
-                                                        </button>
-                                                        {onDelete && (
-                                                            <button
-                                                                onClick={() => {
-                                                                    if (confirm('确定要删除这个方案吗？')) {
-                                                                        onDelete(strategy.id);
-                                                                    }
-                                                                }}
-                                                                className="p-1.5 text-slate-500 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
-                                                                title="删除方案"
-                                                            >
-                                                                <span className="material-symbols-outlined text-[18px]">delete</span>
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
+                            // 直接从 summary 读取已保存的财务指标（保存时已计算好）
+                            const roi = summary.roi ?? 0;
+                            const annualRoi = summary.annualRoi ?? 0;
+                            const turnoverRatio = summary.turnoverRatio ?? 0;
+                            const netMargin = summary.netMargin ?? 0;
+                            const turnoverDays = summary.turnoverDays ?? 0;
+                            const _stockoutDays = summary.stockoutDays ?? 0;
+                            const profitDate = summary.profitDate ?? '-';
 
-                    {/* Expanded Detail View */}
-                    {expandedId && (
-                        <div className="mt-6 animate-in slide-in-from-top-4 duration-300">
-                            {/* Re-use the batch detail table if needed, or render a specialized summary */}
-                            {(() => {
-                                const s = validStrategies.find(vs => vs.id === expandedId);
-                                if (!s || !s.replenishment) return null;
+                            // Pad batches to ensure 6 columns
+                            const batches = [...plan.replenishment.batches];
+                            while (batches.length < 6) {
+                                batches.push({ id: -1, name: '', type: 'none', qty: 0, offset: 0, prodDays: 0 } as any);
+                            }
 
-                                return (
-                                    <div className="bg-[#1e293b] border border-[#334155] rounded-xl p-6 shadow-inner">
-                                        <div className="flex justify-between items-center mb-4">
-                                            <h3 className="font-bold text-slate-200">
-                                                <span className="text-blue-400 mr-2">●</span>
-                                                {s.label} - 批次明细
-                                            </h3>
-                                            <div className="text-xs text-slate-500">模拟开始日期: {s.replenishment.simStart}</div>
+                            return (
+                                <div key={plan.id} className={`group relative flex items-stretch overflow-hidden rounded-lg border transition-all h-[80px] shrink-0 ${isActive ? 'bg-blue-500/5 border-blue-500/30' : 'bg-[#1e293b]/40 border-[#1e293b] hover:border-[#334155]'}`}>
+
+                                    {/* Left: Info */}
+                                    <div className="w-[140px] shrink-0 px-2 py-1.5 border-r border-[#1e293b]/50 bg-[#0f172a]/50 flex flex-col justify-center relative">
+                                        <div className="flex items-center gap-1.5 mb-1 w-full">
+                                            <div className={`font-bold text-xs truncate flex-1 min-w-0 ${isActive ? 'text-white' : 'text-slate-300'}`} title={plan.name}>
+                                                {plan.name}
+                                            </div>
+                                            {isActive && <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-green-500" title="当前方案"></span>}
                                         </div>
-
-                                        <div className="overflow-x-auto">
-                                            <table className="w-full text-left text-xs">
-                                                <thead>
-                                                    <tr className="border-b border-[#334155] text-slate-500">
-                                                        <th className="py-2 pl-2">批次</th>
-                                                        <th className="py-2">方式</th>
-                                                        <th className="py-2 text-right">数量</th>
-                                                        <th className="py-2 text-right">Offset</th>
-                                                        <th className="py-2 text-right">预计发货</th>
-                                                        <th className="py-2 text-right pr-2">预计送达</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-[#334155]/50">
-                                                    {s.replenishment.batches.map((b, i) => {
-                                                        const channel = getChannel((b.type === 'sea' ? s.replenishment!.seaChannelId : b.type === 'air' ? s.replenishment!.airChannelId : s.replenishment!.expChannelId) || '');
-                                                        const delivery = channel?.deliveryDays || 30;
-                                                        const shipDate = new Date(s.replenishment!.simStart);
-                                                        shipDate.setDate(shipDate.getDate() + b.offset + b.prodDays);
-
-                                                        const arrDate = new Date(shipDate);
-                                                        arrDate.setDate(arrDate.getDate() + delivery);
-
-                                                        return (
-                                                            <tr key={i} className="text-slate-300">
-                                                                <td className="py-2.5 pl-2 font-medium">{b.name || `批次${i + 1}`}</td>
-                                                                <td className="py-2.5">
-                                                                    <span className={`px-1.5 py-0.5 rounded text-[10px] ${b.type === 'sea' ? 'bg-blue-500/20 text-blue-300' : b.type === 'air' ? 'bg-sky-500/20 text-sky-300' : 'bg-purple-500/20 text-purple-300'}`}>
-                                                                        {b.type.toUpperCase()}
-                                                                    </span>
-                                                                </td>
-                                                                <td className="py-2.5 text-right font-mono">{b.qty}</td>
-                                                                <td className="py-2.5 text-right text-slate-500">T+{b.offset}</td>
-                                                                <td className="py-2.5 text-right text-slate-400">{shipDate.getMonth() + 1}/{shipDate.getDate()}</td>
-                                                                <td className="py-2.5 text-right pr-2 text-white font-bold">{arrDate.getMonth() + 1}/{arrDate.getDate()}</td>
-                                                            </tr>
-                                                        );
-                                                    })}
-                                                </tbody>
-                                            </table>
+                                        <div className="flex flex-col gap-0.5 opacity-60 scale-90 origin-left">
+                                            <div className="text-[10px] font-mono text-slate-400">{plan.replenishment.simStart}</div>
+                                            {plan.tags && plan.tags.length > 0 && (
+                                                <div className="flex gap-1 mt-0.5">
+                                                    {plan.tags.map(t => <span key={t} className="px-1 py-px rounded bg-slate-700/50 text-[8px] text-slate-400 border border-slate-700">{t}</span>)}
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
-                                );
-                            })()}
-                        </div>
+
+                                    {/* Total Qty Column */}
+                                    <div className="w-[60px] shrink-0 bg-[#0f172a]/20 border-r border-[#1e293b]/50 flex items-center justify-center p-1">
+                                        <div className="w-full h-full bg-[#1e293b]/30 rounded border border-[#1e293b]/50 flex items-center justify-center">
+                                            <div className="text-white font-bold font-mono text-xs scale-90">{summary.totalQty?.toLocaleString() || 0}</div>
+                                        </div>
+                                    </div>
+
+                                    {/* Middle: Batches */}
+                                    <div className="flex-1 px-3 py-1 flex items-center bg-[#0f172a]/20 border-r border-[#1e293b]/50">
+                                        <div className="grid grid-cols-6 gap-2 w-full h-full">
+                                            {batches.slice(0, 6).map((b, i) => {
+                                                if (!b.name) return <div key={i} className="rounded bg-[#1e293b]/10 border border-[#1e293b]/20 h-full"></div>;
+
+                                                const repl = plan.replenishment;
+                                                const channelId = (b.type === 'sea' ? repl.seaChannelId : b.type === 'air' ? repl.airChannelId : repl.expChannelId) || '';
+                                                const channel = getChannel(channelId);
+                                                const delivery = channel?.deliveryDays || 30;
+
+                                                // 计算日期
+                                                const startDate = new Date(repl.simStart);
+                                                const shipDate = new Date(startDate);
+                                                shipDate.setDate(startDate.getDate() + b.offset + b.prodDays);
+                                                const arrDate = new Date(shipDate);
+                                                arrDate.setDate(shipDate.getDate() + delivery);
+                                                const fmtDate = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`;
+                                                const finalQty = Math.round(b.qty * (1 + (b.extraPercent || 0) / 100));
+
+                                                return (
+                                                    <div key={i} className="bg-[#1e293b]/30 rounded border border-[#1e293b]/50 flex flex-col items-center justify-center p-0.5 relative group/batch h-full">
+                                                        <div className={`absolute top-0.5 right-1 text-[9px] opacity-70 ${b.type === 'sea' ? 'text-blue-400' : b.type === 'air' ? 'text-sky-400' : 'text-purple-400'}`}>
+                                                            {b.type === 'sea' ? '🚢' : b.type === 'air' ? '✈️' : '🚀'}
+                                                        </div>
+                                                        <div className="text-white font-bold font-mono text-sm mt-3">{finalQty}</div>
+                                                        <div className="flex items-center justify-center gap-0.5 mt-1 opacity-70 w-full">
+                                                            <span className="text-[9px] text-slate-400 font-mono scale-90 whitespace-nowrap">{fmtDate(shipDate)}</span>
+                                                            <span className="text-[9px] text-slate-600 scale-90">→</span>
+                                                            <span className="text-[9px] text-slate-400 font-mono scale-90 whitespace-nowrap">{fmtDate(arrDate)}</span>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    {/* Right: Metrics - Pure Values */}
+                                    <div className="w-auto shrink-0 bg-[#0f172a]/30 flex items-center px-0 divide-x divide-[#1e293b]/50 border-r border-[#1e293b]/50">
+                                        {[
+                                            { val: `$${Math.round(maxCapital).toLocaleString()}`, color: 'text-amber-400', width: 'w-20' },
+                                            { val: `${(roi * 100).toFixed(1)}%`, color: (roi * 100) > 100 ? 'text-purple-400' : 'text-slate-300', width: 'w-14' },
+                                            { val: `${(annualRoi * 100).toFixed(0)}%`, color: (annualRoi * 100) > 200 ? 'text-indigo-400' : 'text-slate-300', width: 'w-14' },
+                                            { val: turnoverRatio.toFixed(2), color: turnoverRatio > 5 ? 'text-cyan-400' : 'text-slate-300', width: 'w-14' },
+                                            { val: `${(netMargin * 100).toFixed(1)}%`, color: (netMargin * 100) > 20 ? 'text-emerald-400' : netMargin < 0 ? 'text-red-400' : 'text-slate-300', width: 'w-14' },
+                                            { val: `${turnoverDays}天`, color: 'text-orange-400', width: 'w-14' },
+                                            { val: summary.breakevenDate || '-', color: 'text-blue-400', width: 'w-16' },
+                                            { val: profitDate, color: 'text-green-400', width: 'w-16' },
+                                        ].map((m, i) => (
+                                            <div key={i} className={`flex justify-center items-center h-full px-1 ${m.width}`}>
+                                                <div className={`font-bold font-mono text-xs ${m.color} truncate`}>{m.val}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    {/* Action Column */}
+                                    <div className="w-[40px] shrink-0 bg-[#0f172a]/40 flex items-center justify-center">
+                                        {(plan.sourceType === 'saved_plan' || plan.sourceType === 'strategy_embedded' || (plan.sourceType === 'strategy_active' && onResetActive)) && (
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (plan.sourceType === 'strategy_active') {
+                                                        if (confirm('确定要清空"当前编辑"的方案内容吗？这将重置为默认状态。')) onResetActive?.();
+                                                    } else if (plan.sourceType === 'strategy_embedded') {
+                                                        if (confirm(`确定要移除属于策略 "${plan.originalObject.label}" 的补货方案吗？\n注意：这将从该利润策略中永久移除补货计划设置。`)) onSave(plan.id, { replenishment: null } as any);
+                                                    } else {
+                                                        if (confirm('确定要删除这个方案吗？')) {
+                                                            replenishmentPlanRepository.delete(plan.id);
+                                                            setSavedPlans(prev => prev.filter(p => p.id !== plan.id));
+                                                        }
+                                                    }
+                                                }}
+                                                className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors"
+                                                title="删除方案"
+                                            >
+                                                <span className="material-symbols-outlined text-[16px]">delete</span>
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })
                     )}
                 </div>
 
-                {/* Footer */}
-                <div className="p-4 border-t border-[#1e293b] flex justify-end bg-[#0f172a]">
-                    <button
-                        onClick={onClose}
-                        className="px-6 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-sm font-bold transition-all"
-                    >
-                        关闭
-                    </button>
-                </div>
-            </div>
-        </div>
+
+            </div >
+        </div >
     );
 };
+

@@ -33,14 +33,55 @@ export interface ProductSpec {
   sku: string;             // SKU 编码
   asin: string;            // ASIN (必填)
 
-  // 规格尺寸
+  // 规格尺寸 (单个产品)
   length: number;          // 长度 (cm)
   width: number;           // 宽度 (cm)
   height: number;          // 高度 (cm)
   weight: number;          // 重量 (kg)
   pcsPerBox: number;       // 每箱件数
 
-  // 成本
+  // 整箱规格 (用于头程运费计算)
+  boxLength?: number;      // 箱长 (cm)
+  boxWidth?: number;       // 箱宽 (cm)
+  boxHeight?: number;      // 箱高 (cm)
+  boxWeight?: number;      // 整箱毛重 (kg)
+
+  // ============ FBA 费用配置 ============
+  category?: 'standard' | 'apparel'; // 产品类目：标准 vs 服装
+
+  // 1. FBA 配送费 (Core Fulfillment Fee)
+  fbaFeeSystem?: number;   // 系统自动计算的 FBA 费用
+  fbaFeeManual?: number;   // 用户手动修正的 FBA 费用 (优先使用)
+  fbaFeeYear?: number;     // 费用计算基准年份 (e.g. 2024, 2025)
+
+  // 2. Inbound Placement Fee (入库配置费)
+  inboundPlacementMode?: 'minimal' | 'partial' | 'optimized'; // 入库配置模式
+  inboundPlacementFeeSystem?: number;  // 系统计算
+  inboundPlacementFeeManual?: number;  // 手动覆盖
+
+  // 3. Monthly Storage Fee (月仓储费)
+  defaultStorageMonth?: 'jan_sep' | 'oct_dec'; // 默认仓储季节
+  monthlyStorageFeeSystem?: number;    // 系统计算 (单位月费)
+  monthlyStorageFeeManual?: number;    // 手动覆盖
+
+  // 4. Aged Inventory Surcharge (超龄库存附加费)
+  defaultInventoryAge?: number;        // 默认库存天数 (0-365+)
+  agedInventoryFeeSystem?: number;     // 系统计算
+  agedInventoryFeeManual?: number;     // 手动覆盖
+
+  // 5. Removal Fee (移除费)
+  removalFeeSystem?: number;           // 系统计算
+  removalFeeManual?: number;           // 手动覆盖
+
+  // 6. Disposal Fee (销毁费)
+  disposalFeeSystem?: number;          // 系统计算
+  disposalFeeManual?: number;          // 手动覆盖
+
+  // 7. Returns Processing Fee (退货处理费)
+  returnsProcessingFeeSystem?: number; // 系统计算
+  returnsProcessingFeeManual?: number; // 手动覆盖
+
+  // ============ 成本 ============
   unitCost: number;        // 采购单价 (¥)
   defaultPrice: number;    // 默认售价 ($)
   defaultShippingRate?: number; // 默认头程运费单价 ($/kg)
@@ -56,6 +97,35 @@ export interface ProductSpec {
   tags?: string[];         // 产品标签
   createdAt: number;       // 创建时间
   updatedAt: number;       // 更新时间
+}
+
+
+export interface ProfitModelInputs {
+  // 运营目标
+  targetAcos: number;
+  targetMargin: number;
+  // 佣金设置
+  autoComm: boolean;
+  manualComm: number;
+  // 产品成本
+  purchaseRMB: number;
+  exchangeRate: number;
+  // 物流仓储
+  shippingUSD: number;
+  fbaFee: number;
+  miscFee: number;
+  storageFee: number;
+  // New FBA Calculation Inputs
+  storageMonth?: 'jan_sep' | 'oct_dec'; // 仓储月份 (Seasonality)
+  placementMode?: 'minimal' | 'partial' | 'optimized'; // 入库配置模式
+
+  // 退货损耗
+  returnRate: number;
+  unsellableRate: number;
+  retProcFee: number;
+  retRemFee: number;
+  // Plan B 售价
+  actualPrice: number;
 }
 
 // ============ 补货设置 (RestockSetting) ============
@@ -165,6 +235,9 @@ export interface ProfitModelInputs {
   fbaFee: number;
   miscFee: number;
   storageFee: number;
+  // New FBA Calculation Inputs
+  storageMonth?: 'jan_sep' | 'oct_dec'; // 仓储月份 (Seasonality)
+  placementMode?: 'minimal' | 'partial' | 'optimized'; // 入库配置模式
   // 退货损耗
   returnRate: number;
   unsellableRate: number;
@@ -233,7 +306,7 @@ export interface SavedProfitModel {
     airChannelId?: string;
     expChannelId?: string;
     lastUpdated: number;
-  };
+  } | null;
 }
 
 // ============ 补货规划 (ReplenishmentPlan) ============
@@ -242,8 +315,15 @@ export interface ReplenishmentPlanSummary {
   totalCost: number;          // 总成本 (USD)
   breakevenDate?: string;     // 回本日期
   stockoutDays: number;       // 断货天数
-  minCash: number;            // 最低资金
+  minCash: number;            // 最低资金（资金最大占用）
   finalCash: number;          // 最终资金
+  // 财务核心指标（保存时填入，Modal 直接读取显示）
+  roi?: number;               // ROI (比例，如 2.838 = 283.8%)
+  annualRoi?: number;         // 年化回报率 (比例)
+  turnoverRatio?: number;     // 资金周转率 (GMV/占用)
+  netMargin?: number;         // 净利率 (比例，如 0.295 = 29.5%)
+  turnoverDays?: number;      // 库存周转天数
+  profitDate?: string;        // 盈利日期 (PROFIT > 0)
 }
 
 export interface SavedReplenishmentPlan extends BaseEntity {

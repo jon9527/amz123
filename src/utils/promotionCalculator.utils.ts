@@ -4,7 +4,7 @@
  */
 
 import { r2 } from './formatters';
-import { getCommRate, getReturnCost, CommissionConfig, ReturnCostParams } from './commissionUtils';
+import { getCommRate, getReturnCost, ReturnCostParams } from './commissionUtils';
 
 // ============ 月度配置 ============
 export interface MonthConfig {
@@ -65,7 +65,7 @@ export interface MonthResult {
 export const calculateMonthResult = (
     month: MonthConfig,
     baseData: PromotionBaseData,
-    commConfig: CommissionConfig
+    category: 'standard' | 'apparel' = 'standard'
 ): MonthResult => {
     const days = 30;
     const totalUnits = month.dailyUnits * days;
@@ -73,7 +73,7 @@ export const calculateMonthResult = (
     const orgUnits = totalUnits - adUnits;
 
     // 动态单位经济
-    const commRate = getCommRate(month.price, commConfig);
+    const commRate = getCommRate(month.price, category);
     const comm = r2(month.price * commRate);
 
     // 退货成本
@@ -137,10 +137,10 @@ export const calculateMonthResult = (
 export const calculateCumulativeProfit = (
     months: MonthConfig[],
     baseData: PromotionBaseData,
-    commConfig: CommissionConfig
+    category: 'standard' | 'apparel' = 'standard'
 ): number => {
     return months.reduce((sum, month) => {
-        const result = calculateMonthResult(month, baseData, commConfig);
+        const result = calculateMonthResult(month, baseData, category);
         return sum + result.totalProfit;
     }, 0);
 };
@@ -156,13 +156,13 @@ export const calculateCumulativeProfit = (
 export const calculateBreakevenMonth = (
     months: MonthConfig[],
     baseData: PromotionBaseData,
-    commConfig: CommissionConfig,
+    category: 'standard' | 'apparel' = 'standard',
     initialInvestment: number
 ): number => {
     let cumulative = -initialInvestment;
 
     for (let i = 0; i < months.length; i++) {
-        const result = calculateMonthResult(months[i], baseData, commConfig);
+        const result = calculateMonthResult(months[i], baseData, category);
         cumulative += result.totalProfit;
         if (cumulative >= 0) {
             return i;

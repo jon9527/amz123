@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
+import { calculateAllProductFees, AllProductFees, getTierLabel } from '../../utils/fbaCalculator.utils';
 
 interface ProductFormData {
     name: string;
@@ -8,11 +9,30 @@ interface ProductFormData {
     height: number;
     weight: number;
     pcsPerBox: number;
+    // 整箱规格
+    boxLength: number;
+    boxWidth: number;
+    boxHeight: number;
+    boxWeight: number;
+    // 成本
     unitCost: number;
     defaultPrice: number;
     asin: string;
     notes: string;
     tags: string;
+    // FBA Configuration
+    category: 'standard' | 'apparel';
+    fbaFeeManual: number;
+    inboundPlacementMode: 'minimal' | 'partial' | 'optimized';
+    defaultStorageMonth: 'jan_sep' | 'oct_dec';
+    defaultInventoryAge: number;
+    // Fee Manual Overrides
+    inboundPlacementFeeManual: number;
+    monthlyStorageFeeManual: number;
+    agedInventoryFeeManual: number;
+    removalFeeManual: number;
+    disposalFeeManual: number;
+    returnsProcessingFeeManual: number;
 }
 
 interface ProductFormProps {
@@ -37,6 +57,26 @@ export const ProductForm: React.FC<ProductFormProps> = ({
     onSubmit,
     onCancel,
 }) => {
+    // Track FBA panel expanded state
+    const [showFbaDetails, setShowFbaDetails] = useState(false);
+
+    // Real-time calculation of ALL FBA Fees
+    const allFees = useMemo<AllProductFees | null>(() => {
+        if (!form.length || !form.width || !form.height || !form.weight) return null;
+        return calculateAllProductFees(
+            { length: form.length, width: form.width, height: form.height, weight: form.weight },
+            {
+                category: form.category,
+                price: form.defaultPrice || 20,
+                placementMode: form.inboundPlacementMode || 'optimized',
+                storageMonth: form.defaultStorageMonth || 'jan_sep',
+                inventoryDays: form.defaultInventoryAge || 0,
+            }
+        );
+    }, [form.length, form.width, form.height, form.weight, form.category, form.defaultPrice, form.inboundPlacementMode, form.defaultStorageMonth, form.defaultInventoryAge]);
+
+    const systemFbaFee = allFees?.fbaShippingFee || 0;
+
     if (!isOpen) return null;
 
     const setField = <K extends keyof ProductFormData>(key: K, value: ProductFormData[K]) => {
@@ -45,26 +85,26 @@ export const ProductForm: React.FC<ProductFormProps> = ({
 
     return (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={onCancel}>
-            <div className="bg-[#18181b] border border-[#27272a] rounded-2xl p-6 w-[480px] max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
-                <h2 className="text-xl font-bold mb-4">{editingId ? '编辑产品' : '添加新产品'}</h2>
+            <div className="bg-[#18181b] border border-[#27272a] rounded-xl p-5 w-[560px] shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                <h2 className="text-lg font-bold mb-3">{editingId ? '编辑产品' : '添加新产品'}</h2>
 
                 {/* 错误提示 */}
                 {errors.length > 0 && (
-                    <div className="bg-red-900/30 border border-red-500/50 rounded-lg p-3 mb-4">
-                        <div className="text-red-400 text-sm font-bold mb-1">⚠️ 请填写以下必填项：</div>
-                        <div className="text-red-300 text-sm">{errors.join('、')}</div>
+                    <div className="bg-red-900/30 border border-red-500/50 rounded-lg p-2 mb-3 flex items-center gap-2">
+                        <span className="text-red-400 text-xs font-bold whitespace-nowrap">⚠️ 必填未完:</span>
+                        <span className="text-red-300 text-xs truncate" title={errors.join('、')}>{errors.join('、')}</span>
                     </div>
                 )}
 
-                <div className="space-y-4">
-                    <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-3">
+                    <div className="grid grid-cols-[1.5fr_1fr] gap-3">
                         <div>
                             <div className={labelClass}>产品名称 *</div>
                             <input
                                 type="text"
                                 value={form.name}
                                 onChange={(e) => setField('name', e.target.value)}
-                                placeholder="例: 硅胶手机壳"
+                                placeholder="产品名称"
                                 className={`${inputClass} ${errors.includes('产品名称') ? 'border-red-500' : ''}`}
                             />
                         </div>
@@ -74,25 +114,38 @@ export const ProductForm: React.FC<ProductFormProps> = ({
                                 type="text"
                                 value={form.sku}
                                 onChange={(e) => setField('sku', e.target.value)}
-                                placeholder="例: SJK-001"
+                                placeholder="SKU"
                                 className={inputClass}
                             />
                         </div>
                     </div>
 
-                    <div>
-                        <div className={labelClass}>ASIN (可选)</div>
-                        <input
-                            type="text"
-                            value={form.asin}
-                            onChange={(e) => setField('asin', e.target.value)}
-                            placeholder="B0XXXXXXXXX"
-                            className={inputClass}
-                        />
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <div className={labelClass}>ASIN (可选)</div>
+                            <input
+                                type="text"
+                                value={form.asin}
+                                onChange={(e) => setField('asin', e.target.value)}
+                                placeholder="B0..."
+                                className={inputClass}
+                            />
+                        </div>
+                        <div>
+                            <div className={labelClass}>产品类目 (影响FBA) *</div>
+                            <select
+                                value={form.category}
+                                onChange={(e) => setField('category', e.target.value as 'standard' | 'apparel')}
+                                className={inputClass}
+                            >
+                                <option value="standard">标准 (Standard)</option>
+                                <option value="apparel">服装 (Apparel)</option>
+                            </select>
+                        </div>
                     </div>
 
-                    <div className="border-t border-[#27272a] pt-4">
-                        <div className="text-sm font-bold text-zinc-400 mb-3">📐 包装规格 *</div>
+                    <div className="pt-2">
+                        <div className="text-[10px] text-zinc-500 mb-1.5">单品规格</div>
                         <div className="grid grid-cols-4 gap-3">
                             <div>
                                 <div className={labelClass}>长 (cm)</div>
@@ -137,6 +190,143 @@ export const ProductForm: React.FC<ProductFormProps> = ({
                         </div>
                     </div>
 
+                    {/* 整箱规格 */}
+                    <div className="pt-2">
+                        <div className="text-[10px] text-zinc-500 mb-1.5">整箱规格 (头程计算)</div>
+                        <div className="grid grid-cols-4 gap-3">
+                            <div>
+                                <div className={labelClass}>箱长 (cm)</div>
+                                <input
+                                    type="number"
+                                    value={form.boxLength || ''}
+                                    onChange={(e) => setField('boxLength', parseFloat(e.target.value) || 0)}
+                                    placeholder="0"
+                                    className={inputClass}
+                                />
+                            </div>
+                            <div>
+                                <div className={labelClass}>箱宽 (cm)</div>
+                                <input
+                                    type="number"
+                                    value={form.boxWidth || ''}
+                                    onChange={(e) => setField('boxWidth', parseFloat(e.target.value) || 0)}
+                                    placeholder="0"
+                                    className={inputClass}
+                                />
+                            </div>
+                            <div>
+                                <div className={labelClass}>箱高 (cm)</div>
+                                <input
+                                    type="number"
+                                    value={form.boxHeight || ''}
+                                    onChange={(e) => setField('boxHeight', parseFloat(e.target.value) || 0)}
+                                    placeholder="0"
+                                    className={inputClass}
+                                />
+                            </div>
+                            <div>
+                                <div className={labelClass}>整箱毛重 (kg)</div>
+                                <input
+                                    type="number"
+                                    value={form.boxWeight || ''}
+                                    onChange={(e) => setField('boxWeight', parseFloat(e.target.value) || 0)}
+                                    placeholder="0"
+                                    className={inputClass}
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* FBA Fee Config Panel */}
+                    <div className="bg-[#0f0f11] rounded-lg p-2.5 border border-[#27272a]">
+                        <div
+                            className="flex items-center justify-between cursor-pointer"
+                            onClick={() => setShowFbaDetails(!showFbaDetails)}
+                        >
+                            <div className="flex items-center gap-1.5">
+                                <span className="text-[11px] font-bold text-zinc-400">FBA 费用 (2026)</span>
+                                {allFees && (
+                                    <span className="text-[9px] text-zinc-500 border border-zinc-700 rounded px-1 py-0.5">
+                                        {getTierLabel(allFees.tier)}
+                                    </span>
+                                )}
+                                <span className="text-[9px] text-zinc-500 border border-zinc-700 rounded px-1 py-0.5">
+                                    {form.category === 'apparel' ? '服装' : '标准'}
+                                </span>
+                            </div>
+                            <span className="text-zinc-500 text-[10px]">{showFbaDetails ? '▲' : '▼'}</span>
+                        </div>
+
+                        {/* Core FBA Shipping Fee - 手动优先 */}
+                        <div className="grid grid-cols-2 gap-2 mt-2">
+                            <div className="flex items-center justify-between bg-[#18181b] border border-[#27272a] rounded px-2 py-1.5">
+                                <span className="text-[10px] text-zinc-500">系统</span>
+                                <span className="text-xs text-zinc-400 font-mono">${systemFbaFee.toFixed(2)}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 bg-[#18181b] border border-[#27272a] rounded px-2 py-1.5">
+                                <span className="text-[10px] text-zinc-500">手动</span>
+                                <input
+                                    type="number"
+                                    step="0.01"
+                                    value={form.fbaFeeManual || ''}
+                                    onChange={(e) => setField('fbaFeeManual', parseFloat(e.target.value) || 0)}
+                                    placeholder="-"
+                                    className="bg-transparent border-none text-xs text-orange-400 font-bold font-mono text-right flex-1 focus:ring-0 p-0 w-12 placeholder:text-zinc-600"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Expanded Fee Details */}
+                        {showFbaDetails && allFees && (
+                            <div className="mt-2 space-y-2">
+                                {/* Config Row */}
+                                <div className="grid grid-cols-3 gap-1.5">
+                                    <select
+                                        value={form.inboundPlacementMode || 'optimized'}
+                                        onChange={(e) => setField('inboundPlacementMode', e.target.value as 'minimal' | 'partial' | 'optimized')}
+                                        className="bg-[#18181b] border border-[#27272a] text-[10px] rounded px-1.5 py-1 text-zinc-300"
+                                    >
+                                        <option value="optimized">优化配送</option>
+                                        <option value="minimal">最少配送</option>
+                                        <option value="partial">部分配送</option>
+                                    </select>
+                                    <select
+                                        value={form.defaultStorageMonth || 'jan_sep'}
+                                        onChange={(e) => setField('defaultStorageMonth', e.target.value as 'jan_sep' | 'oct_dec')}
+                                        className="bg-[#18181b] border border-[#27272a] text-[10px] rounded px-1.5 py-1 text-zinc-300"
+                                    >
+                                        <option value="jan_sep">仓储 1-9月</option>
+                                        <option value="oct_dec">仓储 10-12月</option>
+                                    </select>
+                                    <input
+                                        type="number"
+                                        value={form.defaultInventoryAge || ''}
+                                        onChange={(e) => setField('defaultInventoryAge', parseInt(e.target.value) || 0)}
+                                        placeholder="库龄"
+                                        className="bg-[#18181b] border border-[#27272a] text-[10px] rounded px-1.5 py-1 text-zinc-300 text-center"
+                                    />
+                                </div>
+
+                                {/* Fee Grid - 2 columns, read-only */}
+                                <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[10px]">
+                                    {[
+                                        { label: '入库配置服务费', val: allFees.inboundPlacementFee },
+                                        { label: '月仓储费', val: allFees.monthlyStorageFee },
+                                        { label: '库龄附加费', val: allFees.agedInventoryFee },
+                                        { label: '移除订单费', val: allFees.removalFee },
+                                        { label: '弃置订单费', val: allFees.disposalFee },
+                                        { label: '退货处理费', val: allFees.returnsProcessingFee },
+                                    ].map(item => (
+                                        <div key={item.label} className="flex items-center justify-between text-zinc-500 py-0.5">
+                                            <span>{item.label}</span>
+                                            <span className="font-mono text-zinc-400">${item.val.toFixed(2)}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
                     <div className="grid grid-cols-3 gap-3">
                         <div>
                             <div className={labelClass}>装箱数 *</div>
@@ -168,8 +358,7 @@ export const ProductForm: React.FC<ProductFormProps> = ({
                                     const val = e.target.value;
                                     onFormChange({
                                         ...form,
-                                        defaultPrice: parseFloat(val) || 0,
-                                        tags: val
+                                        defaultPrice: parseFloat(val) || 0
                                     });
                                 }}
                                 placeholder="0"
@@ -179,60 +368,60 @@ export const ProductForm: React.FC<ProductFormProps> = ({
                     </div>
 
                     <div>
-                        <div className={labelClass}>标签</div>
-                        <div className="flex flex-wrap gap-2 mb-2">
+                        <div className={labelClass}>标签 (选填)</div>
+                        <div className="flex items-center gap-2 flex-wrap bg-white border border-zinc-300 rounded-lg px-3 py-2 min-h-[38px]">
                             {form.tags && form.tags.split(',').map(t => t.trim()).filter(t => t).map((tag, i) => (
                                 <span
                                     key={i}
-                                    className="group flex items-center gap-1 text-sm px-2 py-1 bg-blue-900/50 text-blue-300 rounded cursor-pointer hover:bg-blue-800/50"
+                                    className="flex items-center gap-1 text-xs px-2 py-0.5 bg-blue-100 text-blue-800 rounded cursor-pointer hover:bg-red-100 hover:text-red-700"
                                     onClick={() => {
                                         const tags = form.tags.split(',').map(t => t.trim()).filter(t => t);
                                         tags.splice(i, 1);
                                         setField('tags', tags.join(', '));
                                     }}
                                 >
-                                    {tag}
-                                    <span className="text-blue-400 group-hover:text-red-400">×</span>
+                                    {tag} ×
                                 </span>
                             ))}
-                        </div>
-                        <input
-                            type="text"
-                            placeholder="输入标签后按回车添加..."
-                            className={inputClass}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                    e.preventDefault();
-                                    const input = e.currentTarget;
-                                    const newTag = input.value.trim();
-                                    if (newTag) {
-                                        const existingTags = form.tags ? form.tags.split(',').map(t => t.trim()).filter(t => t) : [];
-                                        if (!existingTags.includes(newTag)) {
-                                            setField('tags', [...existingTags, newTag].join(', '));
+                            <input
+                                type="text"
+                                placeholder={form.tags ? "" : "输入标签按回车..."}
+                                className="text-sm bg-transparent border-none p-0 focus:ring-0 flex-1 min-w-[60px]"
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        const input = e.currentTarget;
+                                        const newTag = input.value.trim();
+                                        if (newTag) {
+                                            const existingTags = form.tags ? form.tags.split(',').map(t => t.trim()).filter(t => t) : [];
+                                            if (!existingTags.includes(newTag)) {
+                                                setField('tags', [...existingTags, newTag].join(', '));
+                                            }
+                                            input.value = '';
                                         }
-                                        input.value = '';
                                     }
-                                }
-                            }}
-                        />
+                                }}
+                            />
+                        </div>
                     </div>
 
                     <div>
                         <div className={labelClass}>备注</div>
-                        <textarea
+                        <input
+                            type="text"
                             value={form.notes}
                             onChange={(e) => setField('notes', e.target.value)}
-                            placeholder="产品备注信息..."
-                            className={inputClass + ' h-20 resize-none'}
+                            placeholder="备注信息..."
+                            className={inputClass}
                         />
                     </div>
                 </div>
 
-                <div className="flex gap-3 mt-6">
-                    <button onClick={onCancel} className="flex-1 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg font-bold">
+                <div className="flex gap-4 mt-8">
+                    <button onClick={onCancel} className="flex-1 py-2.5 bg-zinc-700 hover:bg-zinc-600 rounded-lg font-bold text-sm text-zinc-200">
                         取消
                     </button>
-                    <button onClick={onSubmit} className="flex-1 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg font-bold">
+                    <button onClick={onSubmit} className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-500 rounded-lg font-bold text-sm text-white">
                         {editingId ? '保存修改' : '添加产品'}
                     </button>
                 </div>

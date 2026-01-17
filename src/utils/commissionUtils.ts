@@ -5,10 +5,12 @@
 
 import { r2 } from './formatters';
 
-// ============ 佣金费率参数 ============
+// ============ 佣金费率计算 ============
+
+// Legacy Export (Compatibility - May be unused)
 export interface CommissionConfig {
-    autoComm: boolean;     // 是否使用自动阶梯佣金
-    manualComm: number;    // 手动佣金率 (百分比值，如 15 表示 15%)
+    autoComm: boolean;
+    manualComm: number;
 }
 
 // ============ 退货成本参数 ============
@@ -35,23 +37,30 @@ export interface ReturnCostParams {
  * - $15 <= price <= $20: 10%
  * - price < $15: 5%
  */
-export const getCommRate = (price: number, config: CommissionConfig): number => {
-    if (!config.autoComm) {
-        return config.manualComm / 100;
+export const getCommRate = (price: number, category: 'standard' | 'apparel' = 'standard'): number => {
+    // Apparel Category Tiers (2025)
+    if (category === 'apparel') {
+        if (price > 20) return 0.17;
+        if (price >= 15) return 0.10;
+        return 0.05;
     }
-    if (price > 20) return 0.17;
-    if (price >= 15) return 0.10;
-    return 0.05;
+
+    // Standard Category
+    // Default 15%, but can add logic for other categories later if needed
+    // Standard tiers usually don't have the 5/10% low-price tiers unless "Low-Price FBA" specific, 
+    // but typically referral fee itself is flat 15% for most standard items.
+    return 0.15;
 };
 
 /**
  * 计算佣金金额
  * @param price 售价 (USD)
- * @param config 佣金配置
+ * @param category 产品类目
  * @returns 佣金金额 (USD)
  */
-export const getCommValue = (price: number, config: CommissionConfig): number => {
-    return r2(price * getCommRate(price, config));
+export const getCommValue = (price: number, category: 'standard' | 'apparel' = 'standard'): number => {
+    const raw = price * getCommRate(price, category);
+    return Math.max(0.30, r2(raw));
 };
 
 // ============ 退货成本计算 ============
@@ -82,19 +91,19 @@ export const getReturnCost = (
     params: ReturnCostParams
 ): number => {
     const { retProcFee, retRemFee, fbaFee, prodCostUSD, shippingUSD, returnRate, unsellableRate } = params;
-    
+
     const adminFee = getRefundAdminFee(price, commRate);
-    
+
     // 可售退货损失 = 退货处理费 + 管理费 + FBA费
     const lossSellable = retProcFee + adminFee + fbaFee;
-    
+
     // 不可售退货损失 = 可售损失 + 采购成本 + 头程 + 移除费
     const lossUnsellable = lossSellable + prodCostUSD + shippingUSD + retRemFee;
-    
+
     // 加权平均损失
     const unsellableRatio = unsellableRate / 100;
     const avgLoss = (lossSellable * (1 - unsellableRatio)) + (lossUnsellable * unsellableRatio);
-    
+
     // 乘以退货率得到单位退货成本
     return r2(avgLoss * (returnRate / 100));
 };
@@ -109,21 +118,21 @@ export interface BreakEvenParams extends ReturnCostParams {
 /**
  * 二分法求解盈亏平衡售价
  * @param params 成本参数
- * @param commConfig 佣金配置
+ * @param category 产品类目
  * @returns 盈亏平衡售价 (USD)
  */
 export const findBreakEvenPrice = (
     params: BreakEvenParams,
-    commConfig: CommissionConfig
+    category: 'standard' | 'apparel' = 'standard'
 ): number => {
     const { prodCostUSD, shippingUSD, fbaFee, miscFee, storageFee } = params;
-    
+
     let low = prodCostUSD + shippingUSD + fbaFee; // 绝对下限
     let high = 1000;
 
     for (let i = 0; i < 20; i++) {
         const mid = (low + high) / 2;
-        const rate = getCommRate(mid, commConfig);
+        const rate = getCommRate(mid, category);
         const commVal = mid * rate;
         const retCost = getReturnCost(mid, rate, params);
         const totalCost = prodCostUSD + shippingUSD + miscFee + storageFee + fbaFee + commVal + retCost;

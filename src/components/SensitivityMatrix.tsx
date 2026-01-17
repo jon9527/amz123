@@ -128,7 +128,7 @@ export const SensitivityMatrix: React.FC<SensitivityMatrixProps> = ({
     return (
         <div className="bg-[#0c0c0e] border border-[#27272a] rounded-2xl p-6 shadow-2xl relative overflow-hidden h-full flex flex-col">
             {/* Decorative Line */}
-            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-600 via-cyan-500 to-blue-600 opacity-80"></div>
+
 
             {/* Header */}
             <div className="flex items-center justify-between mb-6 mt-2">

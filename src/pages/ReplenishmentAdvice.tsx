@@ -5,9 +5,12 @@ import { ProfitModelService } from '../services/profitModelService';
 import { useProducts } from '../contexts/ProductContext';
 import { useLogistics } from '../contexts/LogisticsContext';
 
-import { STORAGE_KEYS, replenishmentPlanRepository } from '../repositories';
-import { ReplenishmentBatch, SavedProfitModel, SavedReplenishmentPlan } from '../types';
+import { STORAGE_KEYS } from '../repositories';
+import { ReplenishmentBatch, SavedProfitModel, SavedReplenishmentPlan, ReplenishmentPlanSummary } from '../types';
+import { replenishmentPlanRepository, ReplenishmentPlanRepository } from '../repositories/ReplenishmentPlanRepository';
+
 import NumberStepper from '../components/NumberStepper';
+
 
 
 import {
@@ -79,10 +82,105 @@ const getDefaultState = (): ModuleState => ({
     isFreeMode: false,
 });
 
+// ============ PURE HELPER: COMPUTE SMART BATCHES ============
+const computeSmartBatches = (
+    simStart: string,
+    monthlyDailySales: number[],
+    leadTime: number,
+    safeBuffer: number
+): ReplenishmentBatch[] => {
+    // 辅助函数：获取某天的日销量
+    const getDemandForDay = (dayOffset: number): number => {
+        const date = new Date(simStart);
+        date.setDate(date.getDate() + dayOffset);
+        return monthlyDailySales[date.getMonth()] || 50;
+    };
+
+    // 辅助函数：计算从某天开始，给定数量能卖多少天
+    const simulateSelling = (startDay: number, qty: number): number => {
+        let remainingQty = qty;
+        let day = startDay;
+        // Limit simulation to avoid infinite loops, but enough to cover normal cycles
+        while (remainingQty > 0 && day < 1000) {
+            const dailyDemand = getDemandForDay(day);
+            remainingQty -= dailyDemand;
+            if (remainingQty > 0) {
+                day++;
+            }
+        }
+        return day + 1; // 返回卖完后的下一天
+    };
+
+    // 辅助函数：精确计算30天的跨月需求
+    const getMonthlyQty = (startDay: number): number => {
+        let qty = 0;
+        for (let d = 0; d < 30; d++) {
+            qty += getDemandForDay(startDay + d);
+        }
+        return qty;
+    };
+
+    // 生成6个批次
+    const newBatches: ReplenishmentBatch[] = [];
+    let nextCoverageStart = leadTime; // 真正的下一阶段需求开始日（上一批卖完日）
+
+    for (let i = 0; i < 6; i++) {
+        // 1. 计算这批货的数量
+        const qty = getMonthlyQty(nextCoverageStart);
+
+        // 2. 模拟消费
+        const sellOutDay = simulateSelling(nextCoverageStart, qty);
+
+        // 3. 计算期望到货日
+        const targetArrival = Math.max(leadTime, nextCoverageStart - safeBuffer);
+
+        // 4. 计算 Offset
+        let offset = 0;
+        if (i === 0) {
+            offset = 0;
+        } else {
+            const calcOffset = targetArrival - leadTime;
+            const prevOffset = newBatches[i - 1].offset;
+            offset = Math.max(0, Math.max(prevOffset, Math.floor(calcOffset)));
+        }
+
+        newBatches.push({
+            id: i,
+            name: `批次${i + 1}`,
+            type: 'sea',
+            qty: Math.round(qty),
+            offset: offset,
+            prodDays: 15,
+        });
+
+        nextCoverageStart = sellOutDay;
+    }
+
+    return newBatches;
+};
+
 // ============ COMPONENT ============
 const STORAGE_KEY = STORAGE_KEYS.REPLENISHMENT_STATE;
 
 const ReplenishmentAdvice: React.FC = () => {
+    // ... (Existing state hooks) ...
+
+    // [We need to preserve the lines between component start and handleStrategySelect safely.
+    // However, the tool replaces CONTIGUOUS blocks.
+    // I will split this into MULTIPLE steps or use the "top of file" / "specific function" targeting more carefully.
+    // The user asked to "replace file content". 
+    // I will target handleStrategySelect first, and then autoAlignBatches. 
+    // AND I need to insert the function definition.
+    // The pure function can go BEFORE the component.]
+
+    // Wait, I can't effectively inject code *outside* the component easily without matching a large chunk.
+    // I will insert `computeSmartBatches` before `const ReplenishmentAdvice`.
+    // Then I will replace `handleStrategySelect`.
+    // Then I will replace `autoAlignBatches`.
+    // This requires multiple calls or precise targeting.]
+
+    // Let's use `replace_file_content` to insert the helper function before the component definition.
+
     // ============ STATE ============
     // 当前选中的产品ID
     const [selectedProductId, setSelectedProductId] = useState<string>('');
@@ -91,138 +189,7 @@ const ReplenishmentAdvice: React.FC = () => {
     const { products } = useProducts();
     const { channels } = useLogistics();
 
-    // ============ PERSISTENCE STATE ============
-    const [isSaveDialogOpen, setIsSaveDialogOpen] = useState(false);
-    const [isLoadDrawerOpen, setIsLoadDrawerOpen] = useState(false);
-    const [planName, setPlanName] = useState('');
-    const [savedPlans, setSavedPlans] = useState<SavedReplenishmentPlan[]>([]);
 
-    // Refresh saved plans
-    const refreshSavedPlans = useCallback(() => {
-        if (selectedProductId) {
-            setSavedPlans(replenishmentPlanRepository.getByProductId(selectedProductId));
-        } else {
-            setSavedPlans([]);
-        }
-    }, [selectedProductId]);
-
-    // Open Load Drawer and fetch plans
-    const openLoadDrawer = () => {
-        refreshSavedPlans();
-        setIsLoadDrawerOpen(true);
-    };
-
-    // Save Plan Handler
-    const handleSavePlan = () => {
-        if (!planName.trim() || !selectedProductId || !simResult) return;
-
-        const summary = {
-            totalQty: state.batches.reduce((acc, b) => acc + Math.round(b.qty * (1 + (b.extraPercent || 0) / 100)), 0),
-            totalCost: Math.abs(simResult.minCash),
-            breakevenDate: simResult.breakevenDate,
-            stockoutDays: simResult.totalStockoutDays,
-            minCash: simResult.minCash,
-            finalCash: simResult.finalCash,
-        };
-
-        const newPlan: SavedReplenishmentPlan = {
-            id: `rp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-            productId: selectedProductId,
-            productName: products.find(p => p.id === selectedProductId)?.name || 'Unknown',
-            strategyId: selectedStrategyId,
-            strategyLabel: strategies.find(s => s.id === selectedStrategyId)?.label,
-            name: planName,
-            batches: [...state.batches],
-            monthlyDailySales: [...state.monthlyDailySales],
-            prices: [...state.prices],
-            margins: [...state.margins],
-            simStart: state.simStart,
-            seaChannelId: state.seaChannelId,
-            airChannelId: state.airChannelId,
-            expChannelId: state.expChannelId,
-            summary
-        };
-
-        replenishmentPlanRepository.save(newPlan);
-        setIsSaveDialogOpen(false);
-        setPlanName('');
-
-        // Show feedback
-        const btn = document.getElementById('btn-save-plan');
-        if (btn) {
-            const originalHTML = btn.innerHTML;
-            btn.innerHTML = '<span class="material-symbols-outlined text-[18px]">check</span> 已保存';
-            btn.classList.add('bg-green-600', 'hover:bg-green-500');
-            setTimeout(() => {
-                btn.innerHTML = originalHTML;
-                btn.classList.remove('bg-green-600', 'hover:bg-green-500');
-            }, 2000);
-        }
-    };
-
-    // Load Plan Handler
-    const handleLoadPlan = (plan: SavedReplenishmentPlan) => {
-        if (!plan) return;
-
-        // Restore State
-        const newState = {
-            ...state,
-            batches: plan.batches,
-            monthlyDailySales: plan.monthlyDailySales,
-            prices: plan.prices,
-            margins: plan.margins,
-            simStart: plan.simStart,
-            seaChannelId: plan.seaChannelId || state.seaChannelId,
-            airChannelId: plan.airChannelId || state.airChannelId,
-            expChannelId: plan.expChannelId || state.expChannelId,
-        };
-        setState(newState);
-
-        if (plan.strategyId) {
-            setSelectedStrategyId(plan.strategyId);
-            lastLoadedStrategyId.current = plan.strategyId;
-        } else {
-            lastLoadedStrategyId.current = null; // Clear if unknown source
-        }
-
-        // Also ensure product ID matches
-        if (plan.productId && plan.productId !== selectedProductId) {
-            handleProductSelect(plan.productId);
-            // Note: handleProductSelect might reset some state, but here we are overriding it.
-            // Ideally we should switch product, wait for it to load, THEN set state.
-            // But in this simple app, state is controlled here. 
-            // However, strategies list depends on selectedProductId.
-            // If we change product ID, we need to ensure strategies list updates.
-            // For now, let's assume the user picks from the right list or the effect hooks handle it.
-        }
-
-        // Update baseline for smart save
-        // CRITICAL: Must match the structure in handleSyncToStrategy EXACTLY, including value resolution
-        const savedSnapshot = {
-            batches: newState.batches,
-            monthlyDailySales: newState.monthlyDailySales,
-            simStart: newState.simStart,
-            prices: newState.prices,
-            margins: newState.margins,
-            seaChannelId: newState.seaChannelId,
-            airChannelId: newState.airChannelId,
-            expChannelId: newState.expChannelId,
-        };
-        lastSavedState.current = JSON.stringify(savedSnapshot);
-
-        setIsLoadDrawerOpen(false);
-    };
-
-    // Delete Plan Handler
-    const handleDeletePlan = (id: string, e: React.MouseEvent) => {
-        e.stopPropagation();
-        if (confirm('确定要删除这个补货方案吗？')) {
-            replenishmentPlanRepository.delete(id);
-            refreshSavedPlans();
-        }
-    };
 
     // 从localStorage加载初始状态
     const getInitialState = (): ModuleState => {
@@ -371,28 +338,60 @@ const ReplenishmentAdvice: React.FC = () => {
             // 所有月份填充相同的售价和净利润%
             const marginPct = targetData.margin * 100; // 转换为百分比
 
-            setState(prev => ({
-                ...prev,
-                prices: Array(12).fill(targetData.price),
-                margins: Array(12).fill(parseFloat(marginPct.toFixed(1))),
-                // 保存回款计算所需的值
-                unitCost: strategy.results.costProdUSD > 0 ? strategy.results.costProdUSD : prev.unitCost,
-                sellCost: targetData.sellCost || 0, // 总成本(无广)
-                shippingUSD: strategy.inputs.shippingUSD || 0, // 头程USD
-                profitUSD: targetData.profit || 0, // 净利润USD
-                exchRate: strategy.inputs.exchangeRate || prev.exchRate, // 使用策略的汇率
+            setState(prev => {
+                // 1. Prepare Data for Smart Generation
+                const finalSales = strategy.replenishment?.monthlyDailySales || [50, 55, 60, 55, 50, 45, 40, 40, 50, 60, 80, 100];
+                const finalSeaChannelId = strategy.replenishment?.seaChannelId || prev.seaChannelId;
 
-                // Load replenishment data if it exists in the strategy, otherwise reset to defaults
-                batches: strategy.replenishment?.batches || [
-                    { id: 0, name: '批次1', type: 'sea', qty: 1000, offset: 0, prodDays: 15 },
-                    { id: 1, name: '批次2', type: 'sea', qty: 1000, offset: 30, prodDays: 15 },
-                ],
-                monthlyDailySales: strategy.replenishment?.monthlyDailySales || [50, 55, 60, 55, 50, 45, 40, 40, 50, 60, 80, 100],
-                // Also sync logistics IDs if present
-                seaChannelId: strategy.replenishment?.seaChannelId || prev.seaChannelId,
-                airChannelId: strategy.replenishment?.airChannelId || prev.airChannelId,
-                expChannelId: strategy.replenishment?.expChannelId || prev.expChannelId,
-            }));
+                // Try to get accurate sea days from channel if available
+                const seaChan = channels.find(c => c.id === finalSeaChannelId);
+                const finalSeaDays = seaChan ? seaChan.deliveryDays : prev.seaDays;
+
+                // 2. Determine Batches:
+                // Logic:
+                // A. If saved batches exist AND they are NOT the "Lazy Default" (legacy 2-batch placeholder), use them.
+                // B. If no batches or they look like legacy defaults, generate Smart Batches.
+
+                let finalBatches = strategy.replenishment?.batches;
+                let useSmartDefault = false;
+
+                if (!finalBatches || finalBatches.length === 0) {
+                    useSmartDefault = true;
+                } else if (finalBatches.length === 2 && finalBatches[0].qty === 1000 && finalBatches[1].qty === 1000 && finalBatches[0].offset === 0 && finalBatches[1].offset === 30) {
+                    // DETECT LEGACY DEFAULT: If it looks exactly like the old hardcoded default, ignore it and upgrade to smart batches.
+                    // (Old Default: 2 batches, 1000 qty each, offset 0/30)
+                    useSmartDefault = true;
+                }
+
+                if (useSmartDefault) {
+                    finalBatches = computeSmartBatches(
+                        prev.simStart,
+                        finalSales,
+                        (prev.prodDays || 15) + finalSeaDays,
+                        prev.safetyDays || 7
+                    );
+                }
+
+                return {
+                    ...prev,
+                    prices: Array(12).fill(targetData.price),
+                    margins: Array(12).fill(parseFloat(marginPct.toFixed(1))),
+                    // 保存回款计算所需的值
+                    unitCost: strategy.results.costProdUSD > 0 ? strategy.results.costProdUSD : prev.unitCost,
+                    sellCost: targetData.sellCost || 0, // 总成本(无广)
+                    shippingUSD: strategy.inputs.shippingUSD || 0, // 头程USD
+                    profitUSD: targetData.profit || 0, // 净利润USD
+                    exchRate: strategy.inputs.exchangeRate || prev.exchRate, // 使用策略的汇率
+
+                    // Replenishment Data
+                    batches: finalBatches!, // finalBatches is assigned above
+                    monthlyDailySales: finalSales,
+                    // Also sync logistics IDs if present
+                    seaChannelId: finalSeaChannelId,
+                    airChannelId: strategy.replenishment?.airChannelId || prev.airChannelId,
+                    expChannelId: strategy.replenishment?.expChannelId || prev.expChannelId,
+                };
+            });
         }
     };
 
@@ -485,6 +484,7 @@ const ReplenishmentAdvice: React.FC = () => {
     const [selectedEvent, setSelectedEvent] = useState<{ event: FinancialEvent; x: number; y: number } | null>(null);
     const [hiddenEventTypes, setHiddenEventTypes] = useState<Set<string>>(new Set());
     const [hiddenChartLines, setHiddenChartLines] = useState<Set<string>>(new Set());
+
 
     const ganttCanvasRef = useRef<HTMLCanvasElement>(null);
     const cashCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -594,6 +594,21 @@ const ReplenishmentAdvice: React.FC = () => {
         const currentStrategy = strategies.find(s => s.id === selectedStrategyId);
         if (!currentStrategy) return;
 
+        // 计算财务核心指标（与面板显示一致）
+        const duration = simResult.xMax || 365;
+        const roi = simResult.minCash !== 0 ? Math.abs(simResult.totalNetProfit / simResult.minCash) : 0;
+        const annualRoi = (roi / duration) * 365;
+
+        // 库存周转天数
+        const sumInv = simResult.invPoints.reduce((acc, p) => acc + p.y, 0);
+        const avgInv = duration > 0 ? sumInv / duration : 0;
+        const invTurnoverRatio = avgInv > 0 ? simResult.totalSoldQty / avgInv : 0;
+        const turnoverDays = invTurnoverRatio > 0 ? 365 / invTurnoverRatio : 0;
+
+        // 资金周转率 & 净利率
+        const fundTurnoverRatio = simResult.minCash !== 0 ? (simResult.totalGMV / Math.abs(simResult.minCash)) : 0;
+        const netMargin = simResult.totalGMV !== 0 ? (simResult.totalNetProfit / simResult.totalGMV) : 0;
+
         const summary = {
             totalQty: state.batches.reduce((acc, b) => acc + Math.round(b.qty * (1 + (b.extraPercent || 0) / 100)), 0),
             totalCost: Math.abs(simResult.minCash),
@@ -601,6 +616,13 @@ const ReplenishmentAdvice: React.FC = () => {
             stockoutDays: simResult.totalStockoutDays,
             minCash: simResult.minCash,
             finalCash: simResult.finalCash,
+            // 财务核心指标
+            roi,
+            annualRoi,
+            turnoverRatio: fundTurnoverRatio,
+            netMargin,
+            turnoverDays: Math.round(turnoverDays),
+            profitDate: simResult.profBeDateStr,
         };
 
         const currentStateSnapshot = {
@@ -646,37 +668,11 @@ const ReplenishmentAdvice: React.FC = () => {
         };
         ProfitModelService.update(selectedStrategyId, updates);
 
-        // 2. Smart Save Snapshot
-        let feedbackMsg = "策略已同步";
-        // If state has changed significantly since load/save
-        if (currentStateStr !== lastSavedState.current) {
-            // Create auto-snapshot
-            const timestamp = new Date().toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(/\//g, '-');
-            const autoName = `${currentStrategy.label || '策略'} @ ${timestamp}`;
+        // 2. Feedback only (No auto-snapshot)
+        const feedbackMsg = "策略已同步";
 
-            const newPlan: SavedReplenishmentPlan = {
-                id: crypto.randomUUID(),
-                productId: selectedProductId,
-                productName: products.find(p => p.id === selectedProductId)?.name || 'Unknown Product',
-                strategyId: selectedStrategyId,
-                strategyLabel: `${currentStrategy.inputs.actualPrice} - ${((currentStrategy.results.planB?.margin || 0) * 100).toFixed(0)}%`,
-                name: autoName,
-                createdAt: Date.now(),
-                updatedAt: Date.now(),
-                ...currentStateSnapshot,
-                summary
-            };
-
-            replenishmentPlanRepository.save(newPlan);
-
-            // Update reference
-            lastSavedState.current = currentStateStr;
-            setSavedPlans(prev => [newPlan, ...prev]); // update local list
-
-            feedbackMsg = "策略已同步 & 新方案已归档";
-        } else {
-            feedbackMsg = "策略已同步 (无变更)";
-        }
+        // Update reference to avoid repeated saves if we switch logic later
+        lastSavedState.current = currentStateStr;
 
         // Visual feedback
         const btn = document.getElementById('btn-sync-strategy');
@@ -693,6 +689,74 @@ const ReplenishmentAdvice: React.FC = () => {
         }
     }, [selectedProductId, selectedStrategyId, simResult, state, strategies, products]);
 
+
+    // ============ SAVE AS NEW PLAN HANDLER ============
+    const handleSaveAsNewPlan = useCallback(() => {
+        if (!selectedProductId || !selectedStrategyId || !simResult) return;
+
+        // 获取当前策略以便保存快照信息
+        const currentStrategy = strategies.find(s => s.id === selectedStrategyId);
+
+        const planName = prompt("请输入新方案名称", `方案 ${new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`);
+        if (!planName) return;
+
+        // 计算财务核心指标（逻辑与 handleSyncToStrategy 复用）
+        const duration = simResult.xMax || 365;
+        const roi = simResult.minCash !== 0 ? Math.abs(simResult.totalNetProfit / simResult.minCash) : 0;
+        const annualRoi = (roi / duration) * 365;
+
+        const sumInv = simResult.invPoints.reduce((acc, p) => acc + p.y, 0);
+        const avgInv = duration > 0 ? sumInv / duration : 0;
+        const invTurnoverRatio = avgInv > 0 ? simResult.totalSoldQty / avgInv : 0;
+        const turnoverDays = invTurnoverRatio > 0 ? 365 / invTurnoverRatio : 0;
+
+        const fundTurnoverRatio = simResult.minCash !== 0 ? (simResult.totalGMV / Math.abs(simResult.minCash)) : 0;
+        const netMargin = simResult.totalGMV !== 0 ? (simResult.totalNetProfit / simResult.totalGMV) : 0;
+
+        const summary: ReplenishmentPlanSummary = {
+            totalQty: state.batches.reduce((acc, b) => acc + Math.round(b.qty * (1 + (b.extraPercent || 0) / 100)), 0),
+            totalCost: Math.abs(simResult.minCash),
+            breakevenDate: simResult.breakevenDate,
+            stockoutDays: simResult.totalStockoutDays,
+            minCash: simResult.minCash,
+            finalCash: simResult.finalCash,
+            roi,
+            annualRoi,
+            turnoverRatio: fundTurnoverRatio,
+            netMargin,
+            turnoverDays: Math.round(turnoverDays),
+            profitDate: simResult.profBeDateStr,
+        };
+
+        const newPlan: SavedReplenishmentPlan = {
+            id: ReplenishmentPlanRepository.generateId(),
+            productId: selectedProductId,
+            productName: currentStrategy?.productName || '未命名产品',
+            strategyId: selectedStrategyId,
+            strategyLabel: currentStrategy?.label,
+            name: planName,
+
+            // 核心数据 (扁平结构)
+            batches: [...state.batches],
+            monthlyDailySales: [...state.monthlyDailySales],
+            prices: [...state.prices],
+            margins: [...state.margins],
+            simStart: state.simStart,
+
+            // 物流配置
+            seaChannelId: state.seaChannelId,
+            airChannelId: state.airChannelId,
+            expChannelId: state.expChannelId,
+
+            summary,
+
+            createdAt: Date.now(),
+            updatedAt: Date.now()
+        };
+
+        replenishmentPlanRepository.save(newPlan);
+        alert("新方案已保存，可在'补货方案对比'中查看");
+    }, [selectedProductId, selectedStrategyId, simResult, state, strategies]);
 
     // ============ CHARTS ============
     // 1. Cleanup Effect - Runs only on Unmount
@@ -802,6 +866,35 @@ const ReplenishmentAdvice: React.FC = () => {
             if (chart.options.scales?.x) {
                 chart.options.scales.x = { ...commonXScale, position: 'bottom', grid: { color: '#3f3f46', lineWidth: 1 } };
             }
+
+            // Fix Stale Closure for Tooltip
+            if (chart.options.plugins?.tooltip) {
+                chart.options.plugins.tooltip.callbacks = {
+                    title: (items: any) => {
+                        if (items.length > 0) {
+                            const batchIdx = items[0].raw?.batchIdx;
+                            if (batchIdx !== undefined) {
+                                const b = state.batches[batchIdx];
+                                if (b) {
+                                    const finalQty = Math.round(b.qty * (1 + (b.extraPercent || 0) / 100));
+                                    return `批次${batchIdx + 1} (${finalQty}件)`;
+                                }
+                            }
+                        }
+                        return '';
+                    },
+                    label: (ctx: any) => {
+                        const start = fmtDateAxis(ctx.raw.x[0]);
+                        const end = fmtDateAxis(ctx.raw.x[1]);
+                        const d = ctx.raw;
+                        if (ctx.dataset.label === '生产') return [`🗓️ ${start} - ${end}`, `💰 成本: $${Math.round(d.cost).toLocaleString()}`];
+                        if (ctx.dataset.label === '运输') return [`🗓️ ${start} - ${end}`, `🚚 运费: $${Math.round(d.freight).toLocaleString()}`];
+                        if (ctx.dataset.label === '销售') return [`🗓️ ${start} - ${end}`, `💵 回款: $${Math.round(d.revenue).toLocaleString()}`];
+                        return `${ctx.dataset.label}: ${start} - ${end}`;
+                    },
+                };
+            }
+
             chart.update('none');
         } else if (ganttCanvasRef.current) {
             // Create New
@@ -932,6 +1025,28 @@ const ReplenishmentAdvice: React.FC = () => {
             if (chart.data.datasets[5]) {
                 chart.data.datasets[5].data = safetyPoints;
                 chart.data.datasets[5].hidden = hiddenChartLines.has('inventory'); // Hide with inventory
+            }
+
+            // Fix Stale Closure for Tooltip
+            if (chart.options.plugins?.tooltip) {
+                chart.options.plugins.tooltip.callbacks = {
+                    title: (items: any) => {
+                        if (items.length > 0) {
+                            const day = items[0].raw.x;
+                            return `📅 第${day}天 (${fmtDateAxis(day)})`;
+                        }
+                        return '';
+                    },
+                    label: (c: any) => {
+                        if (c.dataset.label === '库存') return `📦 库存: ${Math.round(c.raw.y).toLocaleString()} 件`;
+                        if (c.dataset.label === '安全库存') return `⚠️ 安全: ${Math.round(c.raw.y).toLocaleString()} 件`;
+                        if (c.dataset.label === '资金') return `💸 资金: $${Math.round(c.raw.y).toLocaleString()}`;
+                        if (c.dataset.label === '累计利润') return `💰 利润: $${Math.round(c.raw.y).toLocaleString()}`;
+                        if (c.dataset.label === '回本点') return `🎯 回本点: ${simResult.breakevenDate}`;
+                        if (c.dataset.label === '盈利点') return `🎉 盈利点: ${simResult.profBeDateStr}`;
+                        return '';
+                    },
+                };
             }
 
             // 更新回本点和盈利点 scatter datasets - 如果对应线隐藏则也隐藏
@@ -1349,78 +1464,7 @@ const ReplenishmentAdvice: React.FC = () => {
             const safeBuffer = safetyDays || 7;
             const leadTime = 15 + seaDays; // 生产15天 + 海运
 
-            // 辅助函数：获取某天的日销量
-            const getDemandForDay = (dayOffset: number): number => {
-                const date = new Date(simStart);
-                date.setDate(date.getDate() + dayOffset);
-                return monthlyDailySales[date.getMonth()] || 50;
-            };
-
-            // 辅助函数：计算从某天开始，给定数量能卖多少天
-            const simulateSelling = (startDay: number, qty: number): number => {
-                let remainingQty = qty;
-                let day = startDay;
-                while (remainingQty > 0 && day < 1000) {
-                    const dailyDemand = getDemandForDay(day);
-                    remainingQty -= dailyDemand;
-                    if (remainingQty > 0) {
-                        day++;
-                    }
-                }
-                return day + 1; // 返回卖完后的下一天
-            };
-
-            // 辅助函数：精确计算30天的跨月需求
-            const getMonthlyQty = (startDay: number): number => {
-                let qty = 0;
-                for (let d = 0; d < 30; d++) {
-                    qty += getDemandForDay(startDay + d);
-                }
-                return qty;
-            };
-
-            // 生成6个批次
-            const newBatches: ReplenishmentBatch[] = [];
-            let nextCoverageStart = leadTime; // 真正的下一阶段需求开始日（上一批卖完日）
-
-            for (let i = 0; i < 6; i++) {
-                // 1. 计算这批货的数量（基于真正的需求开始日 nextCoverageStart）
-                // 这样能保证这批货是用来覆盖 Day X 到 Day X+30 的需求
-                const qty = getMonthlyQty(nextCoverageStart);
-
-                // 2. 模拟消费，计算这批货能撑到哪一天
-                // 从 nextCoverageStart 开始模拟，因为之前的需求由上一批覆盖（或由上一批的安全库存缓冲期过渡）
-                const sellOutDay = simulateSelling(nextCoverageStart, qty);
-
-                // 3. 计算期望到货日（Arrival Day）
-                // 为了建立安全库存，我们希望它在需求开始前 N 天就到货
-                const targetArrival = Math.max(leadTime, nextCoverageStart - safeBuffer);
-
-                // 4. 计算 Offset
-                let offset = 0;
-                if (i === 0) {
-                    offset = 0; // 第一批无法提前，只能从 leadTime 开始
-                    // 如果第一批是0 offset，它将在 leadTime 到货。
-                    // 它的 quantity 也是从 leadTime 开始算的。
-                    // 这里的 nextCoverageStart 也是 leadTime。
-                } else {
-                    const calcOffset = targetArrival - leadTime;
-                    const prevOffset = newBatches[i - 1].offset;
-                    offset = Math.max(0, Math.max(prevOffset, Math.floor(calcOffset)));
-                }
-
-                newBatches.push({
-                    id: i,
-                    name: `批次${i + 1}`,
-                    type: 'sea',
-                    qty: Math.round(qty),
-                    offset: offset,
-                    prodDays: 15,
-                });
-
-                // 更新下一次的覆盖起始日
-                nextCoverageStart = sellOutDay;
-            }
+            const newBatches = computeSmartBatches(simStart, monthlyDailySales, leadTime, safeBuffer);
 
             return { ...newState, batches: newBatches };
         });
@@ -1429,7 +1473,7 @@ const ReplenishmentAdvice: React.FC = () => {
     // ============ UI COMPONENTS ============
     const tabs = [
         { key: 'spec', label: '📦 物流/财务', icon: 'package_2' },
-        { key: 'pricing', label: '💰 变价/回款', icon: 'attach_money' },
+        { key: 'pricing', label: '💰 销量估算', icon: 'attach_money' },
         { key: 'batch', label: '📝 补货批次', icon: 'local_shipping' },
     ] as const;
 
@@ -1448,7 +1492,7 @@ const ReplenishmentAdvice: React.FC = () => {
                             <button
                                 key={t.key}
                                 onClick={() => setActiveTab(t.key)}
-                                className={`py-1.5 px-1 text-[10px] font-bold rounded-lg transition-all text-center ${activeTab === t.key
+                                className={`py-1.5 px-1 text-sm font-bold rounded-lg transition-all text-center ${activeTab === t.key
                                     ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
                                     : 'text-zinc-500 hover:text-zinc-300 hover:bg-[#18181b] border border-transparent'
                                     }`}
@@ -2088,7 +2132,7 @@ const ReplenishmentAdvice: React.FC = () => {
 
                                             {/* Body */}
                                             <div className="p-1.5 flex flex-col justify-center flex-1 gap-1 min-h-0">
-                                                <div className="grid grid-cols-[36px_1fr_1.3fr_1fr] gap-1 items-center shrink-0">
+                                                <div className="grid grid-cols-[36px_0.8fr_1.5fr_0.8fr] gap-1 items-center shrink-0">
                                                     <select value={b.type} onChange={(e) => updateBatch(b.id, 'type', e.target.value)} className="bg-zinc-900 border border-zinc-700 rounded h-[22px] text-[10px] text-white font-bold cursor-pointer hover:border-zinc-500 transition-colors text-center w-full appearance-none leading-none">
                                                         <option value="sea">🚢</option>
                                                         <option value="air">✈️</option>
@@ -2096,12 +2140,20 @@ const ReplenishmentAdvice: React.FC = () => {
                                                     </select>
                                                     <div className="relative">
                                                         <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[9px] text-zinc-500 font-bold z-10 pointer-events-none scale-90">生产</span>
-                                                        <NumberStepper value={b.prodDays ?? 15} onChange={(v) => updateBatch(b.id, 'prodDays', v)} className="w-full h-[22px] bg-zinc-900 border border-zinc-700 rounded text-[10px] pl-7 text-white focus:border-blue-500/50 transition-colors leading-none" />
-                                                        <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[9px] text-zinc-600 pointer-events-none scale-90">天</span>
+                                                        <NumberStepper value={b.prodDays ?? 15} onChange={(v) => updateBatch(b.id, 'prodDays', v)} className="w-full h-[22px] bg-zinc-900 border border-zinc-700 rounded text-[10px] pl-6 text-white focus:border-blue-500/50 transition-colors leading-none" />
                                                     </div>
-                                                    <div className="relative">
-                                                        <NumberStepper value={b.qty} onChange={(v) => updateBatch(b.id, 'qty', v)} className="w-full h-[22px] bg-zinc-900 border border-zinc-700 rounded text-[10px] font-bold text-center text-white focus:border-blue-500/50 transition-colors leading-none" />
-                                                        <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[9px] text-zinc-600 pointer-events-none scale-90">pcs</span>
+                                                    <div className="relative flex items-center bg-zinc-900 border border-zinc-700 rounded h-[22px] overflow-hidden">
+                                                        <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[9px] text-zinc-500 font-bold z-10 pointer-events-none scale-90">基础</span>
+                                                        <NumberStepper
+                                                            value={b.qty}
+                                                            onChange={(v) => updateBatch(b.id, 'qty', v)}
+                                                            className="w-1/2 h-full bg-transparent border-none text-[10px] font-bold text-right text-zinc-400 focus:ring-0 leading-none pr-1 pl-6"
+                                                        />
+                                                        <div className="w-[1px] h-3 bg-zinc-700 mx-0.5"></div>
+                                                        <span className="flex-1 text-[10px] font-bold text-blue-400 leading-none pl-3 w-1/2 text-left">
+                                                            {Math.round(b.qty * (1 + (b.extraPercent || 0) / 100))}
+                                                        </span>
+                                                        <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[9px] text-zinc-500 font-bold pointer-events-none scale-90">实际</span>
                                                     </div>
                                                     <div className="relative">
                                                         <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[9px] text-zinc-500 font-bold z-10 pointer-events-none scale-90">T+</span>
@@ -2165,11 +2217,11 @@ const ReplenishmentAdvice: React.FC = () => {
                     <div className="flex-1 min-w-0"></div>
 
                     {/* 产品选择器 */}
-                    <div className="relative shrink-0">
+                    <div className="relative shrink-0 flex items-center">
                         <select
                             value={selectedProductId || ''}
                             onChange={(e) => handleProductSelect(e.target.value)}
-                            className="appearance-none bg-[#18181b] hover:bg-[#1f1f23] border border-[#27272a] hover:border-zinc-600 text-zinc-300 text-xs font-bold py-1.5 pl-2 pr-6 rounded-lg transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/50 w-[120px]"
+                            className="appearance-none bg-[#18181b] hover:bg-[#1f1f23] border border-[#27272a] hover:border-zinc-600 text-zinc-300 text-xs font-bold pl-2 pr-6 rounded-lg transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/50 w-[180px] h-8 flex items-center"
                         >
                             <option value="">📦 选择产品</option>
                             {products
@@ -2178,20 +2230,20 @@ const ReplenishmentAdvice: React.FC = () => {
                                     const models = ProfitModelService.getAll();
                                     return models.some(m => m.productId === p.id);
                                 })
-                                .map(p => (<option key={p.id} value={p.id}>{p.name.slice(0, 10)}</option>))}
+                                .map(p => (<option key={p.id} value={p.id}>{p.name.slice(0, 20)}</option>))}
                         </select>
-                        <div className="absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none">
+                        <div className="absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none flex items-center">
                             <span className="material-symbols-outlined text-amber-500/50 text-[16px]">expand_more</span>
                         </div>
                     </div>
 
                     {/* 策略选择器 */}
-                    <div className="relative shrink-0">
+                    <div className="relative shrink-0 flex items-center">
                         <select
                             value={selectedStrategyId}
                             onChange={(e) => handleStrategySelect(e.target.value)}
                             disabled={strategies.length === 0}
-                            className={`appearance-none border text-xs font-bold py-1.5 pl-2 pr-6 rounded-lg transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-500/50 w-[140px] ${strategies.length > 0
+                            className={`appearance-none border text-xs font-bold pl-2 pr-6 rounded-lg transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-500/50 w-[130px] h-8 flex items-center ${strategies.length > 0
                                 ? 'bg-amber-900/30 hover:bg-amber-900/50 border-amber-500/30 hover:border-amber-500/50 text-amber-100'
                                 : 'bg-[#18181b] border-[#27272a] text-zinc-500 cursor-not-allowed'
                                 }`}
@@ -2209,142 +2261,54 @@ const ReplenishmentAdvice: React.FC = () => {
                     </div>
 
                     {/* 保存策略按钮 */}
-                    <button
-                        id="btn-sync-strategy"
-                        onClick={handleSyncToStrategy}
-                        disabled={!selectedStrategyId || !simResult}
-                        className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-800 disabled:text-zinc-600 text-white text-xs font-bold rounded-lg transition-all shadow-lg shrink-0 whitespace-nowrap"
-                        title="同步到策略，如有变更自动保存快照"
-                    >
-                        <span className="material-symbols-outlined text-[16px]">save_as</span>
-                        保存策略
-                    </button>
-
-                    {/* 方案管理按钮 */}
-                    <div className="relative shrink-0 ml-2 border-l border-zinc-800 pl-2">
+                    <div className="flex items-center gap-2 px-2 shrink-0">
                         <button
-                            onClick={() => setIsLoadDrawerOpen(!isLoadDrawerOpen)}
-                            className={`flex items-center gap-1 px-2 py-1.5 rounded-lg border text-xs font-bold transition-all whitespace-nowrap ${isLoadDrawerOpen
-                                ? 'bg-zinc-700 text-white border-zinc-500'
-                                : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white border-transparent'}`}
-                            title="加载已有方案"
+                            onClick={handleSaveAsNewPlan}
+                            className="flex items-center gap-1 px-3 h-8 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 hover:text-blue-300 border border-blue-500/30 text-xs font-bold rounded-lg transition-all shadow-lg shrink-0"
+                            title="将当前配置另存为一个新的对比方案，不覆盖原策略"
                         >
-                            <span className="material-symbols-outlined text-[16px]">history</span>
-                            加载
+                            <span className="material-symbols-outlined text-[16px]">add_circle</span>
+                            另存为新方案
                         </button>
 
-                        {/* Popover Content */}
-                        {isLoadDrawerOpen && (
-                            <div className="absolute top-full right-0 mt-2 w-[400px] max-h-[600px] overflow-y-auto bg-[#18181b] border border-zinc-700 rounded-xl shadow-2xl z-50 flex flex-col animate-in zoom-in-95 duration-100">
-                                <div className="p-3 border-b border-zinc-800 bg-[#18181b] sticky top-0 z-10 flex items-center justify-between">
-                                    <h4 className="text-xs font-bold text-zinc-400 flex items-center gap-1">
-                                        <span className="material-symbols-outlined text-[14px]">folder_open</span>
-                                        已保存方案
-                                    </h4>
-                                    <button onClick={() => setIsLoadDrawerOpen(false)} className="text-zinc-500 hover:text-white"><span className="material-symbols-outlined text-[16px]">close</span></button>
-                                </div>
-                                <div className="p-1 space-y-1">
-                                    {(() => {
-                                        // 1. Get all products that HAVE plans
-                                        const allPlans = replenishmentPlanRepository.getAll();
-                                        const distinctProds = Array.from(new Set(allPlans.map(p => p.productId)));
-                                        const prodsWithPlans = products.filter(p => distinctProds.includes(p.id));
-
-                                        if (prodsWithPlans.length === 0) {
-                                            return <div className="py-8 text-center text-[10px] text-zinc-600">暂无任何保存方案</div>;
-                                        }
-
-                                        return prodsWithPlans.map(prod => {
-                                            const plansForProd = allPlans.filter(p => p.productId === prod.id);
-                                            // Group by Strategy
-                                            const grouped = plansForProd.reduce((acc, p) => {
-                                                const k = p.strategyId || 'ungrouped';
-                                                if (!acc[k]) acc[k] = [];
-                                                acc[k].push(p);
-                                                return acc;
-                                            }, {} as Record<string, typeof plansForProd>);
-
-                                            return (
-                                                <div key={prod.id} className="border border-zinc-800/50 rounded-lg overflow-hidden bg-zinc-900/30">
-                                                    {/* Product Header (Collapsible) */}
-                                                    <details className="group">
-                                                        <summary className="flex items-center gap-2 px-2 py-1.5 bg-zinc-900 hover:bg-zinc-800 cursor-pointer select-none list-none transition-colors border-b border-zinc-800/50">
-                                                            <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0"></div>
-                                                            <span className="text-xs font-bold text-zinc-300 flex-1 truncate">{prod.name}</span>
-                                                            <span className="text-[10px] text-zinc-500 font-mono bg-zinc-950/50 px-1.5 py-0.5 rounded border border-zinc-800">{plansForProd.length}</span>
-                                                            <span className="material-symbols-outlined text-[16px] text-zinc-500 transition-transform group-open:rotate-180">expand_more</span>
-                                                        </summary>
-                                                        <div className="p-1 space-y-1 bg-black/20">
-                                                            {Object.entries(grouped).map(([sid, plans]) => {
-                                                                const label = plans[0].strategyLabel || (sid === 'ungrouped' ? '未关联策略' : '策略');
-
-                                                                return (
-                                                                    <details key={sid} className="group/s">
-                                                                        <summary className="flex items-center gap-1.5 py-1 px-2 cursor-pointer select-none list-none hover:bg-white/5 rounded transition-colors">
-                                                                            <span className="material-symbols-outlined text-[14px] text-amber-500/70">
-                                                                                {sid === 'ungrouped' ? 'draft' : 'bolt'}
-                                                                            </span>
-                                                                            <span className="text-[11px] font-bold text-zinc-400 flex-1 truncate">{label}</span>
-                                                                            <span className="material-symbols-outlined text-[14px] text-zinc-600 transition-transform group-open/s:rotate-180">expand_more</span>
-                                                                        </summary>
-                                                                        <div className="pl-6 pb-1 space-y-0.5 mt-0.5">
-                                                                            {plans.sort((a, b) => b.createdAt - a.createdAt).map(p => (
-                                                                                <div
-                                                                                    key={p.id}
-                                                                                    onClick={() => handleLoadPlan(p)}
-                                                                                    className="flex items-center justify-between p-1.5 rounded-md bg-zinc-800/40 hover:bg-blue-600/20 hover:border-blue-500/30 border border-transparent cursor-pointer group/item transition-all"
-                                                                                >
-                                                                                    <div className="flex flex-col min-w-0 pr-2">
-                                                                                        <span className="text-[11px] font-bold text-zinc-300 truncate group-hover/item:text-blue-300 transition-colors">{p.name}</span>
-                                                                                        <span className="text-[9px] text-zinc-600">{new Date(p.createdAt).toLocaleDateString()}</span>
-                                                                                    </div>
-                                                                                    <div className="text-[9px] font-mono text-zinc-500 flex flex-col items-end shrink-0">
-                                                                                        <span className="text-zinc-400">{p.summary?.totalQty} pcs</span>
-                                                                                        <span>{fmtMoney(p.summary?.totalCost || 0)}</span>
-                                                                                    </div>
-
-
-                                                                                </div>
-                                                                            ))}
-                                                                        </div>
-                                                                    </details>
-                                                                );
-                                                            })}
-                                                        </div>
-                                                    </details>
-                                                </div>
-                                            );
-                                        });
-                                    })()}
-                                </div>
-                            </div>
-                        )}
+                        <button
+                            id="btn-sync-strategy"
+                            onClick={handleSyncToStrategy}
+                            disabled={!simResult || !selectedStrategyId}
+                            className="flex items-center gap-1 px-3 h-8 bg-[#4f46e5] hover:bg-[#4338ca] text-white text-xs font-bold rounded-lg transition-all shadow-lg shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="同步到策略，如有变更自动保存快照"
+                        >
+                            <span className="material-symbols-outlined text-[16px]">save_as</span>
+                            保存策略
+                        </button>
                     </div>
 
+
+
                     {/* 推演起始日期 */}
-                    <div className="flex items-center gap-1 shrink-0 ml-2">
+                    <div className="flex items-center gap-1 shrink-0 ml-0">
                         <span className="text-zinc-500 text-[10px] font-bold whitespace-nowrap">推演开始</span>
                         <input
                             type="date"
                             value={state.simStart}
                             onChange={(e) => setState((s) => ({ ...s, simStart: e.target.value }))}
-                            className="bg-[#18181b] hover:bg-[#1f1f23] border border-[#27272a] hover:border-zinc-600 text-zinc-300 text-xs font-bold py-1 px-2 rounded-lg transition-all focus:outline-none focus:ring-2 focus:ring-blue-500/50 font-mono w-[110px]"
+                            className="bg-[#18181b] hover:bg-[#1f1f23] border border-[#27272a] hover:border-zinc-600 text-zinc-300 text-xs font-bold px-2 rounded-lg transition-all focus:outline-none focus:ring-2 focus:ring-blue-500/50 font-mono w-[110px] h-8"
                         />
                     </div>
                 </div>
 
                 {/* Charts - Shared X-axis layout */}
-                <div className="flex-1 flex flex-col overflow-hidden relative">
+                < div className="flex-1 flex flex-col overflow-hidden relative" >
                     {/* Floating Stockout Summary */}
-                    <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10 bg-[#18181b]/80 backdrop-blur-sm border border-[#27272a] rounded-full px-4 py-1 shadow-xl flex items-center gap-3 pointer-events-none">
+                    < div className="absolute top-2 left-1/2 -translate-x-1/2 z-10 bg-[#18181b]/80 backdrop-blur-sm border border-[#27272a] rounded-full px-4 py-1 shadow-xl flex items-center gap-3 pointer-events-none" >
                         {/* 补货总数 */}
-                        <div className="flex items-center gap-1 border-r border-[#27272a] pr-3">
+                        < div className="flex items-center gap-1 border-r border-[#27272a] pr-3" >
                             <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">补货总数</span>
                             <span className="text-xs font-black text-blue-400 font-mono">
-                                {state.batches.reduce((sum, b) => sum + (b.qty || 0), 0).toLocaleString()}
+                                {state.batches.reduce((sum, b) => sum + Math.round(b.qty * (1 + (b.extraPercent || 0) / 100)), 0).toLocaleString()}
                             </span>
                             <span className="text-[9px] text-zinc-600">件</span>
-                        </div>
+                        </div >
                         {simResult && simResult.totalStockoutDays > 0 ? (
                             <>
                                 <span className="material-symbols-outlined text-red-500 text-sm">warning</span>
@@ -2356,7 +2320,7 @@ const ReplenishmentAdvice: React.FC = () => {
                                 <span className="text-xs font-bold text-green-400">完美的接力!</span>
                             </>
                         )}
-                    </div>
+                    </div >
 
                     <div className="flex-1 flex flex-col overflow-hidden" onClick={() => setSelectedEvent(null)}>
                         <div className="h-1/2 pl-1 pr-4 pt-4 pb-0 overflow-hidden relative">
@@ -2447,13 +2411,9 @@ const ReplenishmentAdvice: React.FC = () => {
                             </div>
                         </div>
                     </div>
-                </div>
+                </div >
             </main >
-
-
-
-
-        </div >
+        </div>
     );
 };
 

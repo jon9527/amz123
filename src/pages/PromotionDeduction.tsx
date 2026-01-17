@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { ProfitModelService } from '../services/profitModelService';
@@ -7,7 +7,8 @@ import { SavedProfitModel } from '../types';
 import PromotionProfitChart from '../components/PromotionProfitChart';
 import StepperInput from '../components/StepperInput';
 import { fmtUSD, fmtPct } from '../utils/formatters';
-import { getCommRate as getCommRateUtil, getReturnCost as getReturnCostUtil, CommissionConfig, ReturnCostParams } from '../utils/commissionUtils';
+import { getCommRate as getCommRateUtil, getReturnCost as getReturnCostUtil, ReturnCostParams } from '../utils/commissionUtils';
+import { ProductSchemeDropdown, CurrentSchemeDisplay } from '../components/shared';
 
 // --- DATA TYPES ---
 interface MonthConfig {
@@ -37,23 +38,20 @@ const PromotionDeduction: React.FC = () => {
     const contentRef = useRef<HTMLDivElement>(null);
     const [isExporting, setIsExporting] = useState(false);
 
-    // Dropdown State
-    const [showDropdown, setShowDropdown] = useState(false);
-    const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
-
     // --- State: Dynamic Months ---
     const [months, setMonths] = useState<MonthConfig[]>(DEFAULT_MONTHS.slice(0, 3));
 
     // --- State: Supply Chain ---
     const [leadTime, setLeadTime] = useState<number>(45);
 
-    // --- State: Commission Settings ---
-    const [autoComm, setAutoComm] = useState<boolean>(true);
-    const [manualComm, setManualComm] = useState<number>(15);
+    // --- State: Commission Settings (Legacy - now using category-based system) ---
+    // Keeping state for loading from saved models, but not actively used
+    const [_autoComm, setAutoComm] = useState<boolean>(true);
+    const [_manualComm, setManualComm] = useState<number>(15);
 
     // --- State: Base Data ---
     const [baseData, setBaseData] = useState({
-        prod: 2.82, firstMile: 0.90, misc: 0, fba: 5.69, storage: 0,
+        prod: 2.82, firstMile: 0.90, misc: 0, fba: 5.69, storage: 0, aged: 0,
         retRate: 0.1, unsellable: 0.2, retProc: 2.62, retRem: 2.24,
         planBProfit: 2.50, productName: 'Manual Mock'
     });
@@ -65,22 +63,6 @@ const PromotionDeduction: React.FC = () => {
         if (models.length > 0) {
             setSelectedModelId(models[0].id);
         }
-    }, []);
-
-    // Group models by product name
-    const groupedModels = useMemo(() => {
-        const groups: Record<string, SavedProfitModel[]> = {};
-        savedModels.forEach(m => {
-            const key = m.productName || '未分类';
-            if (!groups[key]) groups[key] = [];
-            groups[key].push(m);
-        });
-        return groups;
-    }, [savedModels]);
-
-    // Toggle group expand/collapse
-    const toggleGroup = useCallback((groupName: string) => {
-        setExpandedGroups(prev => ({ ...prev, [groupName]: !prev[groupName] }));
     }, []);
 
     // Get selected model for display
@@ -100,6 +82,7 @@ const PromotionDeduction: React.FC = () => {
                 misc: p.miscFee,
                 fba: p.fbaFee,
                 storage: p.storageFee,
+                aged: p.agedInventoryFee || 0,
                 retRate: p.returnRate / 100,
                 unsellable: p.unsellableRate / 100,
                 retProc: p.retProcFee,
@@ -110,7 +93,43 @@ const PromotionDeduction: React.FC = () => {
 
             // Auto-fill Price for all months
             const actualPrice = model.inputs.actualPrice;
-            setMonths(prev => prev.map(m => ({ ...m, price: actualPrice })));
+
+            // Calculate Break-Even CPC
+            // Logic: Max CPC = (Price - FixedCosts) * CVR
+            // FixedCosts = Prod + Ship + FBA + Storage + Misc + Aged + Returns + Commission
+            const inputs = model.inputs;
+            const commRate = getCommRateUtil(actualPrice, 'standard'); // Default to standard if unknown
+            const commVal = actualPrice * commRate;
+
+            const returnParams = {
+                retProcFee: inputs.retProcFee,
+                retRemFee: inputs.retRemFee,
+                fbaFee: inputs.fbaFee,
+                prodCostUSD: model.results.costProdUSD,
+                shippingUSD: inputs.shippingUSD,
+                returnRate: inputs.returnRate,
+                unsellableRate: inputs.unsellableRate
+            };
+            const retCost = getReturnCostUtil(actualPrice, commRate, returnParams);
+
+            const totalFixed = model.results.costProdUSD + inputs.shippingUSD +
+                inputs.fbaFee + inputs.storageFee + inputs.miscFee + (inputs.agedInventoryFee || 0) +
+                commVal + retCost;
+
+            const grossProfitPerUnit = actualPrice - totalFixed;
+            // Default CVR is 10 (from DEFAULT_MONTHS) or existing months state
+            // We use the CVR from each month config to calculate its specific BE CPC if CVR varies,
+            // or just use a base CVR. 
+            // Since months state is being updated, we can just calculate it per month based on its CVR.
+
+            setMonths(prev => prev.map(m => {
+                const beCpc = Math.max(0, grossProfitPerUnit * (m.cvr / 100));
+                return {
+                    ...m,
+                    price: actualPrice,
+                    cpc: Number(beCpc.toFixed(2))
+                };
+            }));
 
             // Auto-fill Commission Settings
             setAutoComm(model.inputs.autoComm);
@@ -150,9 +169,8 @@ const PromotionDeduction: React.FC = () => {
 
     // --- CALCULATION LOGIC ---
 
-    // 1. Commission - 使用统一工具函数
-    const commConfig: CommissionConfig = { autoComm, manualComm };
-    const getCommRate = (price: number) => getCommRateUtil(price, commConfig);
+    // 1. Commission - 使用统一工具函数 (Default to 'standard' category)
+    const getCommRate = (price: number) => getCommRateUtil(price, 'standard');
 
     // 2. Return Cost - 使用统一工具函数
     const getReturnCost = (price: number, commRate: number) => {
@@ -179,13 +197,16 @@ const PromotionDeduction: React.FC = () => {
         const mCommRate = getCommRate(m.price);
         const mComm = m.price * mCommRate;
         const mRet = getReturnCost(m.price, mCommRate);
-        const mTotalCOGS = baseData.prod + baseData.firstMile + baseData.misc + baseData.fba + baseData.storage + mComm + mRet;
+        // UPDATED: Combined Storage & Misc & Aged
+        const mStorageMisc = baseData.misc + baseData.storage + baseData.aged;
+        const mTotalCOGS = baseData.prod + baseData.firstMile + mStorageMisc + baseData.fba + mComm + mRet;
         const mGrossOrganic = m.price - mTotalCOGS;
         const mCpa = (m.cvr > 0) ? m.cpc / (m.cvr / 100) : 0;
         const mNetAd = mGrossOrganic - mCpa;
 
         const revenue = totalUnits * m.price;
         const spend = adUnits * mCpa;
+        const avgAdCost = totalUnits > 0 ? spend / totalUnits : 0;
 
         const totalProfit = (orgUnits * mGrossOrganic) + (adUnits * mNetAd);
         const tacos = revenue > 0 ? (spend / revenue) : 0;
@@ -195,8 +216,9 @@ const PromotionDeduction: React.FC = () => {
             res: {
                 totalUnits, adUnits, revenue, spend, totalProfit, tacos,
                 unit: {
-                    price: m.price, prod: baseData.prod, firstMile: baseData.firstMile, misc: baseData.misc,
-                    fba: baseData.fba, storage: baseData.storage, comm: mComm, ret: mRet, cpa: mCpa,
+                    price: m.price, prod: baseData.prod, firstMile: baseData.firstMile,
+                    storageMisc: mStorageMisc,
+                    fba: baseData.fba, comm: mComm, ret: mRet, cpa: mCpa, avgAdCost,
                     grossOrganic: mGrossOrganic, netAd: mNetAd
                 }
             }
@@ -417,123 +439,34 @@ const PromotionDeduction: React.FC = () => {
         <div ref={contentRef} className="p-8 space-y-8 max-w-[1600px] mx-auto animate-in fade-in duration-500">
 
             {/* Header */}
-            <div className="flex flex-col gap-1">
-                <h2 className="text-2xl font-black tracking-tight text-white">推广策略推演</h2>
-                <div className="flex justify-between items-center">
-                    <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest">Dynamic Traffic & Budget Simulation</p>
-
-                    {/* Current Model Indicator + Data Source Selector */}
-                    <div className="flex items-center gap-3">
-                        {/* Current Model Indicator with breathing light */}
-                        {selectedModel && (
-                            <div className="flex items-center gap-2.5 bg-zinc-900/80 border border-zinc-700/50 rounded-xl px-4 py-2">
-                                <span className="relative flex h-2.5 w-2.5">
-                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-500"></span>
-                                </span>
-                                <span className="text-xs text-zinc-400">当前方案:</span>
-                                <span className="text-sm font-bold text-white">{selectedModel.productName}</span>
-                                <span className="text-[10px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-1.5 py-0.5 rounded font-medium">
-                                    {selectedModel.label || '无标签'}
-                                </span>
-                                <span className="text-sm font-black font-mono text-zinc-300">${selectedModel.inputs.actualPrice}</span>
-                                <span className={`text-[10px] font-bold flex items-center gap-0.5 ${(selectedModel.results?.planB?.margin ?? 0) * 100 >= 20 ? 'text-emerald-400' : (selectedModel.results?.planB?.margin ?? 0) * 100 >= 10 ? 'text-yellow-400' : 'text-red-400'}`}>
-                                    <span className="material-symbols-outlined text-[12px]">trending_up</span>
-                                    {((selectedModel.results?.planB?.margin ?? 0) * 100).toFixed(1)}%
-                                </span>
-                            </div>
-                        )}
-
-                        <div className="export-actions flex items-center gap-3">
-                            {/* Export PDF Button */}
-                            <button
-                                onClick={handleExportPDF}
-                                disabled={isExporting}
-                                className="flex items-center gap-2 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-400 rounded-xl px-4 py-2.5 shadow-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                <span className="material-symbols-outlined text-lg">picture_as_pdf</span>
-                                <span className="text-sm font-bold">导出 PDF</span>
-                            </button>
-
-                            {/* Data Source Selector - Custom Grouped Dropdown */}
-                            <div className="relative">
-                                <button
-                                    onClick={() => setShowDropdown(!showDropdown)}
-                                    className="flex items-center gap-3 bg-[#0c0c0e] border border-zinc-800 hover:border-zinc-700 rounded-xl px-4 py-2.5 shadow-lg transition-colors"
-                                >
-                                    <span className="material-symbols-outlined text-blue-500 text-lg">description</span>
-                                    <span className="text-sm font-bold text-white">导入数据</span>
-                                    <span className="material-symbols-outlined text-zinc-500 text-sm">{showDropdown ? 'expand_less' : 'expand_more'}</span>
-                                </button>
-                                {/* Dropdown Panel */}
-                                {showDropdown && (
-                                    <div
-                                        className="absolute right-0 mt-2 w-[320px] bg-[#111111] border border-zinc-800 rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150"
-                                        onMouseLeave={() => setShowDropdown(false)}
-                                    >
-                                        <div className="max-h-[360px] overflow-y-auto [&::-webkit-scrollbar]:hidden">
-                                            {!savedModels.length && (
-                                                <div className="px-4 py-3 text-sm text-zinc-500">无已保存模型</div>
-                                            )}
-
-                                            {Object.keys(groupedModels).map(groupName => {
-                                                const groupItems = groupedModels[groupName];
-                                                const isExpanded = expandedGroups[groupName];
-
-                                                return (
-                                                    <div key={groupName} className="border-b border-zinc-800/50 last:border-0">
-                                                        {/* Group Header */}
-                                                        <button
-                                                            onClick={(e) => { e.stopPropagation(); toggleGroup(groupName); }}
-                                                            className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-zinc-800/50 transition-colors group"
-                                                        >
-                                                            <div className="flex items-center gap-2">
-                                                                <span className="text-[10px] text-zinc-500 material-symbols-outlined transition-transform duration-200" style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>chevron_right</span>
-                                                                <span className="text-xs font-bold text-zinc-300 group-hover:text-white">{groupName}</span>
-                                                                <span className="text-[10px] text-zinc-600 bg-zinc-800 px-1.5 rounded-full">{groupItems.length}</span>
-                                                            </div>
-                                                        </button>
-
-                                                        {/* Group Content */}
-                                                        {isExpanded && (
-                                                            <div className="bg-zinc-900/30 pb-1">
-                                                                {groupItems.map(model => {
-                                                                    const marginPct = (model.results?.planB?.margin ?? 0) * 100;
-                                                                    const marginColor = marginPct >= 20 ? 'text-emerald-400' : marginPct >= 10 ? 'text-yellow-400' : 'text-red-400';
-                                                                    const isSelected = model.id === selectedModelId;
-
-                                                                    return (
-                                                                        <button
-                                                                            key={model.id}
-                                                                            className={`w-full text-left pl-9 pr-4 py-2 hover:bg-zinc-800 transition-colors flex items-center justify-between border-l-2 ml-1 ${isSelected ? 'bg-blue-900/20 border-blue-500' : 'border-transparent hover:border-blue-500/50'}`}
-                                                                            onClick={() => { setSelectedModelId(model.id); setShowDropdown(false); }}
-                                                                        >
-                                                                            <span className={`text-[10px] ${isSelected ? 'bg-blue-500/30 text-blue-300' : 'bg-blue-500/15 text-blue-400'} border border-blue-500/20 px-1.5 py-0.5 rounded font-medium truncate max-w-[110px]`}>
-                                                                                {model.label || '无标签'}
-                                                                            </span>
-                                                                            <div className="flex items-center gap-4">
-                                                                                <span className="text-sm font-black font-mono text-zinc-300 w-16 text-right">
-                                                                                    ${model.inputs.actualPrice}
-                                                                                </span>
-                                                                                <span className={`text-[10px] font-bold ${marginColor} flex items-center gap-0.5 w-14`}>
-                                                                                    <span className="material-symbols-outlined text-[12px]">trending_up</span>
-                                                                                    {marginPct.toFixed(1)}%
-                                                                                </span>
-                                                                            </div>
-                                                                        </button>
-                                                                    );
-                                                                })}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-600/20">
+                        <span className="material-symbols-outlined text-white">trending_up</span>
                     </div>
+                    <div>
+                        <h2 className="text-2xl font-black text-white">推广策略推演</h2>
+                        <p className="text-zinc-500 text-xs uppercase tracking-widest font-bold">Dynamic Traffic & Budget Simulation</p>
+                    </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center gap-3">
+                    <CurrentSchemeDisplay model={selectedModel} accentColor="blue" />
+                    <button
+                        onClick={handleExportPDF}
+                        disabled={isExporting}
+                        className="flex items-center gap-2 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-400 rounded-xl px-4 h-10 transition-colors disabled:opacity-50 min-w-[110px] justify-center"
+                    >
+                        <span className="material-symbols-outlined text-lg">picture_as_pdf</span>
+                        <span className="text-sm font-bold">导出 PDF</span>
+                    </button>
+                    <ProductSchemeDropdown
+                        models={savedModels}
+                        selectedModelId={selectedModelId}
+                        onSelectModel={(model) => setSelectedModelId(model.id)}
+                        accentColor="blue"
+                    />
                 </div>
             </div>
 
@@ -597,7 +530,7 @@ const PromotionDeduction: React.FC = () => {
                                         <div className="grid grid-cols-2 gap-2">
                                             <div>
                                                 <label className="text-[9px] uppercase font-bold text-zinc-600 mb-0.5 block text-center">CVR%</label>
-                                                <StepperInput value={m.cvr} onChange={(v) => updateMonth(idx, 'cvr', v)} step={0.1} />
+                                                <StepperInput value={m.cvr} onChange={(v) => updateMonth(idx, 'cvr', v)} step={0.1} max={100} />
                                             </div>
                                             <div>
                                                 <label className="text-[9px] uppercase font-bold text-zinc-600 mb-0.5 block text-center">CPC</label>
@@ -609,7 +542,7 @@ const PromotionDeduction: React.FC = () => {
                                             <div className="grid grid-cols-2 gap-2">
                                                 <div>
                                                     <label className="text-[9px] uppercase font-bold text-zinc-600 mb-0.5 block text-center">广告%</label>
-                                                    <StepperInput value={m.adShare} onChange={(v) => updateMonth(idx, 'adShare', v)} step={5} />
+                                                    <StepperInput value={m.adShare} onChange={(v) => updateMonth(idx, 'adShare', v)} step={5} max={100} />
                                                 </div>
                                                 <div>
                                                     <label className="text-[9px] uppercase font-bold text-zinc-600 mb-0.5 block text-center">自然%</label>
@@ -634,20 +567,16 @@ const PromotionDeduction: React.FC = () => {
                                                 <span>{fmtUSD(m.res.unit.prod)}</span>
                                             </div>
                                             <div className="flex justify-between items-center text-[10px] text-zinc-500">
-                                                <span>- 头程</span>
+                                                <span>- 头程物流</span>
                                                 <span>{fmtUSD(m.res.unit.firstMile)}</span>
                                             </div>
                                             <div className="flex justify-between items-center text-[10px] text-zinc-500">
-                                                <span>- 杂费</span>
-                                                <span>{fmtUSD(m.res.unit.misc)}</span>
-                                            </div>
-                                            <div className="flex justify-between items-center text-[10px] text-zinc-500">
-                                                <span>- FBA配送</span>
+                                                <span>- FBA配送费</span>
                                                 <span>{fmtUSD(m.res.unit.fba)}</span>
                                             </div>
                                             <div className="flex justify-between items-center text-[10px] text-zinc-500">
-                                                <span>- 仓储费</span>
-                                                <span>{fmtUSD(m.res.unit.storage)}</span>
+                                                <span>- 仓储杂费</span>
+                                                <span>{fmtUSD(m.res.unit.storageMisc)}</span>
                                             </div>
                                             <div className="flex justify-between items-center text-[10px] text-zinc-500">
                                                 <span>- 销售佣金</span>
@@ -658,36 +587,63 @@ const PromotionDeduction: React.FC = () => {
                                                 <span>{fmtUSD(m.res.unit.ret)}</span>
                                             </div>
                                             <div className="flex justify-between items-center text-[10px] text-orange-500 font-bold">
-                                                <span>- 获客成本 (CPA)</span>
-                                                <span>{fmtUSD(m.res.unit.cpa)}</span>
+                                                <span>- 广告成本</span>
+                                                <span>{fmtUSD(m.res.unit.avgAdCost)}</span>
                                             </div>
 
-                                            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded p-1.5 text-center mt-2">
-                                                <div className="text-[9px] text-emerald-600 font-bold">= 单品毛利 (自然单)</div>
-                                                <div className="text-sm font-black text-emerald-500 font-mono">{fmtUSD(m.res.unit.grossOrganic)}</div>
-                                            </div>
-
-                                            <div className="bg-red-500/10 border border-red-500/20 rounded p-1.5 text-center mt-2">
-                                                <div className="text-[9px] text-red-500/80 font-bold">= 单品净盈亏 (100%广告单)</div>
-                                                <div className="text-sm font-black text-red-500 font-mono">{fmtUSD(m.res.unit.netAd)}</div>
+                                            <div className="grid grid-cols-3 gap-2 mt-2">
+                                                <div className="bg-[#18181b] border border-[#27272a] rounded p-1.5 flex flex-col justify-between items-center text-center h-[52px]">
+                                                    <div className="text-[9px] text-zinc-500 font-bold">自然单毛利</div>
+                                                    <div className="text-sm font-black text-emerald-500 font-mono">{fmtUSD(m.res.unit.grossOrganic)}</div>
+                                                </div>
+                                                <div className="bg-[#18181b] border border-[#27272a] rounded p-1.5 flex flex-col justify-between items-center text-center h-[52px]">
+                                                    <div className="text-[9px] text-zinc-500 font-bold">CPA</div>
+                                                    <div className="text-sm font-black text-zinc-300 font-mono">{fmtUSD(m.res.unit.cpa)}</div>
+                                                </div>
+                                                <div className="bg-[#18181b] border border-[#27272a] rounded p-1.5 flex flex-col justify-between items-center text-center h-[52px]">
+                                                    <div className="text-[9px] text-zinc-500 font-bold">广告单净利</div>
+                                                    <div className={`text-sm font-black font-mono ${m.res.unit.netAd >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                                                        {fmtUSD(m.res.unit.netAd)}
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
 
-                                    <div className="mt-3 pt-3 border-t border-zinc-800">
-                                        <div className="text-center mb-3">
-                                            <div className="text-[10px] text-zinc-500 mb-0.5">月广告费</div>
-                                            <div className="text-xl font-black text-slate-300 font-mono leading-none mb-1">{fmtUSD(m.res.spend)}</div>
-                                            <div className="text-[10px] text-zinc-500">TACoS: {fmtPct(m.res.tacos)}</div>
+                                    <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-zinc-800">
+                                        <div className="bg-[#18181b] border border-[#27272a] rounded flex flex-col justify-center items-center h-[72px]">
+                                            <div className="text-[10px] text-zinc-500 font-bold mb-0.5">月销售额</div>
+                                            <div className="text-sm font-black text-white font-mono leading-none">{fmtUSD(m.res.revenue)}</div>
                                         </div>
+                                        <div className="bg-[#18181b] border border-[#27272a] rounded flex flex-col h-[72px] overflow-hidden">
+                                            <div className="flex-1 flex flex-col justify-center items-center">
+                                                <div className="text-[10px] text-zinc-500 font-bold mb-0.5">月广告费</div>
+                                                <div className="text-sm font-black text-orange-500 font-mono leading-none">{fmtUSD(m.res.spend)}</div>
+                                            </div>
+                                            <div className="bg-zinc-800/50 border-t border-[#27272a] h-[22px] flex justify-center items-center">
+                                                <div className="text-[9px] text-zinc-400 font-mono">TACoS: {fmtPct(m.res.tacos)}</div>
+                                            </div>
+                                        </div>
+                                    </div>
 
-                                        <div className={`rounded-lg p-2 text-center ${m.res.totalProfit >= 0 ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-red-500/10 border border-red-500/20'}`}>
-                                            <div className={`text-[11px] font-bold mb-0.5 ${m.res.totalProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>月净盈亏 (Net)</div>
-                                            <div className={`text-xl font-black font-mono leading-none mb-1 ${m.res.totalProfit >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>{fmtUSD(m.res.totalProfit)}</div>
-                                            <div className="text-[10px] text-zinc-500/80">(总毛利 - 广告费)</div>
+                                    <div className="my-2 border-t border-dashed border-zinc-800/50"></div>
+
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div className="bg-[#18181b] border border-[#27272a] rounded p-2 text-center flex flex-col justify-between h-[60px]">
+                                            <div className="text-[10px] text-zinc-500 font-bold mb-0.5">月总毛利</div>
+                                            <div className="text-sm font-black text-emerald-500 font-mono leading-none">
+                                                {fmtUSD(m.res.totalUnits * m.res.unit.grossOrganic)}
+                                            </div>
+                                        </div>
+                                        <div className={`border rounded p-2 text-center flex flex-col justify-between h-[60px] ${m.res.totalProfit >= 0 ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-red-500/10 border-red-500/20'}`}>
+                                            <div className={`text-[10px] font-bold mb-0.5 ${m.res.totalProfit >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>月净盈亏</div>
+                                            <div className={`text-lg font-black font-mono leading-none ${m.res.totalProfit >= 0 ? 'text-emerald-400 drop-shadow-sm' : 'text-red-500 drop-shadow-sm'}`}>
+                                                {fmtUSD(m.res.totalProfit)}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
+
                             ))}
                         </div>
 
@@ -839,7 +795,7 @@ const PromotionDeduction: React.FC = () => {
 
                     </div>
                 </div>
-            </div>
+            </div >
         </div >
     );
 };

@@ -53,7 +53,7 @@ const PageShell: React.FC<PageShellProps> = ({
 
     return (
         <div
-            className={`h-full bg-[#09090b] text-white overflow-auto p-6 animate-in fade-in duration-300 ${className}`}
+            className={`h-full bg-[#09090b] text-white overflow-auto p-8 animate-in fade-in duration-300 ${className}`}
         >
             <div className={`mx-auto ${maxWidthClasses[maxWidth]} ${fullHeight ? 'h-full flex flex-col' : ''}`}>
                 {/* Header */}
@@ -69,11 +69,11 @@ const PageShell: React.FC<PageShellProps> = ({
                             )
                         )}
                         <div>
-                            <h1 className="text-2xl font-black">{title}</h1>
-                            {subtitle && <p className="text-zinc-500 text-sm">{subtitle}</p>}
+                            <h1 className="text-2xl font-black text-white">{title}</h1>
+                            {subtitle && <p className="text-zinc-500 text-xs uppercase tracking-widest font-bold">{subtitle}</p>}
                         </div>
                     </div>
-                    {actions && <div className="flex items-center gap-2">{actions}</div>}
+                    {actions && <div className="flex items-center gap-3">{actions}</div>}
                 </div>
 
                 {/* Content */}

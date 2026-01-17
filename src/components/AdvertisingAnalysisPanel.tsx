@@ -143,7 +143,7 @@ export const AdvertisingAnalysisPanel: React.FC<AdvertisingAnalysisPanelProps> =
 
     return (
         <div className="bg-[#0c0c0e] border border-[#27272a] rounded-2xl p-6 shadow-2xl relative overflow-hidden">
-            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-purple-600 via-fuchsia-500 to-purple-600 opacity-80"></div>
+
 
             <div className="flex items-center justify-between mb-8 mt-2">
                 <div className="flex items-center gap-2">

@@ -9,6 +9,7 @@ export const fmtDate = (date: Date) => {
 export interface FeeBreakdown {
     recallUSD: number;
     netProfit: number;
+    platformFees: number;
 }
 
 export const runSimulation = (
@@ -171,8 +172,10 @@ export const runSimulation = (
 
                 if (selectedStrategyId) {
                     const breakdown = computeFeeBreakdown(price, selectedStrategyId);
-                    unitRecallUSD = breakdown.recallUSD;   // Already USD
-                    unitProfitUSD = breakdown.netProfit;   // Already USD
+                    // Use Dynamic Profit Logic: Recall - Actual Cost - Actual Freight
+                    // recallUSD = Price - PlatformFees (Commission, FBA, Ads, Returns...)
+                    unitRecallUSD = breakdown.recallUSD;
+                    unitProfitUSD = unitRecallUSD - batchObj.unitCost - batchObj.unitFreight;
                 } else {
                     const marginPercent = margins[mIdx] || 0;
                     unitProfitUSD = price * (marginPercent / 100);

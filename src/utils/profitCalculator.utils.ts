@@ -4,7 +4,7 @@
  */
 
 import { r2 } from './formatters';
-import { getCommRate, getReturnCost, CommissionConfig, ReturnCostParams } from './commissionUtils';
+import { getCommRate, getReturnCost, ReturnCostParams } from './commissionUtils';
 
 // ============ 成本结构参数 ============
 export interface CostStructure {
@@ -18,7 +18,7 @@ export interface CostStructure {
 // ============ 利润计算参数 ============
 export interface ProfitCalcParams extends CostStructure {
     price: number;             // 售价 (USD)
-    commConfig: CommissionConfig;
+    category?: 'standard' | 'apparel';
     returnParams: ReturnCostParams;
     targetAcos?: number;       // 目标 ACOS (百分比值, 如 15)
 }
@@ -51,13 +51,13 @@ export const calculateProfit = (params: ProfitCalcParams): ProfitResult => {
         fbaFee,
         miscFee,
         storageFee,
-        commConfig,
+        category = 'standard',
         returnParams,
         targetAcos = 0,
     } = params;
 
     // 1. 佣金
-    const commRate = getCommRate(price, commConfig);
+    const commRate = getCommRate(price, category);
     const commValue = r2(price * commRate);
 
     // 2. 退货损耗

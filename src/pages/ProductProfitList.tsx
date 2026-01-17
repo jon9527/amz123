@@ -4,12 +4,12 @@ import ReactDOM from 'react-dom';
 import { SavedProfitModel } from '../types';
 import { ProfitModelService } from '../services/profitModelService';
 import { useProducts } from '../contexts/ProductContext';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+
 import { fmtUSD } from '../utils/formatters';
 import { getTagColor } from '../utils/tagColors';
 import { ReplenishmentModal } from '../components/ReplenishmentModal';
 
-type ViewMode = 'table' | 'comparison';
+
 
 const ProductProfitList: React.FC = () => {
   const { products } = useProducts();
@@ -18,10 +18,11 @@ const ProductProfitList: React.FC = () => {
   const [search, setSearch] = useState('');
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [viewMode, setViewMode] = useState<ViewMode>('table');
+
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [toDeleteIds, setToDeleteIds] = useState<string[]>([]);
-  const [activeReplModel, setActiveReplModel] = useState<SavedProfitModel | null>(null);
+
+  const [activeReplProductId, setActiveReplProductId] = useState<string | null>(null);
 
   // Grouped view state
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
@@ -202,9 +203,14 @@ const ProductProfitList: React.FC = () => {
     <div className="p-8 space-y-6 max-w-[1700px] mx-auto animate-in fade-in duration-700">
       {/* 顶部工具栏 */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h2 className="text-3xl font-black text-white tracking-tight">利润模型</h2>
-          <p className="text-zinc-500 text-sm mt-1 uppercase tracking-widest font-bold">Profit Model Management</p>
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-600/20">
+            <span className="material-symbols-outlined text-white">savings</span>
+          </div>
+          <div>
+            <h2 className="text-2xl font-black text-white">利润模型</h2>
+            <p className="text-zinc-500 text-xs uppercase tracking-widest font-bold">Profit Model Management</p>
+          </div>
         </div>
 
         <div className="flex items-center gap-3 w-full md:w-auto">
@@ -219,20 +225,7 @@ const ProductProfitList: React.FC = () => {
             />
           </div>
 
-          <div className="flex gap-2 border border-[#27272a] rounded-xl p-1 bg-[#111111]">
-            <button
-              onClick={() => setViewMode('table')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'table' ? 'bg-blue-600 text-white' : 'text-zinc-500 hover:text-white'}`}
-            >
-              <span className="material-symbols-outlined text-[16px]">table_rows</span>
-            </button>
-            <button
-              onClick={() => setViewMode('comparison')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'comparison' ? 'bg-blue-600 text-white' : 'text-zinc-500 hover:text-white'}`}
-            >
-              <span className="material-symbols-outlined text-[16px]">bar_chart</span>
-            </button>
-          </div>
+
         </div>
       </div>
 
@@ -247,7 +240,7 @@ const ProductProfitList: React.FC = () => {
           <h3 className="text-xl font-black text-slate-200 mb-2">暂无数据</h3>
           <p className="text-slate-500 text-sm">在利润计算器中保存方案后，数据将显示在这里</p>
         </div>
-      ) : viewMode === "table" ? (
+      ) : (
         <div className="bg-[#0f172a] border border-[#1e293b] rounded-xl overflow-hidden shadow-2xl ring-1 ring-white/5">
           {/* Header Actions */}
           <div className="flex justify-between items-center px-5 py-3 bg-[#1e293b] border-b border-[#334155]">
@@ -257,20 +250,23 @@ const ProductProfitList: React.FC = () => {
               <span className="text-[10px] text-slate-500 font-normal ml-2">({Object.keys(groupedModels).length} 产品, {filteredModels.length} 方案)</span>
             </h3>
             <div className="flex items-center gap-1.5">
-              {/* 固定按钮组 - 统一卡片样式 */}
+              {/* 展开/折叠切换按钮 */}
               <button
-                onClick={expandAllGroups}
+                onClick={() => {
+                  const allGroupNames = Object.keys(groupedModels);
+                  const allExpanded = allGroupNames.every(name => expandedGroups.has(name));
+                  if (allExpanded) {
+                    setExpandedGroups(new Set());
+                  } else {
+                    setExpandedGroups(new Set(allGroupNames));
+                  }
+                }}
                 className="p-2 bg-slate-700/50 hover:bg-slate-600 text-slate-300 rounded-lg transition-all"
-                title="展开全部"
+                title={Object.keys(groupedModels).every(name => expandedGroups.has(name)) ? '折叠全部' : '展开全部'}
               >
-                <span className="material-symbols-outlined text-[16px]">unfold_more</span>
-              </button>
-              <button
-                onClick={collapseAllGroups}
-                className="p-2 bg-slate-700/50 hover:bg-slate-600 text-slate-300 rounded-lg transition-all"
-                title="折叠全部"
-              >
-                <span className="material-symbols-outlined text-[16px]">unfold_less</span>
+                <span className="material-symbols-outlined text-[16px]">
+                  {Object.keys(groupedModels).every(name => expandedGroups.has(name)) ? 'unfold_less' : 'unfold_more'}
+                </span>
               </button>
 
               <div className="w-px h-5 bg-slate-600 mx-1"></div>
@@ -299,16 +295,6 @@ const ProductProfitList: React.FC = () => {
                 <span className="material-symbols-outlined text-[16px]">delete</span>
               </button>
 
-              {/* 取消选择 */}
-              <button
-                onClick={() => setSelectedIds(new Set())}
-                className={`p-2 hover:bg-slate-600 text-slate-400 rounded-lg transition-all ${selectedIds.size > 0 ? 'opacity-100' : 'opacity-30 cursor-not-allowed'}`}
-                title="取消选择"
-                disabled={selectedIds.size === 0}
-              >
-                <span className="material-symbols-outlined text-[16px]">close</span>
-              </button>
-
             </div>
           </div>
 
@@ -335,9 +321,12 @@ const ProductProfitList: React.FC = () => {
                   {/* 采购成本 */}
                   <th rowSpan={2} className="px-2 py-2 text-center border-r border-[#334155] bg-blue-500/10 text-blue-300" style={{ width: '65px' }}>采购成本</th>
                   {/* 头程 - 单独 */}
-                  <th rowSpan={2} className="px-2 py-2 text-center border-r border-[#334155] bg-sky-500/10 text-sky-300" style={{ width: '55px' }}>头程</th>
-                  {/* 运费仓储 Group (FBA配送/杂费/仓储费) */}
-                  <th colSpan={3} className="px-2 py-1 text-center border-r border-[#334155] bg-cyan-500/15 text-cyan-300">运费仓储</th>
+                  {/* 头程 - 单独 */}
+                  <th rowSpan={2} className="px-2 py-2 text-center border-r border-[#334155] bg-sky-500/10 text-sky-300 leading-tight" style={{ width: '55px' }}>
+                    <div>头程</div><div>物流</div>
+                  </th>
+                  {/* 运费仓储 Group (FBA配送费/仓储杂费) */}
+                  <th colSpan={2} className="px-2 py-1 text-center border-r border-[#334155] bg-cyan-500/15 text-cyan-300">运费仓储</th>
                   {/* 退货损耗 */}
                   <th rowSpan={2} className="px-1 py-2 text-center border-r border-[#334155] bg-rose-500/10 text-rose-300 leading-tight" style={{ width: '50px' }}>
                     <div>退货</div><div>损耗</div>
@@ -362,9 +351,8 @@ const ProductProfitList: React.FC = () => {
                 {/* Row 2: Sub-headers */}
                 <tr className="bg-[#1e293b] border-b border-[#334155] text-[10px] uppercase tracking-tight text-slate-500 font-bold">
                   {/* 运费仓储 Sub-headers */}
-                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-cyan-500/10" style={{ width: '50px' }}>FBA配送</th>
-                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-cyan-500/10" style={{ width: '45px' }}>杂费</th>
-                  <th className="px-2 py-2 text-center border-r border-[#334155] bg-cyan-500/10" style={{ width: '45px' }}>仓储费</th>
+                  <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-cyan-500/10" style={{ width: '60px' }}>FBA配送费</th>
+                  <th className="px-2 py-2 text-center border-r border-[#334155] bg-cyan-500/10" style={{ width: '60px' }}>仓储杂费</th>
                   {/* 佣金 Sub-headers */}
                   <th className="px-2 py-2 text-center border-r border-[#334155]/30 bg-orange-500/10" style={{ width: '45px' }}>占比</th>
                   <th className="px-2 py-2 text-center border-r border-[#334155] bg-orange-500/10" style={{ width: '50px' }}>金额</th>
@@ -383,7 +371,7 @@ const ProductProfitList: React.FC = () => {
                   <th className="px-2 py-2 text-center border-r border-[#334155] bg-emerald-500/10 text-emerald-400 font-bold" style={{ width: '55px' }}>净利润</th>
                 </tr>
               </thead>
-              <tbody className="text-[11px] text-slate-300">
+              <tbody className="text-xs text-slate-300">
                 {(Object.entries(groupedModels) as [string, SavedProfitModel[]][]).map(([groupName, groupItems]) => {
                   const isExpanded = expandedGroups.has(groupName);
                   const groupSelectedCount = groupItems.filter(m => selectedIds.has(m.id)).length;
@@ -406,8 +394,8 @@ const ProductProfitList: React.FC = () => {
                             onClick={() => toggleGroup(groupName)}
                           >
                             <td
-                              colSpan={22}
-                              className="px-3 py-2.5 sticky left-0 z-10 bg-[#1e293b] group-hover:bg-[#334155] transition-colors"
+                              colSpan={20}
+                              className="px-3 py-1.5 sticky left-0 z-10 bg-[#1e293b] group-hover:bg-[#334155] transition-colors"
                             >
                               <div className="flex items-center gap-3">
                                 <span
@@ -415,14 +403,18 @@ const ProductProfitList: React.FC = () => {
                                 >
                                   chevron_right
                                 </span>
-                                <span className="font-bold text-slate-100 text-sm">{groupName}</span>
+                                <span className="font-bold text-slate-100 text-sm w-48 truncate" title={groupName}>{groupName}</span>
                                 {sku && (
-                                  <span className="px-2 py-0.5 bg-slate-700/50 text-slate-400 rounded text-[10px] font-mono">
-                                    SKU: {sku}
+                                  <span className="w-32 flex-shrink-0">
+                                    <span className="px-2 py-0.5 bg-slate-700/50 text-slate-400 rounded text-[10px] font-mono block truncate">
+                                      SKU: {sku}
+                                    </span>
                                   </span>
                                 )}
-                                <span className="px-2 py-0.5 bg-[#334155] text-slate-400 rounded-full text-[10px] font-bold">
-                                  {groupItems.length} 个方案
+                                <span className="w-20 flex-shrink-0">
+                                  <span className="px-2 py-0.5 bg-[#334155] text-slate-400 rounded-full text-[10px] font-bold block w-fit">
+                                    {groupItems.length} 个方案
+                                  </span>
                                 </span>
                                 {groupSelectedCount > 0 && (
                                   <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded-full text-[10px] font-bold">
@@ -430,6 +422,22 @@ const ProductProfitList: React.FC = () => {
                                   </span>
                                 )}
                               </div>
+                            </td>
+
+                            {/* Action Column for Group Header - Replenishment Plan Button */}
+                            <td className="px-2 py-1.5 text-center bg-[#1e293b] group-hover:bg-[#334155] transition-colors border-l border-[#334155]/50" onClick={(e) => e.stopPropagation()}>
+                              {linkedProduct && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActiveReplProductId(linkedProduct.id);
+                                  }}
+                                  className="p-1.5 text-indigo-400 hover:text-white hover:bg-indigo-500 rounded transition-colors"
+                                  title="查看补货方案"
+                                >
+                                  <span className="material-symbols-outlined text-[20px]">inventory_2</span>
+                                </button>
+                              )}
                             </td>
                           </tr>
                         );
@@ -548,7 +556,7 @@ const ProductProfitList: React.FC = () => {
 
                             {/* 2. 售价 */}
                             <td className="px-2 py-3 text-center border-r border-[#334155]">
-                              <span className="font-bold text-white text-sm bg-[#1e293b]/50 px-2 py-1 rounded">${res.price.toFixed(2)}</span>
+                              <span className="font-bold text-white text-xs bg-[#1e293b]/50 px-2 py-1 rounded">${res.price.toFixed(2)}</span>
                             </td>
 
                             {/* 3. 采购成本 (USD) - Blue */}
@@ -557,13 +565,12 @@ const ProductProfitList: React.FC = () => {
                             {/* 4. 头程 - Sky (单独) */}
                             <td className="px-2 py-3 text-center text-sky-300 border-r border-[#334155] bg-sky-500/5">${model.inputs.shippingUSD}</td>
 
-                            {/* 仓配组: FBA/杂费/仓储 - Cyan */}
+                            {/* 仓配组: FBA/仓储杂费 - Cyan */}
                             <td className="px-2 py-3 text-center text-cyan-300 border-r border-[#334155]/30 bg-cyan-500/5">${model.inputs.fbaFee}</td>
-                            <td className="px-2 py-3 text-center text-slate-500 border-r border-[#334155]/30 bg-cyan-500/5">${model.inputs.miscFee}</td>
-                            <td className="px-2 py-3 text-center text-slate-500 border-r border-[#334155] bg-cyan-500/5">${model.inputs.storageFee}</td>
+                            <td className="px-2 py-3 text-center text-slate-500 border-r border-[#334155] bg-cyan-500/5">${(model.inputs.miscFee + model.inputs.storageFee).toFixed(2)}</td>
 
                             {/* 退货损耗 (合计) - Rose */}
-                            <td className="px-1 py-3 text-center text-rose-400 text-xs font-bold border-r border-[#334155] bg-rose-500/5">${res.ret.toFixed(2)}</td>
+                            <td className="px-1 py-3 text-center text-rose-400 text-xs font-medium border-r border-[#334155] bg-rose-500/5">${res.ret.toFixed(2)}</td>
 
                             {/* 佣金组: 占比/金额 - Orange */}
                             <td className="px-2 py-3 text-center text-orange-400 border-r border-[#334155]/30 bg-orange-500/5">{(res.commRate * 100).toFixed(0)}%</td>
@@ -574,11 +581,11 @@ const ProductProfitList: React.FC = () => {
                             <td className="px-2 py-3 text-center text-purple-300 border-r border-[#334155] bg-purple-500/5">${res.adsVal}</td>
 
                             {/* 盈亏平衡 */}
-                            <td className="px-1 py-3 text-center text-slate-300 text-xs font-bold border-r border-[#334155] bg-slate-600/5">${res.be}</td>
+                            <td className="px-1 py-3 text-center text-slate-300 text-xs font-medium border-r border-[#334155] bg-slate-600/5">${res.be}</td>
 
                             {/* 回款组: 回款率/金额 - Green */}
                             {(() => {
-                              const recall = res.price - res.commVal - model.inputs.fbaFee - res.adsVal - res.ret - model.inputs.storageFee;
+                              const recall = res.price - res.commVal - model.inputs.fbaFee - res.adsVal - res.ret - model.inputs.storageFee - model.inputs.miscFee;
                               const recallRate = res.price > 0 ? (recall / res.price) * 100 : 0;
                               return (
                                 <>
@@ -602,22 +609,18 @@ const ProductProfitList: React.FC = () => {
                             {/* 利润组: 目标/利率/净利 - Emerald */}
                             <td className="px-2 py-3 text-center text-slate-500 border-r border-[#334155]/30 bg-emerald-500/5">{model.inputs.targetMargin}%</td>
                             <td className="px-2 py-3 text-center text-emerald-400 font-bold border-r border-[#334155]/30 bg-emerald-500/10">{(res.margin * 100).toFixed(1)}%</td>
-                            <td className="px-2 py-3 text-center text-emerald-400 font-black text-sm bg-emerald-500/10">${res.profit}</td>
+                            <td className="px-2 py-3 text-center text-emerald-400 font-bold text-xs bg-emerald-500/10">${res.profit}</td>
 
                             {/* 操作 */}
-                            <td className="px-1 py-3 text-center flex items-center justify-center">
-                              <button
-                                onClick={(e) => { e.stopPropagation(); setActiveReplModel(model); }}
-                                className="p-0.5 text-blue-400 hover:text-blue-300 transition-colors rounded hover:bg-blue-500/10"
-                                title="补货计划">
-                                <span className="material-symbols-outlined text-[16px]">inventory_2</span>
-                              </button>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); handleDelete([model.id]); }}
-                                className="p-0.5 text-slate-600 hover:text-rose-500 transition-colors rounded hover:bg-[#334155]/50"
-                                title="删除">
-                                <span className="material-symbols-outlined text-[16px]">close</span>
-                              </button>
+                            <td className="px-1 py-3">
+                              <div className="flex items-center justify-center h-full">
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleDelete([model.id]); }}
+                                  className="p-1 text-slate-600 hover:text-rose-500 transition-colors rounded hover:bg-[#334155]/50"
+                                  title="删除">
+                                  <span className="material-symbols-outlined text-[16px]">close</span>
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         );
@@ -629,77 +632,7 @@ const ProductProfitList: React.FC = () => {
             </table>
           </div>
         </div>
-      ) : (
-        <div className="bg-[#0c0c0e] border border-[#27272a] rounded-2xl overflow-hidden shadow-2xl p-8">
-          {selectedIds.size === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16">
-              <div className="bg-zinc-900/50 p-6 rounded-2xl mb-6">
-                <span className="material-symbols-outlined text-6xl text-zinc-700">bar_chart</span>
-              </div>
-              <h3 className="text-xl font-black text-white mb-2">请选择要对比的方案</h3>
-              <p className="text-zinc-500 text-sm">在表格视图中选择多个方案后查看对比图表</p>
-            </div>
-          ) : (
-            <div>
-              <div className="mb-8">
-                <h3 className="text-2xl font-black text-white mb-2">利润对比分析</h3>
-                <p className="text-zinc-500 text-sm">已选中 {selectedIds.size} 个方案进行对比</p>
-              </div>
-
-              <div className="h-[500px] mb-8">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={getComparisonData()} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#27272a" />
-                    <XAxis
-                      dataKey="name"
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fill: '#71717a', fontSize: 11, fontWeight: 700 }}
-                      angle={-45}
-                      textAnchor="end"
-                      height={100}
-                    />
-                    <YAxis
-                      yAxisId="left"
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fill: '#71717a', fontSize: 11, fontWeight: 600 }}
-                      tickFormatter={(v) => `$${v}`}
-                    />
-                    <YAxis
-                      yAxisId="right"
-                      orientation="right"
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fill: '#71717a', fontSize: 11, fontWeight: 600 }}
-                      tickFormatter={(v) => `${v}%`}
-                    />
-                    <Tooltip
-                      cursor={{ fill: 'rgba(59, 130, 246, 0.05)' }}
-                      contentStyle={{
-                        backgroundColor: '#18181b',
-                        border: '1px solid #27272a',
-                        borderRadius: '12px',
-                        padding: '12px'
-                      }}
-                      labelStyle={{ color: '#fff', fontWeight: 'bold', marginBottom: '8px' }}
-                    />
-                    <Legend
-                      wrapperStyle={{ paddingTop: '20px' }}
-                      iconType="circle"
-                    />
-                    <Bar yAxisId="left" dataKey="净利润" fill="#22c55e" radius={[4, 4, 0, 0]} />
-                    <Bar yAxisId="left" dataKey="成本" fill="#ef4444" radius={[4, 4, 0, 0]} />
-                    <Bar yAxisId="right" dataKey="利润率" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          )}
-        </div>
-      )
-      }
-
+      )}
 
       {/* 删除确认对话框 */}
       {
@@ -740,25 +673,37 @@ const ProductProfitList: React.FC = () => {
       }
 
       {/* 补货 Modal */}
-      {activeReplModel && (
-        <ReplenishmentModal
-          strategies={groupedModels[activeReplModel.productName || '未命名产品'] || [activeReplModel]}
-          initialStrategyId={activeReplModel.id}
-          onClose={() => setActiveReplModel(null)}
-          onSave={(modelId: string, updates: Partial<SavedProfitModel>) => {
-            ProfitModelService.update(modelId, updates);
-            loadData(); // Refresh list
-          }}
-          onDelete={(modelId: string) => {
-            // User requested to only delete replenishment plan, not the profit model itself
-            const model = models.find(m => m.id === modelId);
-            if (model) {
-              ProfitModelService.update(modelId, { replenishment: undefined });
-              loadData();
-            }
-          }}
-        />
-      )}
+      {
+        activeReplProductId && (
+          <ReplenishmentModal
+            strategies={filteredModels.filter(m => m.productId === activeReplProductId)} // Pass all known strategies for context if needed
+            productId={activeReplProductId}
+            productName={products.find(p => p.id === activeReplProductId)?.name}
+            onClose={() => setActiveReplProductId(null)}
+            onSave={(modelId: string, updates: Partial<SavedProfitModel>) => {
+              console.log('[Debug] ProductProfitList onSave', modelId, updates);
+              const success = ProfitModelService.update(modelId, updates);
+              if (success) {
+                // Optimistic update with explicit null
+                setModels(prev => prev.map(m => {
+                  if (m.id === modelId) {
+                    const newModel = { ...m, ...updates };
+                    if (updates.replenishment === null) {
+                      delete (newModel as any).replenishment;
+                    }
+                    return newModel;
+                  }
+                  return m;
+                }));
+
+                // Force sync with storage after a tick to ensure write completes
+                setTimeout(() => loadData(), 50);
+              }
+            }}
+
+          />
+        )
+      }
     </div >
   );
 };

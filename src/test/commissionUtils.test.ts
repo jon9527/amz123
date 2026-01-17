@@ -1,32 +1,31 @@
 import { describe, it, expect } from 'vitest';
-import { getCommRate, getReturnCost, getRefundAdminFee, CommissionConfig, ReturnCostParams } from '../utils/commissionUtils';
+import { getCommRate, getReturnCost, getRefundAdminFee, ReturnCostParams } from '../utils/commissionUtils';
 
 describe('commissionUtils', () => {
     describe('getCommRate', () => {
-        const autoConfig: CommissionConfig = { autoComm: true, manualComm: 15 };
-        const manualConfig: CommissionConfig = { autoComm: false, manualComm: 12 };
-
-        it('应返回手动佣金率当 autoComm 为 false', () => {
-            expect(getCommRate(25, manualConfig)).toBe(0.12);
-            expect(getCommRate(10, manualConfig)).toBe(0.12);
+        // Updated to use new signature: getCommRate(price, category)
+        it('应返回 17% 当价格 > $20 (Apparel)', () => {
+            expect(getCommRate(25, 'apparel')).toBe(0.17);
+            expect(getCommRate(100, 'apparel')).toBe(0.17);
+            expect(getCommRate(20.01, 'apparel')).toBe(0.17);
         });
 
-        it('应返回 17% 当价格 > $20', () => {
-            expect(getCommRate(25, autoConfig)).toBe(0.17);
-            expect(getCommRate(100, autoConfig)).toBe(0.17);
-            expect(getCommRate(20.01, autoConfig)).toBe(0.17);
+        it('应返回 10% 当价格在 $15-$20 (Apparel)', () => {
+            expect(getCommRate(15, 'apparel')).toBe(0.10);
+            expect(getCommRate(18, 'apparel')).toBe(0.10);
+            expect(getCommRate(20, 'apparel')).toBe(0.10);
         });
 
-        it('应返回 10% 当价格在 $15-$20', () => {
-            expect(getCommRate(15, autoConfig)).toBe(0.10);
-            expect(getCommRate(18, autoConfig)).toBe(0.10);
-            expect(getCommRate(20, autoConfig)).toBe(0.10);
+        it('应返回 5% 当价格 < $15 (Apparel)', () => {
+            expect(getCommRate(14.99, 'apparel')).toBe(0.05);
+            expect(getCommRate(10, 'apparel')).toBe(0.05);
+            expect(getCommRate(1, 'apparel')).toBe(0.05);
         });
 
-        it('应返回 5% 当价格 < $15', () => {
-            expect(getCommRate(14.99, autoConfig)).toBe(0.05);
-            expect(getCommRate(10, autoConfig)).toBe(0.05);
-            expect(getCommRate(1, autoConfig)).toBe(0.05);
+        it('应返回 15% 对于 Standard Category', () => {
+            expect(getCommRate(10, 'standard')).toBe(0.15);
+            expect(getCommRate(25, 'standard')).toBe(0.15);
+            expect(getCommRate(100, 'standard')).toBe(0.15);
         });
     });
 

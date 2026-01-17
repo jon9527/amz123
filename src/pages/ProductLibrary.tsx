@@ -5,6 +5,7 @@ import { getTagColor } from '../utils/tagColors';
 import { Button } from '../components/ui';
 import { PageShell } from '../components/page-layout';
 import { ProductForm, ProductFormData } from '../components/product-library';
+import { calculateFBAFeeFromProduct } from '../utils/fbaCalculator.utils';
 
 // 空表单初始状态
 const emptyForm: ProductFormData = {
@@ -15,11 +16,29 @@ const emptyForm: ProductFormData = {
     height: 0,
     weight: 0,
     pcsPerBox: 0,
+    // 整箱规格
+    boxLength: 0,
+    boxWidth: 0,
+    boxHeight: 0,
+    boxWeight: 0,
+    // 成本
     unitCost: 0,
     defaultPrice: 0,
     asin: '',
     notes: '',
     tags: '',  // 逗号分隔的标签字符串
+    category: 'standard',
+    fbaFeeManual: 0,
+    inboundPlacementMode: 'optimized',
+    defaultStorageMonth: 'jan_sep',
+    defaultInventoryAge: 0,
+    // Fee Manual Overrides
+    inboundPlacementFeeManual: 0,
+    monthlyStorageFeeManual: 0,
+    agedInventoryFeeManual: 0,
+    removalFeeManual: 0,
+    disposalFeeManual: 0,
+    returnsProcessingFeeManual: 0,
 };
 
 type SortKey = 'name' | 'createdAt' | 'unitCost' | 'defaultPrice';
@@ -90,9 +109,9 @@ const ProductLibrary: React.FC = () => {
 
     // 导出CSV
     const exportCSV = () => {
-        const headers = ['名称', 'SKU', 'ASIN', '长(cm)', '宽(cm)', '高(cm)', '重量(kg)', '装箱数', '采购价(¥)', '售价($)', '标签', '备注'];
+        const headers = ['名称', 'SKU', 'ASIN', '类目', '长(cm)', '宽(cm)', '高(cm)', '重量(kg)', '装箱数', '采购价(¥)', '售价($)', 'FBA手动($)', '标签', '备注'];
         const rows = products.map(p => [
-            p.name, p.sku, p.asin || '', p.length, p.width, p.height, p.weight, p.pcsPerBox, p.unitCost, p.defaultPrice, (p.tags || []).join(';'), p.notes || ''
+            p.name, p.sku, p.asin || '', p.category || 'standard', p.length, p.width, p.height, p.weight, p.pcsPerBox, p.unitCost, p.defaultPrice, p.fbaFeeManual || '', (p.tags || []).join(';'), p.notes || ''
         ]);
         const csv = [headers, ...rows].map(r => r.map(c => `"${c}"`).join(',')).join('\n');
         const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
@@ -156,11 +175,23 @@ const ProductLibrary: React.FC = () => {
             height: form.height,
             weight: form.weight,
             pcsPerBox: form.pcsPerBox,
+            // 整箱规格
+            boxLength: form.boxLength || 0,
+            boxWidth: form.boxWidth || 0,
+            boxHeight: form.boxHeight || 0,
+            boxWeight: form.boxWeight || 0,
+            // 成本
             unitCost: form.unitCost,
             defaultPrice: form.defaultPrice,
             asin: form.asin,
             notes: form.notes,
             tags: form.tags ? form.tags.split(',').map(t => t.trim()).filter(t => t) : [],
+            // FBA Fields
+            category: form.category || 'standard',
+            fbaFeeManual: form.fbaFeeManual || 0,
+            fbaFeeYear: 2026, // Updated to 2026
+            inboundPlacementMode: form.inboundPlacementMode || 'optimized',
+            defaultStorageMonth: form.defaultStorageMonth || 'jan_sep',
         };
 
         if (editingId) {
@@ -180,11 +211,29 @@ const ProductLibrary: React.FC = () => {
             height: product.height,
             weight: product.weight,
             pcsPerBox: product.pcsPerBox,
+            // 整箱规格
+            boxLength: product.boxLength || 0,
+            boxWidth: product.boxWidth || 0,
+            boxHeight: product.boxHeight || 0,
+            boxWeight: product.boxWeight || 0,
+            // 成本
             unitCost: product.unitCost,
             defaultPrice: product.defaultPrice,
             asin: product.asin || '',
             notes: product.notes || '',
             tags: (product.tags || []).join(', '),
+            category: product.category || 'standard',
+            fbaFeeManual: product.fbaFeeManual || 0,
+            inboundPlacementMode: product.inboundPlacementMode || 'optimized',
+            defaultStorageMonth: product.defaultStorageMonth || 'jan_sep',
+            defaultInventoryAge: product.defaultInventoryAge || 0,
+            // Fee Manual Overrides
+            inboundPlacementFeeManual: product.inboundPlacementFeeManual || 0,
+            monthlyStorageFeeManual: product.monthlyStorageFeeManual || 0,
+            agedInventoryFeeManual: product.agedInventoryFeeManual || 0,
+            removalFeeManual: product.removalFeeManual || 0,
+            disposalFeeManual: product.disposalFeeManual || 0,
+            returnsProcessingFeeManual: product.returnsProcessingFeeManual || 0,
         });
         setEditingId(product.id);
         setErrors([]);
@@ -194,11 +243,11 @@ const ProductLibrary: React.FC = () => {
     // 生成测试产品
     const generateTestProducts = () => {
         const testProducts = [
-            { name: '无线蓝牙耳机 Pro', sku: 'BT-HP-001', asin: 'B09TEST001', length: 18, width: 15, height: 8, weight: 0.35, pcsPerBox: 50, unitCost: 45, defaultPrice: 29.99, tags: ['电子', '热卖'] },
-            { name: '多功能数据线套装', sku: 'CB-SET-002', asin: 'B09TEST002', length: 12, width: 10, height: 3, weight: 0.15, pcsPerBox: 100, unitCost: 8, defaultPrice: 12.99, tags: ['配件'] },
-            { name: '智能手表保护壳', sku: 'WC-PRO-003', asin: 'B09TEST003', length: 6, width: 5, height: 2, weight: 0.05, pcsPerBox: 200, unitCost: 3.5, defaultPrice: 8.99, tags: ['配件', '新品'] },
-            { name: '便携式充电宝 20000mAh', sku: 'PB-20K-004', asin: 'B09TEST004', length: 15, width: 8, height: 3, weight: 0.45, pcsPerBox: 30, unitCost: 65, defaultPrice: 39.99, tags: ['电子', '热卖'] },
-            { name: '运动水壶 750ml', sku: 'WB-750-005', asin: 'B09TEST005', length: 25, width: 8, height: 8, weight: 0.25, pcsPerBox: 40, unitCost: 12, defaultPrice: 18.99, tags: ['运动', '新品'] },
+            { name: '无线蓝牙耳机 Pro', sku: 'BT-HP-001', asin: 'B09TEST001', length: 18, width: 15, height: 8, weight: 0.35, pcsPerBox: 50, boxLength: 60, boxWidth: 45, boxHeight: 35, boxWeight: 19, unitCost: 45, defaultPrice: 29.99, tags: ['电子', '热卖'], category: 'standard' as const },
+            { name: '多功能数据线套装', sku: 'CB-SET-002', asin: 'B09TEST002', length: 12, width: 10, height: 3, weight: 0.15, pcsPerBox: 100, boxLength: 55, boxWidth: 40, boxHeight: 30, boxWeight: 17, unitCost: 8, defaultPrice: 12.99, tags: ['配件'], category: 'standard' as const },
+            { name: '智能手表保护壳', sku: 'WC-PRO-003', asin: 'B09TEST003', length: 6, width: 5, height: 2, weight: 0.05, pcsPerBox: 200, boxLength: 50, boxWidth: 35, boxHeight: 25, boxWeight: 12, unitCost: 3.5, defaultPrice: 8.99, tags: ['配件', '新品'], category: 'standard' as const },
+            { name: '便携式充电宝 20000mAh', sku: 'PB-20K-004', asin: 'B09TEST004', length: 15, width: 8, height: 3, weight: 0.45, pcsPerBox: 30, boxLength: 50, boxWidth: 35, boxHeight: 20, boxWeight: 15, unitCost: 65, defaultPrice: 39.99, tags: ['电子', '热卖'], category: 'standard' as const },
+            { name: '运动水壶 750ml', sku: 'WB-750-005', asin: 'B09TEST005', length: 25, width: 8, height: 8, weight: 0.25, pcsPerBox: 40, boxLength: 55, boxWidth: 45, boxHeight: 40, boxWeight: 12, unitCost: 12, defaultPrice: 18.99, tags: ['运动', '新品'], category: 'standard' as const },
         ];
         testProducts.forEach(p => addProduct(p));
     };
@@ -207,7 +256,8 @@ const ProductLibrary: React.FC = () => {
         <PageShell
             title="产品库"
             subtitle="管理产品规格，供其他模块引用"
-            icon="📦"
+            icon="inventory_2"
+            useMaterialIcon
             maxWidth="full"
             actions={
                 <>
@@ -346,6 +396,7 @@ const ProductLibrary: React.FC = () => {
                                 <th className="py-3 px-4 font-bold text-center">装箱</th>
                                 <th className="py-3 px-4 font-bold text-center">采购价</th>
                                 <th className="py-3 px-4 font-bold text-center">售价</th>
+                                <th className="py-3 px-4 font-bold text-center">FBA (2026)</th>
                                 <th className="py-3 px-4 font-bold text-center">操作</th>
                             </tr>
                         </thead>
@@ -412,6 +463,18 @@ const ProductLibrary: React.FC = () => {
                                     <td className="py-3 px-4 text-center font-mono text-zinc-300">{product.pcsPerBox}</td>
                                     <td className="py-3 px-4 text-center font-mono text-orange-400">¥{product.unitCost}</td>
                                     <td className="py-3 px-4 text-center font-mono text-green-400">${product.defaultPrice}</td>
+                                    <td className="py-3 px-4 text-center font-mono">
+                                        <div className="flex flex-col items-center">
+                                            {/* 优先显示手动费用 */}
+                                            {product.fbaFeeManual && product.fbaFeeManual > 0 ? (
+                                                <span className="text-orange-500 font-bold" title="手动锁定费用">${product.fbaFeeManual}</span>
+                                            ) : (
+                                                <span className="text-zinc-400" title="系统自动计算 (2026)">
+                                                    ${calculateFBAFeeFromProduct(product).toFixed(2)}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </td>
                                     <td className="py-3 px-4 text-center" onClick={(e) => e.stopPropagation()}>
                                         <div className="flex justify-center gap-2">
                                             <button

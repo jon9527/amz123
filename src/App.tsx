@@ -6,6 +6,7 @@ import { ProductProvider } from './contexts/ProductContext';
 import { LogisticsProvider } from './contexts/LogisticsContext';
 import { OperationsProvider } from './contexts/OperationsContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ExchangeRateProvider } from './contexts/ExchangeRateContext';
 import PinLockScreen from './components/PinLockScreen';
 import { NAVIGATION_ITEMS } from './constants';
 import { MigrationService } from './services/MigrationService';
@@ -88,17 +89,19 @@ const AppContent: React.FC = () => {
     <>
       {/* DEV: PIN disabled for local testing */}
       {false && isLocked && <PinLockScreen />}
-      <ProductProvider>
-        <LogisticsProvider>
-          <OperationsProvider>
-            <Layout currentView={currentView} onViewChange={setCurrentView}>
-              <Suspense fallback={<PageLoader />}>
-                {renderContent()}
-              </Suspense>
-            </Layout>
-          </OperationsProvider>
-        </LogisticsProvider>
-      </ProductProvider>
+      <ExchangeRateProvider>
+        <ProductProvider>
+          <LogisticsProvider>
+            <OperationsProvider>
+              <Layout currentView={currentView} onViewChange={setCurrentView}>
+                <Suspense fallback={<PageLoader />}>
+                  {renderContent()}
+                </Suspense>
+              </Layout>
+            </OperationsProvider>
+          </LogisticsProvider>
+        </ProductProvider>
+      </ExchangeRateProvider>
     </>
   );
 };

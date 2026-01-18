@@ -4,6 +4,7 @@ import { ModuleState, SimulationResult, FinancialEvent, LogisticsCosts } from '.
 import { ProfitModelService } from '../services/profitModelService';
 import { useProducts } from '../contexts/ProductContext';
 import { useLogistics } from '../contexts/LogisticsContext';
+import { useExchangeRateValue } from '../contexts/ExchangeRateContext';
 
 import { STORAGE_KEYS } from '../repositories';
 import { ReplenishmentBatch, SavedProfitModel, SavedReplenishmentPlan, ReplenishmentPlanSummary } from '../types';
@@ -74,7 +75,7 @@ const getDefaultState = (): ModuleState => ({
     sellCost: 0,
     shippingUSD: 0,
     profitUSD: 0,
-    exchRate: 7.2,
+    exchRate: 7.2, // Will be overridden by Context in component
     ratioDeposit: 0.3,
     ratioBalance: 0.7,
     prodDays: 15,
@@ -188,6 +189,7 @@ const ReplenishmentAdvice: React.FC = () => {
     const [selectedStrategyId, setSelectedStrategyId] = useState<string>('');
     const { products } = useProducts();
     const { channels } = useLogistics();
+    const contextExchRate = useExchangeRateValue();
 
 
 
@@ -275,6 +277,14 @@ const ReplenishmentAdvice: React.FC = () => {
             console.warn('Failed to restore selection state:', e);
         }
     }, []);
+
+    // Sync exchange rate from Context to local state
+    useEffect(() => {
+        if (contextExchRate && contextExchRate !== state.exchRate) {
+            setState(s => ({ ...s, exchRate: contextExchRate }));
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [contextExchRate]);
 
     // 保存状态到localStorage
     useEffect(() => {

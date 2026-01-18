@@ -613,7 +613,7 @@ const ReplenishmentAdvice: React.FC = () => {
         const sumInv = simResult.invPoints.reduce((acc, p) => acc + p.y, 0);
         const avgInv = duration > 0 ? sumInv / duration : 0;
         const invTurnoverRatio = avgInv > 0 ? simResult.totalSoldQty / avgInv : 0;
-        const turnoverDays = invTurnoverRatio > 0 ? 365 / invTurnoverRatio : 0;
+        const turnoverDays = invTurnoverRatio > 0 ? duration / invTurnoverRatio : 0;
 
         // 资金周转率 & 净利率
         const fundTurnoverRatio = simResult.minCash !== 0 ? (simResult.totalGMV / Math.abs(simResult.minCash)) : 0;
@@ -718,7 +718,7 @@ const ReplenishmentAdvice: React.FC = () => {
         const sumInv = simResult.invPoints.reduce((acc, p) => acc + p.y, 0);
         const avgInv = duration > 0 ? sumInv / duration : 0;
         const invTurnoverRatio = avgInv > 0 ? simResult.totalSoldQty / avgInv : 0;
-        const turnoverDays = invTurnoverRatio > 0 ? 365 / invTurnoverRatio : 0;
+        const turnoverDays = invTurnoverRatio > 0 ? duration / invTurnoverRatio : 0;
 
         const fundTurnoverRatio = simResult.minCash !== 0 ? (simResult.totalGMV / Math.abs(simResult.minCash)) : 0;
         const netMargin = simResult.totalGMV !== 0 ? (simResult.totalNetProfit / simResult.totalGMV) : 0;

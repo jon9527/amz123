@@ -4,8 +4,39 @@ import { useProducts } from '../contexts/ProductContext';
 import { getTagColor } from '../utils/tagColors';
 import { Button } from '../components/ui';
 import { PageShell } from '../components/page-layout';
-import { ProductForm, ProductFormData } from '../components/product-library';
+import { ProductForm, ProductFormData, SkuCsvImporter, SkuTreeTable, ProductDetailDrawer } from '../components/product-library';
+import { calculateSalesWeights } from '../utils/salesWeightCalculator';
 import { calculateFBAFeeFromProduct } from '../utils/fbaCalculator.utils';
+import { SkuParentGroup, SkuItem } from '../types/skuTypes';
+
+// 适配器：将 SkuParentGroup 转换为 ProductSpec 以复用详情抽屉
+const mapGroupToProduct = (group: SkuParentGroup): ProductSpec => ({
+    id: group.parentAsin,
+    name: group.品名,
+    sku: group.款号,
+    asin: group.parentAsin,
+    length: group.length || 0,
+    width: group.width || 0,
+    height: group.height || 0,
+    weight: group.weight || 0,
+    boxLength: group.boxLength || 0,
+    boxWidth: group.boxWidth || 0,
+    boxHeight: group.boxHeight || 0,
+    boxWeight: group.boxWeight || 0,
+    pcsPerBox: group.pcsPerBox || 0,
+    unitCost: group.unitCost || 0,
+    defaultPrice: group.defaultPrice || 0,
+    tags: group.tags ? group.tags.split(' ').filter(t => t.trim()) : [],
+    notes: group.notes,
+    image: '',
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    fbaFeeManual: group.fbaFeeManual || 0,
+    category: group.category || 'apparel',
+    inboundPlacementMode: group.inboundPlacementMode || 'optimized',
+    defaultStorageMonth: group.defaultStorageMonth || 'jan_sep',
+    defaultInventoryAge: group.defaultInventoryAge || 0,
+});
 
 // 空表单初始状态
 const emptyForm: ProductFormData = {
@@ -49,17 +80,41 @@ const ProductLibrary: React.FC = () => {
     const [editingId, setEditingId] = useState<string | null>(null);
     const [showForm, setShowForm] = useState(false);
     const [errors, setErrors] = useState<string[]>([]);
-    const [drawerProductId, setDrawerProductId] = useState<string | null>(null);
-    const [copiedText, setCopiedText] = useState<string | null>(null);
+    const [drawerProduct, setDrawerProduct] = useState<ProductSpec | null>(null);
     const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
     const [sortKey, setSortKey] = useState<SortKey>('createdAt');
     const [sortDir, setSortDir] = useState<SortDir>('desc');
     const [filterTag, setFilterTag] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [addTagProductId, setAddTagProductId] = useState<string | null>(null);
+    const [editingSkuParentAsin, setEditingSkuParentAsin] = useState<string | null>(null);
+
+    // 服装SKU相关状态
+    const [showSkuImporter, setShowSkuImporter] = useState(false);
+    const [skuGroups, setSkuGroups] = useState<SkuParentGroup[]>(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('sku_groups_data');
+            try {
+                return saved ? JSON.parse(saved) : [];
+            } catch (e) {
+                console.error('Failed to load SKU groups', e);
+                return [];
+            }
+        }
+        return [];
+    });
+
+    // 监听 skuGroups 变化并保存到本地存储
+    React.useEffect(() => {
+        localStorage.setItem('sku_groups_data', JSON.stringify(skuGroups));
+    }, [skuGroups]);
+    const [displayMode, setDisplayMode] = useState<'products' | 'sku'>('products');
+    // SKU展开状态
+    const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
+    const [expandedColors, setExpandedColors] = useState<Set<string>>(new Set());
     const [tagDropdownPos, setTagDropdownPos] = useState<{ x: number, y: number } | null>(null);
 
-    const drawerProduct = drawerProductId ? products.find(p => p.id === drawerProductId) : null;
+
     // const drawerParent = drawerProduct?.parentId ? products.find(p => p.id === drawerProduct.parentId) : null;
 
     // 收集所有唯一标签（只显示在用的）
@@ -100,12 +155,37 @@ const ProductLibrary: React.FC = () => {
         });
     }, [products, sortKey, sortDir, filterTag, searchQuery]);
 
-    // 复制到剪贴板
-    const copyToClipboard = (text: string, label: string) => {
-        navigator.clipboard.writeText(text);
-        setCopiedText(label);
-        setTimeout(() => setCopiedText(null), 1500);
+    // SKU展开控制函数
+    const toggleSkuParent = (parentAsin: string) => {
+        setExpandedParents(prev => {
+            const next = new Set(prev);
+            next.has(parentAsin) ? next.delete(parentAsin) : next.add(parentAsin);
+            return next;
+        });
     };
+
+    const toggleSkuColor = (parentAsin: string, color: string) => {
+        const key = `${parentAsin}-${color}`;
+        setExpandedColors(prev => {
+            const next = new Set(prev);
+            next.has(key) ? next.delete(key) : next.add(key);
+            return next;
+        });
+    };
+
+    const expandAllSku = () => {
+        setExpandedParents(new Set(skuGroups.map(g => g.parentAsin)));
+        const allColors = new Set<string>();
+        skuGroups.forEach(g => g.colorGroups.forEach(cg => allColors.add(`${g.parentAsin}-${cg.color}`)));
+        setExpandedColors(allColors);
+    };
+
+    const collapseAllSku = () => {
+        setExpandedParents(new Set());
+        setExpandedColors(new Set());
+    };
+
+
 
     // 导出CSV
     const exportCSV = () => {
@@ -127,7 +207,7 @@ const ProductLibrary: React.FC = () => {
     const handleDelete = (id: string) => {
         deleteProduct(id);
         setDeleteConfirmId(null);
-        if (drawerProductId === id) setDrawerProductId(null);
+        if (drawerProduct?.id === id) setDrawerProduct(null);
     };
 
     // Form state
@@ -136,8 +216,77 @@ const ProductLibrary: React.FC = () => {
     const resetForm = () => {
         setForm({ ...emptyForm });
         setEditingId(null);
+        setEditingSkuParentAsin(null);
         setShowForm(false);
         setErrors([]);
+    };
+
+    const handleEditSkuGroup = (group: SkuParentGroup) => {
+        setEditingSkuParentAsin(group.parentAsin);
+        setForm({
+            ...emptyForm,
+            name: group.品名,
+            sku: group.款号,
+            asin: group.parentAsin,
+            // 扩展属性
+            length: group.length || 0,
+            width: group.width || 0,
+            height: group.height || 0,
+            weight: group.weight || 0,
+            boxLength: group.boxLength || 0,
+            boxWidth: group.boxWidth || 0,
+            boxHeight: group.boxHeight || 0,
+            boxWeight: group.boxWeight || 0,
+            pcsPerBox: group.pcsPerBox || 0,
+            unitCost: group.unitCost || 0,
+            defaultPrice: group.defaultPrice || 0,
+            tags: group.tags || '',
+            notes: group.notes || '',
+            category: group.category || 'apparel',
+            fbaFeeManual: group.fbaFeeManual || 0,
+            inboundPlacementMode: group.inboundPlacementMode || 'optimized',
+            defaultStorageMonth: group.defaultStorageMonth || 'jan_sep',
+            defaultInventoryAge: group.defaultInventoryAge || 0,
+        });
+        setShowForm(true);
+    };
+
+    const handleSkuGroupClick = (group: SkuParentGroup) => {
+        setDrawerProduct(mapGroupToProduct(group));
+    };
+
+    const handleDrawerEdit = (product: ProductSpec) => {
+        const group = skuGroups.find(g => g.parentAsin === product.id);
+        if (group) {
+            handleEditSkuGroup(group);
+            setDrawerProduct(null);
+        } else {
+            handleEdit(product);
+            setDrawerProduct(null);
+        }
+    };
+
+    const handleDrawerDelete = (productId: string) => {
+        const isProduct = products.some(p => p.id === productId);
+        if (isProduct) {
+            setDeleteConfirmId(productId);
+            setDrawerProduct(null);
+        }
+    };
+
+    const handleImportSalesWeights = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!e.target.files || e.target.files.length === 0) return;
+
+        const files = Array.from(e.target.files);
+        try {
+            const updatedGroups = await calculateSalesWeights(files, skuGroups);
+            setSkuGroups(updatedGroups);
+            alert(`权重计算完成！已更新 ${updatedGroups.length} 个父体数据。`);
+        } catch (err) {
+            console.error(err);
+            alert('计算失败，请检查文件格式。');
+        }
+        e.target.value = '';
     };
 
     const openAddForm = () => {
@@ -164,6 +313,25 @@ const ProductLibrary: React.FC = () => {
         const errs = validateForm();
         if (errs.length > 0) {
             setErrors(errs);
+            return;
+        }
+
+        // 处理SKU组编辑保存 (父体维度)
+        if (editingSkuParentAsin) {
+            const updatedGroups = skuGroups.map(group => {
+                if (group.parentAsin === editingSkuParentAsin) {
+                    return {
+                        ...group,
+                        ...form, // 扩展属性直接覆盖
+                        品名: form.name,
+                        款号: form.sku,
+                        parentAsin: form.asin || group.parentAsin, // 允许修改ASIN
+                    };
+                }
+                return group;
+            });
+            setSkuGroups(updatedGroups);
+            resetForm();
             return;
         }
 
@@ -294,80 +462,173 @@ const ProductLibrary: React.FC = () => {
                     >
                         🧪 生成测试产品
                     </Button>
+                    <Button
+                        variant="secondary"
+                        onClick={() => setShowSkuImporter(true)}
+                    >
+                        📂 导入服装SKU
+                    </Button>
+
                     <Button onClick={openAddForm}>
                         <span className="text-lg">+</span> 添加产品
                     </Button>
                 </>
             }
         >
+            {/* 服装SKU导入弹窗 */}
+            <SkuCsvImporter
+                isOpen={showSkuImporter}
+                onClose={() => setShowSkuImporter(false)}
+                onImport={(groups, rawItems) => {
+                    setSkuGroups(groups);
+                    setDisplayMode('sku');
+                }}
+            />
 
-            {/* 筛选栏：排序 + 标签 */}
-            {products.length > 0 && (
-                <div className="flex items-center gap-4 mb-4 text-sm flex-wrap">
-                    {/* 排序 */}
-                    <div className="flex items-center gap-2">
-                        <span className="text-zinc-500">排序:</span>
-                        <select
-                            value={sortKey}
-                            onChange={(e) => setSortKey(e.target.value as SortKey)}
-                            className="bg-[#18181b] border border-[#27272a] rounded-lg px-2 py-1 text-zinc-300"
-                        >
-                            <option value="createdAt">创建时间</option>
-                            <option value="name">名称</option>
-                            <option value="unitCost">采购价</option>
-                            <option value="defaultPrice">售价</option>
-                        </select>
+            {/* 显示模式切换 */}
+            {(products.length > 0 || skuGroups.length > 0) && (
+                <div className="flex items-center gap-2 mb-4">
+                    <button
+                        onClick={() => setDisplayMode('products')}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-colors ${displayMode === 'products'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-zinc-700 text-zinc-400 hover:bg-zinc-600'
+                            }`}
+                    >
+                        📦 产品库 ({products.length})
+                    </button>
+                    <button
+                        onClick={() => setDisplayMode('sku')}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-colors ${displayMode === 'sku'
+                            ? 'bg-purple-600 text-white'
+                            : 'bg-zinc-700 text-zinc-400 hover:bg-zinc-600'
+                            }`}
+                    >
+                        👕 服装SKU ({skuGroups.length} 款)
+                    </button>
+                    {skuGroups.length > 0 && displayMode === 'sku' && (
                         <button
-                            onClick={() => setSortDir(sortDir === 'asc' ? 'desc' : 'asc')}
-                            className="px-2 py-1 bg-[#18181b] border border-[#27272a] rounded-lg hover:bg-[#27272a]"
+                            onClick={() => { setSkuGroups([]); setSkuRawItems([]); setDisplayMode('products'); }}
+                            className="ml-auto px-3 py-1.5 rounded-lg text-sm bg-red-900/50 hover:bg-red-800 text-red-300"
                         >
-                            {sortDir === 'asc' ? '↑' : '↓'}
+                            清空SKU数据
                         </button>
-                    </div>
-
-                    {/* 分隔线 */}
-                    <div className="w-px h-5 bg-zinc-700"></div>
-
-                    {/* 标签筛选 */}
-                    <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-zinc-500">🏷️</span>
+                    )}
+                    {products.length > 0 && displayMode === 'products' && (
                         <button
-                            onClick={() => setFilterTag(null)}
-                            className={`text-xs px-2 py-1 rounded transition-colors ${!filterTag
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-[#18181b] text-zinc-400 hover:bg-[#27272a]'
-                                }`}
+                            onClick={() => {
+                                if (window.confirm('确定要清空所有产品数据吗？此操作不可恢复！')) {
+                                    // 倒序删除避免索引问题（虽然按ID删除没事，但稳妥起见）
+                                    [...products].forEach(p => deleteProduct(p.id));
+                                }
+                            }}
+                            className="ml-auto px-3 py-1.5 rounded-lg text-sm bg-red-900/50 hover:bg-red-800 text-red-300"
                         >
-                            全部
+                            清空产品库
                         </button>
-                        {allTags.map(tag => {
-                            const color = getTagColor(tag);
-                            return (
-                                <button
-                                    key={tag}
-                                    onClick={() => setFilterTag(filterTag === tag ? null : tag)}
-                                    className={`text-xs px-2 py-1 rounded transition-colors ${filterTag === tag
-                                        ? 'ring-2 ring-white ring-offset-1 ring-offset-[#09090b]'
-                                        : ''
-                                        } ${color.bg} ${color.text} ${color.hover}`}
-                                >
-                                    {tag}
-                                </button>
-                            );
-                        })}
-                    </div>
-
-                    {/* 统计 */}
-                    <span className="text-zinc-600 ml-auto">
-                        {filterTag || searchQuery ? `${sortedProducts.length} / ${products.length}` : `${products.length} 个产品`}
-                    </span>
+                    )}
                 </div>
             )}
+
+            {/* 筛选栏：排序 + 标签（产品库）/ 统计 + 展开按钮（服装SKU） */}
+            <div className="flex items-center gap-4 mb-4 text-sm flex-wrap min-h-[36px]">
+                {displayMode === 'products' && products.length > 0 && (
+                    <>
+                        {/* 排序 */}
+                        <div className="flex items-center gap-2">
+                            <span className="text-zinc-500">排序:</span>
+                            <select
+                                value={sortKey}
+                                onChange={(e) => setSortKey(e.target.value as SortKey)}
+                                className="bg-[#18181b] border border-[#27272a] rounded-lg px-2 py-1 text-zinc-300"
+                            >
+                                <option value="createdAt">创建时间</option>
+                                <option value="name">名称</option>
+                                <option value="unitCost">采购价</option>
+                                <option value="defaultPrice">售价</option>
+                            </select>
+                            <button
+                                onClick={() => setSortDir(sortDir === 'asc' ? 'desc' : 'asc')}
+                                className="px-2 py-1 bg-[#18181b] border border-[#27272a] rounded-lg hover:bg-[#27272a]"
+                            >
+                                {sortDir === 'asc' ? '↑' : '↓'}
+                            </button>
+                        </div>
+                        <div className="w-px h-5 bg-zinc-700"></div>
+                        {/* 标签筛选 */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-zinc-500">🏷️</span>
+                            <button
+                                onClick={() => setFilterTag(null)}
+                                className={`text-xs px-2 py-1 rounded transition-colors ${!filterTag
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-[#18181b] text-zinc-400 hover:bg-[#27272a]'
+                                    }`}
+                            >
+                                全部
+                            </button>
+                            {allTags.map(tag => {
+                                const color = getTagColor(tag);
+                                return (
+                                    <button
+                                        key={tag}
+                                        onClick={() => setFilterTag(filterTag === tag ? null : tag)}
+                                        className={`text-xs px-2 py-1 rounded transition-colors ${filterTag === tag
+                                            ? 'ring-2 ring-white ring-offset-1 ring-offset-[#09090b]'
+                                            : ''
+                                            } ${color.bg} ${color.text} ${color.hover}`}
+                                    >
+                                        {tag}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        <span className="text-zinc-600 ml-auto">
+                            {filterTag || searchQuery ? `${sortedProducts.length} / ${products.length}` : `${products.length} 个产品`}
+                        </span>
+                    </>
+                )}
+                {displayMode === 'sku' && skuGroups.length > 0 && (
+                    <>
+                        <div className="flex items-center gap-2">
+                            <span className="text-zinc-500">统计:</span>
+                            <span className="text-zinc-300">
+                                {skuGroups.length} 款 · {skuGroups.reduce((sum, g) => sum + g.colorGroups.length, 0)} 颜色 · {skuGroups.reduce((sum, g) => sum + g.totalSkuCount, 0)} SKU
+                            </span>
+                        </div>
+                        <div className="w-px h-5 bg-zinc-700"></div>
+                        <button
+                            onClick={() => {
+                                import('react').then(React => {
+                                    React.startTransition(() => {
+                                        expandedParents.size > 0 ? collapseAllSku() : expandAllSku();
+                                    });
+                                });
+                            }}
+                            className="flex items-center gap-1 px-2 py-1 bg-[#18181b] border border-[#27272a] rounded-lg hover:bg-[#27272a] text-zinc-400"
+                        >
+                            <span className={`transition-transform ${expandedParents.size > 0 ? 'rotate-90' : ''}`}>▶</span>
+                            {expandedParents.size > 0 ? '全部收起' : '全部展开'}
+                        </button>
+                        <label className="flex items-center justify-center gap-2 px-2 py-1 bg-[#18181b] border border-[#27272a] rounded-lg hover:bg-[#27272a] cursor-pointer text-zinc-400">
+                            <span className="text-orange-400">📊</span>
+                            <span>计算权重</span>
+                            <input
+                                type="file"
+                                multiple
+                                accept=".csv"
+                                className="hidden"
+                                onChange={handleImportSalesWeights}
+                            />
+                        </label>
+                    </>
+                )}
+            </div>
 
             {/* Form Modal - 使用抽取的 ProductForm 组件 */}
             <ProductForm
                 isOpen={showForm}
-                editingId={editingId}
+                editingId={editingId || editingSkuParentAsin}
                 form={form}
                 errors={errors}
                 onFormChange={setForm}
@@ -375,29 +636,43 @@ const ProductLibrary: React.FC = () => {
                 onCancel={resetForm}
             />
 
+            {/* 服装SKU树形表格 */}
+            {displayMode === 'sku' && (
+                <SkuTreeTable
+                    groups={skuGroups}
+                    searchQuery={searchQuery}
+                    expandedParents={expandedParents}
+                    expandedColors={expandedColors}
+                    onToggleParent={toggleSkuParent}
+                    onToggleColor={toggleSkuColor}
+                    onEditGroup={handleEditSkuGroup}
+                    onGroupClick={handleSkuGroupClick}
+                />
+            )}
+
             {/* Products Table */}
-            {products.length === 0 ? (
+            {displayMode === 'products' && (products.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-64 text-zinc-500">
                     <span className="text-6xl mb-4">📦</span>
                     <p className="text-lg">暂无产品</p>
                     <p className="text-sm">点击"添加产品"开始创建</p>
                 </div>
             ) : (
-                <div className="bg-[#18181b] border border-[#27272a] rounded-xl overflow-hidden overflow-x-auto">
-                    <table className="w-full text-sm min-w-[1000px]">
+                <div className="bg-[#18181b] border border-[#27272a] rounded-xl overflow-hidden">
+                    <table className="w-full text-sm table-fixed">
                         <thead>
-                            <tr className="bg-[#1f2937] text-zinc-400 text-left">
-                                <th className="py-3 px-4 font-bold w-[120px]">产品 ID</th>
-                                <th className="py-3 px-4 font-bold">产品名称</th>
-                                <th className="py-3 px-4 font-bold">SKU</th>
-                                <th className="py-3 px-4 font-bold">标签</th>
-                                <th className="py-3 px-4 font-bold text-center">尺寸 (cm)</th>
-                                <th className="py-3 px-4 font-bold text-center">重量 (kg)</th>
-                                <th className="py-3 px-4 font-bold text-center">装箱</th>
-                                <th className="py-3 px-4 font-bold text-center">采购价</th>
-                                <th className="py-3 px-4 font-bold text-center">售价</th>
-                                <th className="py-3 px-4 font-bold text-center">FBA (2026)</th>
-                                <th className="py-3 px-4 font-bold text-center">操作</th>
+                            <tr className="bg-[#1f2937] text-zinc-400 text-left text-xs">
+                                <th className="py-3 px-4 font-bold w-[15%]">产品名称</th>
+                                <th className="py-3 px-4 font-bold w-[10%]">SKU</th>
+                                <th className="py-3 px-4 font-bold w-[6%]">类目</th>
+                                <th className="py-3 px-4 font-bold w-[19%]">标签</th>
+                                <th className="py-3 px-4 font-bold text-center w-[8%]">尺寸 (cm)</th>
+                                <th className="py-3 px-4 font-bold text-center w-[6%] whitespace-nowrap">重量 (kg)</th>
+                                <th className="py-3 px-4 font-bold text-center w-[6%]">装箱</th>
+                                <th className="py-3 px-4 font-bold text-center w-[6%]">采购价</th>
+                                <th className="py-3 px-4 font-bold text-center w-[6%]">售价</th>
+                                <th className="py-3 px-4 font-bold text-center w-[8%]">FBA (2026)</th>
+                                <th className="py-3 px-4 font-bold text-center w-[10%]">操作</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -405,16 +680,16 @@ const ProductLibrary: React.FC = () => {
                                 <tr
                                     key={product.id}
                                     className={`border-t border-[#27272a] hover:bg-[#1a1a1d] transition-colors cursor-pointer ${index % 2 === 0 ? '' : 'bg-[#0f0f11]'}`}
-                                    onClick={() => setDrawerProductId(product.id)}
+                                    onClick={() => setDrawerProduct(product)}
                                 >
-                                    <td className="py-3 px-4 font-mono text-zinc-500 text-xs">
-                                        {product.displayId || '—'}
-                                    </td>
                                     <td className="py-3 px-4">
-                                        <div className="font-bold text-white">{product.name}</div>
+                                        <div className="font-bold text-white truncate">{product.name}</div>
                                     </td>
-                                    <td className="py-3 px-4 text-zinc-400 font-mono">{product.sku || '-'}</td>
-                                    <td className="py-3 px-4 w-[300px]" onClick={(e) => e.stopPropagation()}>
+                                    <td className="py-3 px-4 text-zinc-400 font-mono truncate">{product.sku || '-'}</td>
+                                    <td className="py-3 px-4 text-zinc-400 text-xs">
+                                        {product.category === 'apparel' ? '服装' : '标准'}
+                                    </td>
+                                    <td className="py-3 px-4" onClick={(e) => e.stopPropagation()}>
                                         {/* 标签：强制Grid布局，每行4个 */}
                                         <div className="grid grid-cols-4 gap-1">
                                             {product.tags && product.tags.map((tag, i) => {
@@ -498,7 +773,7 @@ const ProductLibrary: React.FC = () => {
                         </tbody>
                     </table>
                 </div>
-            )}
+            ))}
 
             {/* 删除确认弹窗 */}
             {deleteConfirmId && (
@@ -615,161 +890,13 @@ const ProductLibrary: React.FC = () => {
                 );
             })()}
 
-            {/* 右侧抽屉详情 */}
-            {drawerProduct && (
-                <>
-                    {/* 遮罩层 */}
-                    <div
-                        className="fixed inset-0 bg-black/40 z-40 transition-opacity"
-                        onClick={() => setDrawerProductId(null)}
-                    />
-                    {/* 抽屉面板 */}
-                    <div className="fixed right-0 top-0 h-full w-[400px] bg-[#18181b] border-l border-[#27272a] z-50 shadow-2xl overflow-auto animate-slide-in">
-                        <style>{`
-                            @keyframes slideIn {
-                                from { transform: translateX(100%); }
-                                to { transform: translateX(0); }
-                            }
-                            .animate-slide-in { animation: slideIn 0.2s ease-out; }
-                        `}</style>
-
-                        {/* 抽屉头部 */}
-                        <div className="sticky top-0 bg-[#18181b] border-b border-[#27272a] p-4 flex items-center justify-between">
-                            <h2 className="text-lg font-bold">产品详情</h2>
-                            <button
-                                onClick={() => setDrawerProductId(null)}
-                                className="w-8 h-8 rounded-lg bg-zinc-700 hover:bg-zinc-600 flex items-center justify-center"
-                            >
-                                ✕
-                            </button>
-                        </div>
-
-                        {/* 复制成功提示 */}
-                        {copiedText && (
-                            <div className="absolute top-16 left-1/2 -translate-x-1/2 bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-lg">
-                                ✓ 已复制: {copiedText}
-                            </div>
-                        )}
-
-                        {/* 抽屉内容 */}
-                        <div className="p-4 space-y-6">
-                            {/* 产品名称 */}
-                            <div>
-                                <div className="text-2xl font-black">{drawerProduct.name}</div>
-                                {drawerProduct.asin && (
-                                    <div className="text-blue-400 font-mono mt-1">{drawerProduct.asin}</div>
-                                )}
-                                <div className="text-zinc-500 text-sm mt-1">SKU: {drawerProduct.sku || '-'}</div>
-                                {drawerProduct.tags && drawerProduct.tags.length > 0 && (
-                                    <div className="flex gap-1 flex-wrap mt-2">
-                                        {drawerProduct.tags.map((tag, i) => (
-                                            <span key={i} className="text-xs px-2 py-1 bg-blue-900/50 text-blue-300 rounded">{tag}</span>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* 尺寸规格 */}
-                            <div className="bg-[#0f0f11] rounded-xl p-4 space-y-3">
-                                <div className="text-sm font-bold text-zinc-400 border-b border-[#27272a] pb-2">📐 尺寸规格 <span className="text-xs font-normal">(点击复制)</span></div>
-                                <div className="grid grid-cols-2 gap-3 text-sm">
-                                    <div
-                                        className="cursor-pointer hover:bg-[#27272a] p-2 rounded-lg transition-colors"
-                                        onClick={() => copyToClipboard(`${drawerProduct.length}x${drawerProduct.width}x${drawerProduct.height}`, '尺寸(cm)')}
-                                    >
-                                        <div className="text-zinc-500">尺寸 (cm)</div>
-                                        <div className="font-mono text-lg">{drawerProduct.length}×{drawerProduct.width}×{drawerProduct.height}</div>
-                                    </div>
-                                    <div
-                                        className="cursor-pointer hover:bg-[#27272a] p-2 rounded-lg transition-colors"
-                                        onClick={() => copyToClipboard(`${(drawerProduct.length / 2.54).toFixed(1)}x${(drawerProduct.width / 2.54).toFixed(1)}x${(drawerProduct.height / 2.54).toFixed(1)}`, '尺寸(inch)')}
-                                    >
-                                        <div className="text-zinc-500">尺寸 (inch)</div>
-                                        <div className="font-mono text-lg text-zinc-400">
-                                            {(drawerProduct.length / 2.54).toFixed(1)}×{(drawerProduct.width / 2.54).toFixed(1)}×{(drawerProduct.height / 2.54).toFixed(1)}
-                                        </div>
-                                    </div>
-                                    <div
-                                        className="cursor-pointer hover:bg-[#27272a] p-2 rounded-lg transition-colors"
-                                        onClick={() => copyToClipboard(String(drawerProduct.weight), '重量(kg)')}
-                                    >
-                                        <div className="text-zinc-500">重量 (kg)</div>
-                                        <div className="font-mono text-lg">{drawerProduct.weight}</div>
-                                    </div>
-                                    <div
-                                        className="cursor-pointer hover:bg-[#27272a] p-2 rounded-lg transition-colors"
-                                        onClick={() => copyToClipboard((drawerProduct.weight * 2.205).toFixed(1), '重量(lb)')}
-                                    >
-                                        <div className="text-zinc-500">重量 (lb)</div>
-                                        <div className="font-mono text-lg text-zinc-400">{(drawerProduct.weight * 2.205).toFixed(1)}</div>
-                                    </div>
-                                    <div
-                                        className="cursor-pointer hover:bg-[#27272a] p-2 rounded-lg transition-colors"
-                                        onClick={() => copyToClipboard(((drawerProduct.length * drawerProduct.width * drawerProduct.height) / 1000000).toFixed(4), '体积(CBM)')}
-                                    >
-                                        <div className="text-zinc-500">体积 (CBM)</div>
-                                        <div className="font-mono text-lg">
-                                            {((drawerProduct.length * drawerProduct.width * drawerProduct.height) / 1000000).toFixed(4)}
-                                        </div>
-                                    </div>
-                                    <div
-                                        className="cursor-pointer hover:bg-[#27272a] p-2 rounded-lg transition-colors"
-                                        onClick={() => copyToClipboard(String(drawerProduct.pcsPerBox), '装箱数')}
-                                    >
-                                        <div className="text-zinc-500">装箱数</div>
-                                        <div className="font-mono text-lg">{drawerProduct.pcsPerBox} pcs</div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* 价格成本 */}
-                            <div className="bg-[#0f0f11] rounded-xl p-4 space-y-3">
-                                <div className="text-sm font-bold text-zinc-400 border-b border-[#27272a] pb-2">💰 价格成本</div>
-                                <div className="grid grid-cols-2 gap-3 text-sm">
-                                    <div>
-                                        <div className="text-zinc-500">采购单价</div>
-                                        <div className="font-mono text-xl text-orange-400">¥{drawerProduct.unitCost}</div>
-                                    </div>
-                                    <div>
-                                        <div className="text-zinc-500">默认售价</div>
-                                        <div className="font-mono text-xl text-green-400">${drawerProduct.defaultPrice}</div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* 备注 */}
-                            {drawerProduct.notes && (
-                                <div className="bg-[#0f0f11] rounded-xl p-4">
-                                    <div className="text-sm font-bold text-zinc-400 border-b border-[#27272a] pb-2 mb-2">📝 备注</div>
-                                    <div className="text-zinc-300 text-sm whitespace-pre-wrap">{drawerProduct.notes}</div>
-                                </div>
-                            )}
-
-                            {/* 时间信息 */}
-                            <div className="text-xs text-zinc-500 space-y-1">
-                                <div>创建时间: {new Date(drawerProduct.createdAt).toLocaleString()}</div>
-                                <div>更新时间: {new Date(drawerProduct.updatedAt).toLocaleString()}</div>
-                            </div>
-
-                            {/* 操作按钮 */}
-                            <div className="flex gap-3 pt-4 border-t border-[#27272a]">
-                                <button
-                                    onClick={() => { handleEdit(drawerProduct); setDrawerProductId(null); }}
-                                    className="flex-1 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg font-bold"
-                                >
-                                    ✏️ 编辑
-                                </button>
-                                <button
-                                    onClick={() => { setDeleteConfirmId(drawerProduct.id); setDrawerProductId(null); }}
-                                    className="flex-1 py-2 bg-red-900/50 hover:bg-red-800 rounded-lg font-bold"
-                                >
-                                    🗑️ 删除
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </>
-            )}
+            {/* 产品详情抽屉 (支持产品和SKU组) */}
+            <ProductDetailDrawer
+                product={drawerProduct}
+                onClose={() => setDrawerProduct(null)}
+                onEdit={handleDrawerEdit}
+                onDelete={handleDrawerDelete}
+            />
         </PageShell>
     );
 };

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { calculateAllProductFees, AllProductFees, getTierLabel } from '../../utils/fbaCalculator.utils';
 
 interface ProductFormData {
@@ -47,6 +47,51 @@ interface ProductFormProps {
 
 const inputClass = 'w-full bg-white text-zinc-800 border border-zinc-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none';
 const labelClass = 'text-xs text-zinc-500 font-bold uppercase mb-1';
+
+// 数字输入封装，解决无法输入 '0.' 的问题
+const NumberInput: React.FC<{
+    value: number | undefined;
+    onChange: (val: number) => void;
+    className?: string;
+    placeholder?: string;
+    step?: string;
+}> = ({ value, onChange, className, placeholder, step }) => {
+    // 0 或 undefined 显示为空字符串
+    const [localVal, setLocalVal] = useState(value === 0 || !value ? '' : String(value));
+
+    useEffect(() => {
+        const parsed = parseFloat(localVal);
+        const propVal = value || 0;
+
+        // 当外部属性变化且与当前输入不一致时才更新
+        // 避免打断用户输入 '0.' 或 '.0' 等中间状态
+        if (parsed !== propVal) {
+            // 特殊处理：如果prop是0且本地是空，视为一致（因为我们把0显示为空）
+            if (isNaN(parsed) && propVal === 0 && localVal === '') return;
+            // 如果数值相等但格式不同（如 0 vs 0.），不更新
+            if (!isNaN(parsed) && propVal === parsed) return;
+
+            setLocalVal(propVal === 0 ? '' : String(propVal));
+        }
+    }, [value]);
+
+    return (
+        <input
+            type="number"
+            step={step}
+            value={localVal}
+            onChange={(e) => {
+                const v = e.target.value;
+                setLocalVal(v);
+                const num = parseFloat(v);
+                onChange(isNaN(num) ? 0 : num);
+            }}
+            placeholder={placeholder}
+            className={className}
+            onWheel={(e) => e.currentTarget.blur()} // 防止滚动修改数值
+        />
+    );
+};
 
 export const ProductForm: React.FC<ProductFormProps> = ({
     isOpen,
@@ -149,40 +194,36 @@ export const ProductForm: React.FC<ProductFormProps> = ({
                         <div className="grid grid-cols-4 gap-3">
                             <div>
                                 <div className={labelClass}>长 (cm)</div>
-                                <input
-                                    type="number"
-                                    value={form.length || ''}
-                                    onChange={(e) => setField('length', parseFloat(e.target.value) || 0)}
+                                <NumberInput
+                                    value={form.length}
+                                    onChange={(val) => setField('length', val)}
                                     placeholder="0"
                                     className={`${inputClass} ${errors.includes('长度') ? 'border-red-500' : ''}`}
                                 />
                             </div>
                             <div>
                                 <div className={labelClass}>宽 (cm)</div>
-                                <input
-                                    type="number"
-                                    value={form.width || ''}
-                                    onChange={(e) => setField('width', parseFloat(e.target.value) || 0)}
+                                <NumberInput
+                                    value={form.width}
+                                    onChange={(val) => setField('width', val)}
                                     placeholder="0"
                                     className={`${inputClass} ${errors.includes('宽度') ? 'border-red-500' : ''}`}
                                 />
                             </div>
                             <div>
                                 <div className={labelClass}>高 (cm)</div>
-                                <input
-                                    type="number"
-                                    value={form.height || ''}
-                                    onChange={(e) => setField('height', parseFloat(e.target.value) || 0)}
+                                <NumberInput
+                                    value={form.height}
+                                    onChange={(val) => setField('height', val)}
                                     placeholder="0"
                                     className={`${inputClass} ${errors.includes('高度') ? 'border-red-500' : ''}`}
                                 />
                             </div>
                             <div>
                                 <div className={labelClass}>重量 (kg)</div>
-                                <input
-                                    type="number"
-                                    value={form.weight || ''}
-                                    onChange={(e) => setField('weight', parseFloat(e.target.value) || 0)}
+                                <NumberInput
+                                    value={form.weight}
+                                    onChange={(val) => setField('weight', val)}
                                     placeholder="0"
                                     className={`${inputClass} ${errors.includes('重量') ? 'border-red-500' : ''}`}
                                 />
@@ -196,40 +237,36 @@ export const ProductForm: React.FC<ProductFormProps> = ({
                         <div className="grid grid-cols-4 gap-3">
                             <div>
                                 <div className={labelClass}>箱长 (cm)</div>
-                                <input
-                                    type="number"
-                                    value={form.boxLength || ''}
-                                    onChange={(e) => setField('boxLength', parseFloat(e.target.value) || 0)}
+                                <NumberInput
+                                    value={form.boxLength}
+                                    onChange={(val) => setField('boxLength', val)}
                                     placeholder="0"
                                     className={inputClass}
                                 />
                             </div>
                             <div>
                                 <div className={labelClass}>箱宽 (cm)</div>
-                                <input
-                                    type="number"
-                                    value={form.boxWidth || ''}
-                                    onChange={(e) => setField('boxWidth', parseFloat(e.target.value) || 0)}
+                                <NumberInput
+                                    value={form.boxWidth}
+                                    onChange={(val) => setField('boxWidth', val)}
                                     placeholder="0"
                                     className={inputClass}
                                 />
                             </div>
                             <div>
                                 <div className={labelClass}>箱高 (cm)</div>
-                                <input
-                                    type="number"
-                                    value={form.boxHeight || ''}
-                                    onChange={(e) => setField('boxHeight', parseFloat(e.target.value) || 0)}
+                                <NumberInput
+                                    value={form.boxHeight}
+                                    onChange={(val) => setField('boxHeight', val)}
                                     placeholder="0"
                                     className={inputClass}
                                 />
                             </div>
                             <div>
                                 <div className={labelClass}>整箱毛重 (kg)</div>
-                                <input
-                                    type="number"
-                                    value={form.boxWeight || ''}
-                                    onChange={(e) => setField('boxWeight', parseFloat(e.target.value) || 0)}
+                                <NumberInput
+                                    value={form.boxWeight}
+                                    onChange={(val) => setField('boxWeight', val)}
                                     placeholder="0"
                                     className={inputClass}
                                 />
@@ -265,11 +302,10 @@ export const ProductForm: React.FC<ProductFormProps> = ({
                             </div>
                             <div className="flex items-center gap-1.5 bg-[#18181b] border border-[#27272a] rounded px-2 py-1.5">
                                 <span className="text-[10px] text-zinc-500">手动</span>
-                                <input
-                                    type="number"
+                                <NumberInput
                                     step="0.01"
-                                    value={form.fbaFeeManual || ''}
-                                    onChange={(e) => setField('fbaFeeManual', parseFloat(e.target.value) || 0)}
+                                    value={form.fbaFeeManual}
+                                    onChange={(val) => setField('fbaFeeManual', val)}
                                     placeholder="-"
                                     className="bg-transparent border-none text-xs text-orange-400 font-bold font-mono text-right flex-1 focus:ring-0 p-0 w-12 placeholder:text-zinc-600"
                                 />
@@ -298,10 +334,9 @@ export const ProductForm: React.FC<ProductFormProps> = ({
                                         <option value="jan_sep">仓储 1-9月</option>
                                         <option value="oct_dec">仓储 10-12月</option>
                                     </select>
-                                    <input
-                                        type="number"
-                                        value={form.defaultInventoryAge || ''}
-                                        onChange={(e) => setField('defaultInventoryAge', parseInt(e.target.value) || 0)}
+                                    <NumberInput
+                                        value={form.defaultInventoryAge}
+                                        onChange={(val) => setField('defaultInventoryAge', Math.floor(val))}
                                         placeholder="库龄"
                                         className="bg-[#18181b] border border-[#27272a] text-[10px] rounded px-1.5 py-1 text-zinc-300 text-center"
                                     />
@@ -330,37 +365,28 @@ export const ProductForm: React.FC<ProductFormProps> = ({
                     <div className="grid grid-cols-3 gap-3">
                         <div>
                             <div className={labelClass}>装箱数 *</div>
-                            <input
-                                type="number"
-                                value={form.pcsPerBox || ''}
-                                onChange={(e) => setField('pcsPerBox', parseInt(e.target.value) || 0)}
+                            <NumberInput
+                                value={form.pcsPerBox}
+                                onChange={(val) => setField('pcsPerBox', Math.floor(val))}
                                 placeholder="0"
                                 className={`${inputClass} ${errors.includes('装箱数') ? 'border-red-500' : ''}`}
                             />
                         </div>
                         <div>
                             <div className={labelClass}>采购单价 (¥) *</div>
-                            <input
-                                type="number"
-                                value={form.unitCost || ''}
-                                onChange={(e) => setField('unitCost', parseFloat(e.target.value) || 0)}
+                            <NumberInput
+                                value={form.unitCost}
+                                onChange={(val) => setField('unitCost', val)}
                                 placeholder="0"
                                 className={`${inputClass} ${errors.includes('采购单价') ? 'border-red-500' : ''}`}
                             />
                         </div>
                         <div>
                             <div className={labelClass}>默认售价 ($) *</div>
-                            <input
-                                type="number"
+                            <NumberInput
                                 step="0.01"
-                                value={form.defaultPrice || ''}
-                                onChange={(e) => {
-                                    const val = e.target.value;
-                                    onFormChange({
-                                        ...form,
-                                        defaultPrice: parseFloat(val) || 0
-                                    });
-                                }}
+                                value={form.defaultPrice}
+                                onChange={(val) => setField('defaultPrice', val)}
                                 placeholder="0"
                                 className={`${inputClass} ${errors.includes('默认售价') ? 'border-red-500' : ''}`}
                             />

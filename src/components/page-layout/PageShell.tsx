@@ -53,7 +53,7 @@ const PageShell: React.FC<PageShellProps> = ({
 
     return (
         <div
-            className={`h-full bg-[#09090b] text-white overflow-auto p-8 animate-in fade-in duration-300 ${className}`}
+            className={`min-h-full bg-[#09090b] text-white p-8 animate-in fade-in duration-300 ${className}`}
         >
             <div className={`mx-auto ${maxWidthClasses[maxWidth]} ${fullHeight ? 'h-full flex flex-col' : ''}`}>
                 {/* Header */}

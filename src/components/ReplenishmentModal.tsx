@@ -204,7 +204,7 @@ export const ReplenishmentModal: React.FC<ReplenishmentModalProps> = ({
                             {[
                                 { label: '资金占用', w: 'w-20' },
                                 { label: 'ROI', w: 'w-14' },
-                                { label: '年化', w: 'w-14' },
+                                { label: '年化回报率', w: 'w-20' },
                                 { label: '周转率', w: 'w-14' },
                                 { label: '净利率', w: 'w-14' },
                                 { label: '周转天', w: 'w-14' },
@@ -316,7 +316,7 @@ export const ReplenishmentModal: React.FC<ReplenishmentModalProps> = ({
                                         {[
                                             { val: `$${Math.round(maxCapital).toLocaleString()}`, color: 'text-amber-400', width: 'w-20' },
                                             { val: `${(roi * 100).toFixed(1)}%`, color: (roi * 100) > 100 ? 'text-purple-400' : 'text-slate-300', width: 'w-14' },
-                                            { val: `${(annualRoi * 100).toFixed(0)}%`, color: (annualRoi * 100) > 200 ? 'text-indigo-400' : 'text-slate-300', width: 'w-14' },
+                                            { val: `${(annualRoi * 100).toFixed(1)}%`, color: (annualRoi * 100) > 200 ? 'text-indigo-400' : 'text-slate-300', width: 'w-20' },
                                             { val: turnoverRatio.toFixed(2), color: turnoverRatio > 5 ? 'text-cyan-400' : 'text-slate-300', width: 'w-14' },
                                             { val: `${(netMargin * 100).toFixed(1)}%`, color: (netMargin * 100) > 20 ? 'text-emerald-400' : netMargin < 0 ? 'text-red-400' : 'text-slate-300', width: 'w-14' },
                                             { val: `${turnoverDays}天`, color: 'text-orange-400', width: 'w-14' },

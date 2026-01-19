@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { runSimulation, fmtDate } from './ReplenishmentEngine';
 import { ModuleState, SimulationResult, FinancialEvent, LogisticsCosts } from './ReplenishmentTypes';
 import { ProfitModelService } from '../services/profitModelService';
-import { useProducts } from '../contexts/ProductContext';
+// import { useProducts } from '../contexts/ProductContext';
+import { useCombinedProducts } from '../hooks/useCombinedProducts';
 import { useLogistics } from '../contexts/LogisticsContext';
 import { useExchangeRateValue } from '../contexts/ExchangeRateContext';
 
@@ -187,7 +188,8 @@ const ReplenishmentAdvice: React.FC = () => {
     const [selectedProductId, setSelectedProductId] = useState<string>('');
     const [strategies, setStrategies] = useState<SavedProfitModel[]>([]);
     const [selectedStrategyId, setSelectedStrategyId] = useState<string>('');
-    const { products } = useProducts();
+    // const { products } = useProducts();
+    const products = useCombinedProducts();
     const { channels } = useLogistics();
     const contextExchRate = useExchangeRateValue();
 

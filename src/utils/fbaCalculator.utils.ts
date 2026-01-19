@@ -492,6 +492,14 @@ export const calculateFBAFeeFromProduct = (product: {
     category?: 'standard' | 'apparel';
     defaultPrice?: number;
 }): number => {
+    // Valid check: dimensions and weight must be positive
+    if (!product.length || product.length <= 0 ||
+        !product.width || product.width <= 0 ||
+        !product.height || product.height <= 0 ||
+        !product.weight || product.weight <= 0) {
+        return 0;
+    }
+
     return calculateFBAFee({
         length: product.length,
         width: product.width,

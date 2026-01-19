@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { SavedProfitModel, SavedReplenishmentPlan, ReplenishmentPlanSummary } from '../types';
 import { useLogistics } from '../contexts/LogisticsContext';
 import { replenishmentPlanRepository } from '../repositories/ReplenishmentPlanRepository';
+import { SkuReplenishmentBreakdownModal } from './SkuReplenishmentBreakdownModal';
 
 interface ReplenishmentModalProps {
     strategies: SavedProfitModel[];
@@ -44,6 +45,7 @@ export const ReplenishmentModal: React.FC<ReplenishmentModalProps> = ({
     onResetActive,
 }) => {
     const { getChannel } = useLogistics();
+    const [breakdownTarget, setBreakdownTarget] = useState<{ planName: string, batches: any[], productId: string } | null>(null);
 
     // 1. Get the current strategy for context (optional)
     const currentStrategy = useMemo(() => strategies.find(s => s.id === currentStrategyId), [strategies, currentStrategyId]);
@@ -214,7 +216,7 @@ export const ReplenishmentModal: React.FC<ReplenishmentModalProps> = ({
                                 <div key={i} className={`${h.w} flex justify-center`}>{h.label}</div>
                             ))}
                         </div>
-                        <div className="w-[40px] shrink-0 text-center text-xs text-slate-500 font-bold uppercase">操作</div>
+                        <div className="w-[70px] shrink-0 text-center text-xs text-slate-500 font-bold uppercase">操作</div>
                     </div>
 
                     {displayList.length === 0 ? (
@@ -330,7 +332,21 @@ export const ReplenishmentModal: React.FC<ReplenishmentModalProps> = ({
                                     </div>
 
                                     {/* Action Column */}
-                                    <div className="w-[40px] shrink-0 bg-[#0f172a]/40 flex items-center justify-center">
+                                    <div className="w-[70px] shrink-0 bg-[#0f172a]/40 flex items-center justify-center gap-1">
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setBreakdownTarget({
+                                                    planName: plan.name,
+                                                    batches: plan.replenishment.batches,
+                                                    productId: productId
+                                                });
+                                            }}
+                                            className="p-1.5 text-slate-500 hover:text-emerald-400 hover:bg-emerald-500/10 rounded transition-colors"
+                                            title="查看SKU拆分明细"
+                                        >
+                                            <span className="material-symbols-outlined text-[16px]">splitscreen</span>
+                                        </button>
                                         {(plan.sourceType === 'saved_plan' || plan.sourceType === 'strategy_embedded' || (plan.sourceType === 'strategy_active' && onResetActive)) && (
                                             <button
                                                 onClick={(e) => {
@@ -361,6 +377,14 @@ export const ReplenishmentModal: React.FC<ReplenishmentModalProps> = ({
 
 
             </div >
+
+            <SkuReplenishmentBreakdownModal
+                isOpen={!!breakdownTarget}
+                onClose={() => setBreakdownTarget(null)}
+                planName={breakdownTarget?.planName || ''}
+                batches={breakdownTarget?.batches || []}
+                productId={breakdownTarget?.productId || ''}
+            />
         </div >
     );
 };

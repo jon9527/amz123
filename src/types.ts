@@ -48,6 +48,7 @@ export interface ProductSpec {
 
   // ============ FBA 费用配置 ============
   category?: 'standard' | 'apparel'; // 产品类目：标准 vs 服装
+  displayType?: 'standard' | 'apparel' | 'multi' | 'single'; // 产品类型：标品/服装/多变体/单变体
 
   // 1. FBA 配送费 (Core Fulfillment Fee)
   fbaFeeSystem?: number;   // 系统自动计算的 FBA 费用

@@ -58,8 +58,37 @@ export const calculateSalesWeights = async (
 
     console.log('Sales Data Parsed:', salesMap.size, 'SKUs with sales.');
 
-    // 2. 遍历SkuGroups计算权重
-    const newGroups = groups.map(group => {
+    // 2. 调用纯函数计算权重
+    return calculateWeightsForGroups(salesMap, groups);
+};
+
+/**
+ * 核心计算逻辑（解耦，便于单元测试）
+ */
+export const calculateWeightsForGroups = (
+    salesMap: Map<string, number>,
+    groups: SkuParentGroup[]
+): SkuParentGroup[] => {
+    return groups.map(group => {
+        // 0. 确定显示类型
+        let displayType = group.displayType;
+        if (!displayType) {
+            if (group.productType === 'apparel') {
+                displayType = 'apparel';
+            } else if (group.variantType === 'single' && group.totalSkuCount > 1) {
+                displayType = 'single';
+            } else if (group.variantType === 'multi') {
+                displayType = 'multi';
+            } else {
+                displayType = 'standard';
+            }
+        }
+
+        // 标品不计算权重
+        if (displayType === 'standard') {
+            return group;
+        }
+
         // 收集该父体下所有子体
         const groupItems: SkuItem[] = [];
         group.colorGroups.forEach(cg => groupItems.push(...cg.items));
@@ -88,8 +117,7 @@ export const calculateSalesWeights = async (
             }
         });
 
-        // 如果该父体没有任何销量数据，权重设为0 (或者保持undefined?)
-        // 用户希望有权重。没销量就是0。
+        // 如果该父体没有任何销量数据，权重设为0
         if (totalGroupSales === 0) {
             const updatedColorGroups = group.colorGroups.map(cg => ({
                 ...cg,
@@ -98,7 +126,11 @@ export const calculateSalesWeights = async (
             return { ...group, colorGroups: updatedColorGroups };
         }
 
-        // 3. 计算每个子体的权重 = ColorRatio * SizeRatio
+        // 3. 计算每个子体的权重
+        // 单变体: 子体销量/总销量
+        // 服装/多变体: 颜色占比 * 尺码占比
+        const isSingleVariant = group.displayType === 'single' || (group.variantType === 'single' && group.totalSkuCount > 1);
+
         const updatedColorGroups = group.colorGroups.map(cg => ({
             ...cg,
             items: cg.items.map(item => {
@@ -108,10 +140,18 @@ export const calculateSalesWeights = async (
                 const colorTotal = colorSales.get(colorKey) || 0;
                 const sizeTotal = sizeSales.get(sizeKey) || 0;
 
-                const colorRatio = colorTotal / totalGroupSales;
-                const sizeRatio = sizeTotal / totalGroupSales;
+                let weight = 0;
 
-                const weight = colorRatio * sizeRatio;
+                if (isSingleVariant) {
+                    // 单变体逻辑：直接用销量占比
+                    const itemSalesVal = itemSales.get(item.ASIN) || 0;
+                    weight = itemSalesVal / totalGroupSales;
+                } else {
+                    // 服装 或 多变体 -> 使用 独立概率乘积 (颜色占比 * 尺码占比)
+                    const colorRatio = colorTotal / totalGroupSales;
+                    const sizeRatio = sizeTotal / totalGroupSales;
+                    weight = colorRatio * sizeRatio;
+                }
 
                 return {
                     ...item,
@@ -130,6 +170,4 @@ export const calculateSalesWeights = async (
             colorGroups: updatedColorGroups,
         };
     });
-
-    return newGroups;
 };

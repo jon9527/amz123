@@ -3,7 +3,8 @@ import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { SavedProfitModel } from '../types';
 import { ProfitModelService } from '../services/profitModelService';
-import { useProducts } from '../contexts/ProductContext';
+// import { useProducts } from '../contexts/ProductContext';
+import { useCombinedProducts } from '../hooks/useCombinedProducts';
 
 
 import { getTagColor } from '../utils/tagColors';
@@ -12,7 +13,8 @@ import { ReplenishmentModal } from '../components/ReplenishmentModal';
 
 
 const ProductProfitList: React.FC = () => {
-  const { products } = useProducts();
+  // const { products } = useProducts();
+  const products = useCombinedProducts();
   const [models, setModels] = useState<SavedProfitModel[]>([]);
   const [filteredModels, setFilteredModels] = useState<SavedProfitModel[]>([]);
   const [search, setSearch] = useState('');

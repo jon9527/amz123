@@ -1,6 +1,7 @@
 import React, { useMemo, memo } from 'react';
 import { SkuParentGroup, SkuItem } from '../../types/skuTypes';
 
+
 interface SkuTreeTableProps {
     groups: SkuParentGroup[];
     searchQuery?: string;
@@ -11,7 +12,9 @@ interface SkuTreeTableProps {
     onToggleColor: (parentAsin: string, color: string) => void;
     onEditGroup?: (group: SkuParentGroup) => void;
     onGroupClick?: (group: SkuParentGroup) => void;
+    displayMode?: 'products' | 'standard' | 'apparel' | 'multi' | 'single';
 }
+
 
 /**
  * 服装SKU树形表格组件
@@ -26,6 +29,7 @@ export const SkuTreeTable: React.FC<SkuTreeTableProps> = ({
     onToggleColor,
     onEditGroup,
     onGroupClick,
+    displayMode = 'apparel', // 默认为服装模式
 }) => {
     // 搜索过滤
     const filteredGroups = useMemo(() => {
@@ -62,19 +66,60 @@ export const SkuTreeTable: React.FC<SkuTreeTableProps> = ({
             <table className="w-full text-sm table-fixed">
                 <thead>
                     <tr className="bg-[#1f2937] text-zinc-400 text-left text-xs">
-                        <th className="py-3 pl-12 pr-2 font-bold whitespace-nowrap" style={{ width: '23%' }}>产品名称</th>
-                        <th className="py-3 px-2 font-bold whitespace-nowrap text-center" style={{ width: '5%' }}>简称</th>
-                        <th className="py-3 px-2 font-bold whitespace-nowrap" style={{ width: '16%' }}>SKU</th>
-                        <th className="py-3 px-2 font-bold whitespace-nowrap text-center" style={{ width: '8%' }}>父ASIN</th>
-                        <th className="py-3 px-2 font-bold whitespace-nowrap text-center" style={{ width: '8%' }}>ASIN</th>
-                        <th className="py-3 px-2 font-bold whitespace-nowrap text-center" style={{ width: '4%' }}>类目</th>
-                        <th className="py-3 px-2 font-bold text-center whitespace-nowrap" style={{ width: '5%' }}>尺码</th>
-                        <th className="py-3 px-2 font-bold whitespace-nowrap text-center" style={{ width: '6%' }}>店铺</th>
-                        <th className="py-3 px-2 font-bold whitespace-nowrap text-center" style={{ width: '6%' }}>运营</th>
-                        <th className="py-3 px-2 font-bold text-center text-blue-300 whitespace-nowrap" style={{ width: '5%' }}>颜色%</th>
-                        <th className="py-3 px-2 font-bold text-center text-blue-300 whitespace-nowrap" style={{ width: '5%' }}>尺码%</th>
-                        <th className="py-3 px-2 font-bold text-center whitespace-nowrap" style={{ width: '4%' }}>权重</th>
-                        <th className="py-3 px-2 font-bold text-center whitespace-nowrap" style={{ width: '5%' }}>操作</th>
+                        {displayMode === 'standard' ? (
+                            <>
+                                <th className="py-3 px-4 font-bold whitespace-nowrap" style={{ width: '30%' }}>产品名称</th>
+                                <th className="py-3 px-2 font-bold whitespace-nowrap text-center" style={{ width: '10%' }}>简称</th>
+                                <th className="py-3 px-2 font-bold whitespace-nowrap" style={{ width: '20%' }}>SKU</th>
+                                <th className="py-3 px-2 font-bold whitespace-nowrap text-center" style={{ width: '20%' }}>ASIN</th>
+                                <th className="py-3 px-2 font-bold whitespace-nowrap text-center" style={{ width: '10%' }}>店铺</th>
+                                <th className="py-3 px-2 font-bold whitespace-nowrap text-center" style={{ width: '10%' }}>运营</th>
+                            </>
+                        ) : displayMode === 'products' ? (
+                            // 产品库模式：基础信息扁平表格
+                            <>
+                                <th className="py-3 px-4 font-bold whitespace-nowrap" style={{ width: '22%' }}>产品名称</th>
+                                <th className="py-3 px-2 font-bold whitespace-nowrap" style={{ width: '12%' }}>款号</th>
+                                <th className="py-3 px-2 font-bold whitespace-nowrap text-center" style={{ width: '10%' }}>父ASIN</th>
+                                <th className="py-3 px-2 font-bold whitespace-nowrap text-center" style={{ width: '6%' }}>类目</th>
+                                <th className="py-3 px-2 font-bold whitespace-nowrap text-center" style={{ width: '6%' }}>颜色</th>
+                                <th className="py-3 px-2 font-bold whitespace-nowrap text-center" style={{ width: '6%' }}>SKU数</th>
+                                <th className="py-3 px-2 font-bold whitespace-nowrap text-center" style={{ width: '8%' }}>店铺</th>
+                                <th className="py-3 px-2 font-bold whitespace-nowrap text-center" style={{ width: '8%' }}>运营</th>
+                                <th className="py-3 px-2 font-bold whitespace-nowrap text-center" style={{ width: '10%' }}>分类</th>
+                            </>
+
+                        ) : displayMode === 'single' ? (
+                            // 单变体模式：销量占比%替代颜色%+尺码%
+                            <>
+                                <th className="py-3 pl-12 pr-2 font-bold whitespace-nowrap" style={{ width: '28%' }}>产品名称</th>
+                                <th className="py-3 px-2 font-bold whitespace-nowrap text-center" style={{ width: '6%' }}>简称</th>
+                                <th className="py-3 px-2 font-bold whitespace-nowrap" style={{ width: '21%' }}>SKU</th>
+                                <th className="py-3 px-2 font-bold whitespace-nowrap text-center" style={{ width: '12%' }}>父ASIN</th>
+                                <th className="py-3 px-2 font-bold whitespace-nowrap text-center" style={{ width: '12%' }}>ASIN</th>
+                                <th className="py-3 px-2 font-bold whitespace-nowrap text-center" style={{ width: '7%' }}>店铺</th>
+                                <th className="py-3 px-2 font-bold whitespace-nowrap text-center" style={{ width: '7%' }}>运营</th>
+                                <th className="py-3 px-2 font-bold text-center text-orange-300 whitespace-nowrap" style={{ width: '7%' }}>销量占比</th>
+                                <th className="py-3 px-2 font-bold text-center whitespace-nowrap" style={{ width: '0%' }}></th>
+                            </>
+                        ) : (
+                            // 服装/多变体模式：完整列
+                            <>
+                                <th className="py-3 pl-12 pr-2 font-bold whitespace-nowrap" style={{ width: '22%' }}>产品名称</th>
+                                <th className="py-3 px-2 font-bold whitespace-nowrap text-center" style={{ width: '5%' }}>简称</th>
+                                <th className="py-3 px-2 font-bold whitespace-nowrap" style={{ width: '18%' }}>SKU</th>
+                                <th className="py-3 px-2 font-bold whitespace-nowrap text-center" style={{ width: '9%' }}>父ASIN</th>
+                                <th className="py-3 px-2 font-bold whitespace-nowrap text-center" style={{ width: '9%' }}>ASIN</th>
+                                <th className="py-3 px-2 font-bold whitespace-nowrap text-center" style={{ width: '4%' }}>类目</th>
+                                <th className="py-3 px-2 font-bold text-center whitespace-nowrap" style={{ width: '5%' }}>尺码</th>
+                                <th className="py-3 px-2 font-bold whitespace-nowrap text-center" style={{ width: '6%' }}>店铺</th>
+                                <th className="py-3 px-2 font-bold whitespace-nowrap text-center" style={{ width: '6%' }}>运营</th>
+                                <th className="py-3 px-2 font-bold text-center text-blue-300 whitespace-nowrap" style={{ width: '5%' }}>颜色%</th>
+                                <th className="py-3 px-2 font-bold text-center text-blue-300 whitespace-nowrap" style={{ width: '5%' }}>尺码%</th>
+                                <th className="py-3 px-2 font-bold text-center whitespace-nowrap" style={{ width: '6%' }}>权重</th>
+                            </>
+
+                        )}
                     </tr>
                 </thead>
                 <tbody>
@@ -85,6 +130,143 @@ export const SkuTreeTable: React.FC<SkuTreeTableProps> = ({
                         group.colorGroups.forEach(cg => cg.items.forEach(item => sizeSet.add(item.尺码)));
                         const sizeCount = sizeSet.size;
 
+                        // 标品模式：直接显示单行详情（取第一个SKU的信息）
+                        if (displayMode === 'standard') {
+                            const firstItem = group.colorGroups[0]?.items[0];
+                            if (!firstItem) return null;
+
+                            return (
+                                <tr
+                                    key={group.parentAsin}
+                                    className={`border-t border-[#27272a] hover:bg-[#1a1a1d] transition-colors cursor-pointer ${groupIndex % 2 === 0 ? '' : 'bg-[#0f0f11]'}`}
+                                    onClick={() => onGroupClick?.(group)}
+                                >
+                                    <td className="py-3 px-4">
+                                        <div className="font-bold text-white">{group.品名}</div>
+                                    </td>
+                                    <td className="py-3 px-4 text-zinc-400 text-xs truncate text-center">{group.简称 || '—'}</td>
+                                    <td className="py-3 px-4 font-mono text-zinc-300 text-xs break-all">{firstItem.SKU}</td>
+                                    <td className="py-3 px-4 font-mono text-zinc-400 text-xs truncate text-center">{firstItem.ASIN || '—'}</td>
+                                    <td className="py-3 px-4 text-zinc-400 text-xs truncate text-center">{group.店铺}</td>
+                                    <td className="py-3 px-4 text-zinc-400 truncate text-center">{group.运营}</td>
+
+                                </tr>
+                            );
+                        }
+
+                        // 产品库模式：扁平表格显示父体基础信息
+                        if (displayMode === 'products') {
+                            // 分类标签颜色
+                            const getClassificationBadge = () => {
+                                if (group.productType === 'apparel') {
+                                    return <span className="px-2 py-0.5 bg-pink-900/30 text-pink-300 rounded text-xs">服装</span>;
+                                } else if (group.totalSkuCount === 1) {
+                                    return <span className="px-2 py-0.5 bg-zinc-700 text-zinc-300 rounded text-xs">标准</span>;
+                                } else if (group.variantType === 'single') {
+                                    return <span className="px-2 py-0.5 bg-cyan-900/30 text-cyan-300 rounded text-xs">单变体</span>;
+                                } else {
+                                    return <span className="px-2 py-0.5 bg-purple-900/30 text-purple-300 rounded text-xs">多变体</span>;
+                                }
+                            };
+
+                            return (
+                                <tr
+                                    key={group.parentAsin}
+                                    className={`border-t border-[#27272a] hover:bg-[#1a1a1d] transition-colors cursor-pointer ${groupIndex % 2 === 0 ? '' : 'bg-[#0f0f11]'}`}
+                                    onClick={() => onGroupClick?.(group)}
+                                >
+                                    <td className="py-3 px-4">
+                                        <div className="font-bold text-white">{group.品名}</div>
+                                    </td>
+                                    <td className="py-3 px-2 font-mono text-zinc-400 text-xs break-all">{group.款号}</td>
+                                    <td className="py-3 px-2 font-mono text-blue-400 text-xs truncate text-center">{group.parentAsin}</td>
+                                    <td className="py-3 px-2 text-zinc-400 text-xs truncate text-center">
+                                        {group.productType === 'apparel' ? '服装' : '标品'}
+                                    </td>
+                                    <td className="py-3 px-2 text-center">
+                                        <span className="text-purple-400">{group.colorGroups.length}</span>
+                                    </td>
+                                    <td className="py-3 px-2 text-center">
+                                        <span className="text-green-400">{group.totalSkuCount}</span>
+                                    </td>
+                                    <td className="py-3 px-2 text-zinc-400 text-xs truncate text-center">{group.店铺}</td>
+                                    <td className="py-3 px-2 text-zinc-400 truncate text-center">{group.运营}</td>
+                                    <td className="py-3 px-2 text-center">{getClassificationBadge()}</td>
+                                    <td className="py-3 px-2 text-center">{getClassificationBadge()}</td>
+                                    <td className="py-3 px-2 text-center">
+                                    </td>
+                                </tr>
+                            );
+                        }
+
+                        // 单变体模式：父体+子体列表（不分颜色组，直接展示）
+                        if (displayMode === 'single') {
+                            const allItems = group.colorGroups.flatMap(cg => cg.items);
+                            return (
+                                <React.Fragment key={group.parentAsin}>
+                                    {/* 父体行 */}
+                                    <tr
+                                        className={`border-t border-[#27272a] hover:bg-[#1a1a1d] transition-colors cursor-pointer ${groupIndex % 2 === 0 ? '' : 'bg-[#0f0f11]'}`}
+                                        onClick={() => onGroupClick?.(group)}
+                                    >
+                                        <td className="py-3 px-4">
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        onToggleParent(group.parentAsin);
+                                                    }}
+                                                    className={`text-zinc-500 transition-transform text-xs p-1 hover:text-zinc-300 ${isParentExpanded ? 'rotate-90' : ''}`}
+                                                >
+                                                    ▶
+                                                </button>
+                                                <div className="flex items-center justify-between gap-2 overflow-hidden flex-1">
+                                                    <div className="font-bold text-white">{group.品名}</div>
+                                                    <span className="shrink-0 text-xs text-cyan-400 bg-cyan-900/20 px-1.5 py-0.5 rounded ml-auto">📦 {allItems.length}个</span>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td className="py-3 px-4 text-zinc-400 text-xs truncate text-center">{group.简称 || '—'}</td>
+                                        <td className="py-3 px-4 font-mono text-zinc-400 text-xs break-all">{group.款号}</td>
+                                        <td className="py-3 px-4 font-mono text-blue-400 text-xs truncate text-center">{group.parentAsin}</td>
+                                        <td className="py-3 px-4 text-zinc-500 text-center">—</td>
+                                        <td className="py-3 px-4 text-zinc-400 text-xs truncate text-center">{group.店铺}</td>
+                                        <td className="py-3 px-4 text-zinc-400 truncate text-center">{group.运营}</td>
+                                        <td className="py-3 px-4 text-center text-zinc-500">—</td>
+                                        <td className="py-3 px-4 text-center"></td>
+                                    </tr>
+
+                                    {/* 子体SKU行 */}
+                                    {isParentExpanded && allItems.map((item, idx) => (
+                                        <tr
+                                            key={item.id}
+                                            className={`border-t border-[#27272a]/30 hover:bg-[#1a1a1d] cursor-pointer ${idx % 2 === 0 ? 'bg-[#08080a]' : 'bg-[#0c0c0e]'}`}
+                                            onClick={() => onItemClick?.(item)}
+                                        >
+                                            <td className="py-2 px-4 pl-10 text-zinc-400 text-xs">
+                                                {item.颜色 || item.Color || item.尺码 || item.品名}
+                                            </td>
+                                            <td className="py-2 px-4 text-zinc-600 text-center">—</td>
+                                            <td className="py-2 px-4 font-mono text-xs text-zinc-300 break-all">{item.SKU}</td>
+                                            <td className="py-2 px-4 text-zinc-600 text-center">—</td>
+                                            <td className="py-2 px-4 font-mono text-xs text-zinc-400 truncate text-center">{item.ASIN}</td>
+                                            <td className="py-2 px-4 text-zinc-600 truncate text-center">{item.店铺 || '—'}</td>
+                                            <td className="py-2 px-4 text-zinc-600 truncate text-center">{item.运营}</td>
+                                            <td
+                                                className="py-2 px-4 text-center font-mono text-orange-300 cursor-help"
+                                                title={item.salesInfo ? `子体销量占比\n父体总销量: ${item.salesInfo.totalSales}` : ''}
+                                            >
+                                                {item.salesWeight !== undefined ? `${(item.salesWeight * 100).toFixed(2)}%` : '—'}
+                                            </td>
+                                            <td className="py-2 px-4 text-center text-zinc-600">—</td>
+
+                                        </tr>
+                                    ))}
+                                </React.Fragment>
+                            );
+                        }
+
+                        // 服装/多变体模式：树形结构
                         return (
                             <React.Fragment key={group.parentAsin}>
                                 {/* 父体行 */}
@@ -104,17 +286,17 @@ export const SkuTreeTable: React.FC<SkuTreeTableProps> = ({
                                                 ▶
                                             </button>
                                             <div className="flex items-center justify-between gap-2 overflow-hidden flex-1">
-                                                <div className="font-bold text-white truncate">{group.品名}</div>
+                                                <div className="font-bold text-white">{group.品名}</div>
                                                 <span className="shrink-0 text-xs text-purple-400 bg-purple-900/20 px-1.5 py-0.5 rounded ml-auto">🎨 {group.colorGroups.length}色</span>
                                             </div>
                                         </div>
                                     </td>
                                     <td className="py-3 px-4 text-zinc-400 text-xs truncate text-center">{group.简称 || '—'}</td>
-                                    <td className="py-3 px-4 font-mono text-zinc-400 text-xs truncate">{group.款号}</td>
+                                    <td className="py-3 px-4 font-mono text-zinc-400 text-xs break-all">{group.款号}</td>
                                     <td className="py-3 px-4 font-mono text-blue-400 text-xs truncate text-center">{group.parentAsin}</td>
                                     <td className="py-3 px-4 text-zinc-500 text-center">—</td>
                                     <td className="py-3 px-4 text-zinc-400 text-xs truncate text-center">
-                                        {group.category === 'standard' ? '标准' : '服装'}
+                                        {group.productType === 'apparel' ? '服装' : '标准'}
                                     </td>
                                     <td className="py-3 px-4 text-center">
                                         <span className="text-green-400">📦 {sizeCount}</span>
@@ -124,19 +306,9 @@ export const SkuTreeTable: React.FC<SkuTreeTableProps> = ({
                                     <td className="py-3 px-4 text-center text-zinc-500">—</td>
                                     <td className="py-3 px-4 text-center text-zinc-500">—</td>
                                     <td className="py-3 px-4 text-center text-zinc-500">—</td>
-                                    <td className="py-3 px-4 text-center">
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                onEditGroup?.(group);
-                                            }}
-                                            className="p-1.5 hover:bg-zinc-700 rounded-lg text-zinc-400 hover:text-blue-400 transition-colors"
-                                            title="编辑父体属性"
-                                        >
-                                            <span className="material-symbols-outlined text-[18px]">edit</span>
-                                        </button>
-                                    </td>
+                                    <td className="py-3 px-4 text-center"></td>
                                 </tr>
+
 
                                 {/* 颜色分组行 */}
                                 {isParentExpanded && group.colorGroups.map((colorGroup) => {
@@ -174,6 +346,7 @@ export const SkuTreeTable: React.FC<SkuTreeTableProps> = ({
                                                 <td className="py-2 px-4 text-center text-zinc-600">—</td>
                                                 <td className="py-2 px-4 text-center text-zinc-600">—</td>
                                                 <td className="py-2 px-4 text-center text-zinc-600">—</td>
+
                                             </tr>
 
                                             {/* 子体SKU行 */}
@@ -183,9 +356,11 @@ export const SkuTreeTable: React.FC<SkuTreeTableProps> = ({
                                                     className={`border-t border-[#27272a]/30 hover:bg-[#1a1a1d] cursor-pointer ${idx % 2 === 0 ? 'bg-[#08080a]' : 'bg-[#0c0c0e]'}`}
                                                     onClick={() => onItemClick?.(item)}
                                                 >
-                                                    <td className="py-2 px-4 pl-14 text-zinc-500 text-xs truncate">{item.品名}</td>
+                                                    <td className="py-2 px-4 pl-14 text-zinc-500 text-xs">
+                                                        {item.品名}
+                                                    </td>
                                                     <td className="py-2 px-4 text-zinc-600 text-center">—</td>
-                                                    <td className="py-2 px-4 font-mono text-xs text-zinc-300 truncate">{item.SKU}</td>
+                                                    <td className="py-2 px-4 font-mono text-xs text-zinc-300 break-all">{item.SKU}</td>
                                                     <td className="py-2 px-4 text-zinc-600 text-center">—</td>
                                                     <td className="py-2 px-4 font-mono text-xs text-zinc-400 truncate text-center">{item.ASIN}</td>
                                                     <td className="py-2 px-4 text-zinc-600 text-center">—</td>
@@ -207,6 +382,7 @@ export const SkuTreeTable: React.FC<SkuTreeTableProps> = ({
                                                         {item.salesWeight !== undefined ? `${(item.salesWeight * 100).toFixed(2)}%` : '-'}
                                                     </td>
                                                     <td className="py-2 px-4 text-center text-zinc-600">—</td>
+
                                                 </tr>
                                             ))}
                                         </React.Fragment>

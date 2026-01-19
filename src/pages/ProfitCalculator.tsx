@@ -6,6 +6,7 @@ import WaterfallChart from '../components/WaterfallChart';
 import { ProfitModelService } from '../services/profitModelService';
 import { ProfitModelInputs, ProfitModelResults, SavedProfitModel } from '../types';
 import { useProducts } from '../contexts/ProductContext';
+import { useCombinedProducts } from '../hooks/useCombinedProducts';
 import { useLogistics } from '../contexts/LogisticsContext';
 import { r2, fmtUSD, fmtPct } from '../utils/formatters';
 import { getCommRate as getCommRateUtil, getRefundAdminFee } from '../utils/commissionUtils';
@@ -37,8 +38,12 @@ const globalInputStyles = `
 `;
 
 const ProfitCalculator: React.FC = () => {
-  const { products } = useProducts();
+  // Use the combined hook which merges Context + Imported CSV SKUs
+  const products = useCombinedProducts();
+  // Legacy context access if needed directly (though hook manages it)
+  const { products: contextProducts } = useProducts();
   const { channels } = useLogistics();
+
   const [selectedProductId, setSelectedProductId] = useState<string>('');
   const [selectedChannelId, setSelectedChannelId] = useState<string>('3'); // 默认: 普船海卡
   const [targetAcos, setTargetAcos] = useState(15);

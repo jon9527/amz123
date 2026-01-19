@@ -24,6 +24,7 @@ export interface SkuItem {
         sizeSales: number;
         totalSales: number;
     };
+    manualType?: string; // 手动指定的类型 (CSV读取)
 }
 
 // 颜色分组
@@ -68,16 +69,24 @@ export interface SkuParentGroup {
     notes?: string;
 
     // FBA配置
-    category?: 'standard' | 'apparel';
+    category?: 'standard' | 'apparel';  // FBA费率：标准/服装
     fbaFeeManual?: number;
     inboundPlacementMode?: 'minimal' | 'partial' | 'optimized';
     defaultStorageMonth?: 'jan_sep' | 'oct_dec';
     defaultInventoryAge?: number;
+
+    // 产品类型（Tab分类用）
+    displayType?: 'standard' | 'apparel' | 'multi' | 'single';  // 标品/服装/多变体/单变体
+
+    // 分类信息（遗留字段，保持兼容）
+    variantType?: SkuVariantType;
+    productType?: SkuProductType;
+    classificationReason?: string;
 }
 
-// CSV表头映射
+// CSV表头映射 (分类在第一列)
 export const SKU_CSV_HEADERS = [
-    '简称', '店铺', '款号', '父ASIN', 'ASIN', 'SKU', 'MSKU', '品名', 'Color', '颜色', '尺码', '运营'
+    '分类', '简称', '店铺', '款号', '父ASIN', 'ASIN', 'SKU', 'MSKU', '品名', 'Color', '颜色', '尺码', '运营'
 ] as const;
 
 /**
@@ -101,10 +110,11 @@ export function groupSkuByParent(items: SkuItem[]): SkuParentGroup[] {
     parentMap.forEach((groupItems, parentAsin) => {
         const first = groupItems[0];
 
-        // 按颜色分组
+        // 按颜色分组 (优先使用中文颜色作为分组Key，以聚合 "Black01", "Black02" 等)
         const colorMap = new Map<string, SkuItem[]>();
         groupItems.forEach(item => {
-            const colorKey = item.Color || item.颜色 || '未知颜色';
+            // 策略调整：优先使用中文颜色，因为用户反馈英文Color字段常含杂乱后缀导致无法聚合
+            const colorKey = item.颜色 || item.Color || '未知颜色';
             if (!colorMap.has(colorKey)) {
                 colorMap.set(colorKey, []);
             }
@@ -112,18 +122,20 @@ export function groupSkuByParent(items: SkuItem[]): SkuParentGroup[] {
         });
 
         const colorGroups: SkuColorGroup[] = [];
-        colorMap.forEach((colorItems, color) => {
+        colorMap.forEach((colorItems, key) => {
             // 尺码排序
             const sortedItems = sortBySize(colorItems);
+            const first = sortedItems[0];
+
             colorGroups.push({
-                color,
-                颜色: colorItems[0]?.颜色 || color,
+                color: first.Color || key, // English field: attempt to use the first item's English color, else fallback to key
+                颜色: first.颜色 || key,   // Chinese field: attempt to use first item's Chinese color, else fallback to key
                 items: sortedItems,
                 isExpanded: false,
             });
         });
 
-        groups.push({
+        const group: SkuParentGroup = {
             parentAsin,
             款号: first.款号,
             品名: extractBaseName(first.品名),
@@ -133,7 +145,15 @@ export function groupSkuByParent(items: SkuItem[]): SkuParentGroup[] {
             colorGroups,
             totalSkuCount: groupItems.length,
             isExpanded: false,
-        });
+        };
+
+        // 计算分类
+        const classification = classifySkuGroup(group);
+        group.variantType = classification.variantType;
+        group.productType = classification.productType;
+        group.classificationReason = classification.reason;
+
+        groups.push(group);
     });
 
     return groups;
@@ -176,4 +196,130 @@ export function detectVariantDimensions(items: SkuItem[]): ('Color' | '尺码')[
     if (colors.size > 1) dims.push('Color');
     if (sizes.size > 1) dims.push('尺码');
     return dims;
+}
+
+/**
+ * 变体类型定义
+ */
+export type SkuVariantType = 'single' | 'multi'; // 单变体 | 多变体
+export type SkuProductType = 'standard' | 'apparel'; // 标品 | 服装 (这里作为大类，虽然标品也可能有单/多变体，但在UI上通常标品很少有多变体)
+
+/**
+ * 完整的分类结果
+ */
+export interface SkuClassification {
+    variantType: SkuVariantType;
+    productType: SkuProductType;
+    reason: string; //由于什么原因被归类
+}
+
+/**
+ * 服装关键词 (用于启发式判断)
+ */
+const APPAREL_KEYWORDS = [
+    'shirt', 'pant', 'dress', 'short', 'bra', 'sock', 'underwear', 'shoe',
+    '瑜伽', '裤', '衫', '裙', '鞋', '衣', '套', '装', '袜', 'T恤'
+];
+
+/**
+ * 检测是否有真正的父子关系 (父ASIN ≠ 子ASIN)
+ */
+function hasParentChildRelation(items: SkuItem[]): boolean {
+    return items.some(item => item.父ASIN && item.ASIN && item.父ASIN !== item.ASIN);
+}
+
+/**
+ * 检测是否所有子ASIN都等于父ASIN (标品特征)
+ */
+function isStandardProduct(items: SkuItem[]): boolean {
+    if (items.length !== 1) return false;
+    const item = items[0];
+    // 标品: 只有1个SKU 且 (无父ASIN 或 父ASIN==子ASIN)
+    return !item.父ASIN || item.父ASIN === item.ASIN;
+}
+
+/**
+ * 对Sku组进行分类
+ * 
+ * 分类逻辑 (ASIN关系优先):
+ * 1. 标准: 父ASIN == 子ASIN 且 只有1个SKU
+ * 2. 服装: 有父子关系 + 颜色+尺码双属性 + 服装关键词
+ * 3. 多变体: 有父子关系 + 颜色+尺码双属性 + 无服装关键词
+ * 4. 单变体: 有父子关系 + 只有单一属性变化 (≥2个SKU)
+ */
+export function classifySkuGroup(group: SkuParentGroup): SkuClassification {
+    const items = group.colorGroups.flatMap(g => g.items);
+
+    // 1. 优先检查手动类型 (取第一个有值的)
+    const manualType = items.find(i => i.manualType)?.manualType?.trim().toLowerCase();
+    if (manualType) {
+        if (['标品', 'standard', '标准'].includes(manualType)) {
+            return { variantType: 'single', productType: 'standard', reason: '手动指定: 标准' };
+        }
+        if (['服装', 'apparel'].includes(manualType)) {
+            return { variantType: 'multi', productType: 'apparel', reason: '手动指定: 服装' };
+        }
+        if (['单变体', 'single'].includes(manualType)) {
+            return { variantType: 'single', productType: 'standard', reason: '手动指定: 单变体' };
+        }
+        if (['多变体', 'multi'].includes(manualType)) {
+            return { variantType: 'multi', productType: 'standard', reason: '手动指定: 多变体' };
+        }
+    }
+
+    // ========== 2. 优先特征检测 (服装) ==========
+    // 即使是单个SKU，如果特征符合服装，也应归为服装
+    const nameLower = group.品名.toLowerCase();
+    const isApparelKeyword = APPAREL_KEYWORDS.some(kw => nameLower.includes(kw.toLowerCase()));
+
+    // 检查是否有服装相关的列数据 (非空)
+    const hasColorData = items.some(i => i.Color || i.颜色);
+    const hasSizeData = items.some(i => i.尺码);
+    const hasApparelAttributes = hasColorData || hasSizeData;
+
+    if (isApparelKeyword && hasApparelAttributes) {
+        // 判定变体类型: 只有1个SKU且无父子关系才算single，否则视为multi结构(即使当前只导入了1个)
+        let vType: SkuVariantType = 'multi';
+        if (items.length === 1 && (!items[0].父ASIN || items[0].父ASIN === items[0].ASIN)) {
+            vType = 'single';
+        }
+        return { variantType: vType, productType: 'apparel', reason: '特征检测: 服装关键词 + 属性列' };
+    }
+
+
+    // ========== ASIN关系判断 (优先) ==========
+
+    // 3. 标准 (Standard): 只有1个SKU 且 父ASIN==子ASIN (或无父ASIN)
+    if (isStandardProduct(items)) {
+        return { variantType: 'single', productType: 'standard', reason: '标准: 单SKU且父子ASIN相同' };
+    }
+
+    // 4. 变体商品: 有父子关系 (父ASIN ≠ 子ASIN)
+    const hasVariants = hasParentChildRelation(items);
+    if (!hasVariants && items.length > 1) {
+        // 多个SKU但没有父子关系，可能是数据异常，归为标准
+        return { variantType: 'single', productType: 'standard', reason: '标准: 多SKU但无父子关系' };
+    }
+
+    // ========== 属性变化检测 ==========
+    const dims = detectVariantDimensions(items);
+    const hasColor = dims.includes('Color');
+    const hasSize = dims.includes('尺码');
+    const hasDualAttributes = hasColor && hasSize; // 双属性 (颜色+尺码)
+    const hasSingleAttribute = dims.length === 1;  // 单一属性
+
+
+    // 5. 多变体: 有父子关系 + 双属性(颜色+尺码) + 无服装关键词
+    if (hasDualAttributes && !isApparelKeyword) {
+        return { variantType: 'multi', productType: 'standard', reason: '多变体: 颜色+尺码双属性 (非服装)' };
+    }
+
+    // 6. 单变体: 有父子关系 + 只有单一属性变化 + ≥2个SKU
+    if (hasSingleAttribute && items.length >= 2) {
+        const attrName = hasColor ? '颜色' : '尺码';
+        return { variantType: 'single', productType: 'standard', reason: `单变体: 仅${attrName}变化` };
+    }
+
+    // 7. 默认情况 (其他场景，可能是数据异常)
+    return { variantType: 'multi', productType: 'standard', reason: '默认: 无法明确分类' };
 }

@@ -56,7 +56,8 @@ const NumberInput: React.FC<{
     className?: string;
     placeholder?: string;
     step?: string;
-}> = ({ value, onChange, className, placeholder, step }) => {
+    min?: number;
+}> = ({ value, onChange, className, placeholder, step, min }) => {
     // 0 或 undefined 显示为空字符串
     const [localVal, setLocalVal] = useState(value === 0 || !value ? '' : String(value));
 
@@ -89,6 +90,8 @@ const NumberInput: React.FC<{
             }}
             placeholder={placeholder}
             className={className}
+            min={min}
+            autoComplete="off"
             onWheel={(e) => e.currentTarget.blur()} // 防止滚动修改数值
         />
     );
@@ -152,6 +155,7 @@ export const ProductForm: React.FC<ProductFormProps> = ({
                                 onChange={(e) => setField('name', e.target.value)}
                                 placeholder="产品名称"
                                 className={`${inputClass} ${errors.includes('产品名称') ? 'border-red-500' : ''}`}
+                                autoComplete="off"
                             />
                         </div>
                         <div>
@@ -159,9 +163,10 @@ export const ProductForm: React.FC<ProductFormProps> = ({
                             <input
                                 type="text"
                                 value={form.sku}
-                                onChange={(e) => setField('sku', e.target.value)}
-                                placeholder="SKU"
+                                onChange={(e) => onFormChange({ ...form, sku: e.target.value })}
                                 className={inputClass}
+                                placeholder="请输入SKU"
+                                autoComplete="off"
                             />
                         </div>
                     </div>
@@ -172,9 +177,10 @@ export const ProductForm: React.FC<ProductFormProps> = ({
                             <input
                                 type="text"
                                 value={form.asin}
-                                onChange={(e) => setField('asin', e.target.value)}
-                                placeholder="B0..."
+                                onChange={(e) => onFormChange({ ...form, asin: e.target.value })}
                                 className={inputClass}
+                                placeholder="请输入ASIN"
+                                autoComplete="off"
                             />
                         </div>
                         <div>

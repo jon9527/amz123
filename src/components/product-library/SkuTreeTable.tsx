@@ -54,8 +54,8 @@ export const SkuTreeTable: React.FC<SkuTreeTableProps> = ({
         return (
             <div className="flex flex-col items-center justify-center h-64 text-zinc-500">
                 <span className="text-6xl mb-4">👕</span>
-                <p className="text-lg">暂无服装SKU数据</p>
-                <p className="text-sm">点击「📂 导入服装SKU」开始</p>
+                <p className="text-lg">暂无 SKU 数据</p>
+                <p className="text-sm">点击「📂 导入 SKU」开始</p>
             </div>
         );
     }

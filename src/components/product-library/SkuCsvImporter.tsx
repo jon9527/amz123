@@ -163,7 +163,7 @@ export const SkuCsvImporter: React.FC<SkuCsvImporterProps> = ({ isOpen, onClose,
             <div className="bg-[#18181b] border border-[#27272a] rounded-xl w-[700px] max-h-[80vh] flex flex-col shadow-2xl">
                 {/* 头部 */}
                 <div className="flex items-center justify-between p-4 border-b border-[#27272a]">
-                    <h2 className="text-lg font-bold">📂 导入服装SKU</h2>
+                    <h2 className="text-lg font-bold">📂 导入 SKU</h2>
                     <button
                         onClick={() => { resetState(); onClose(); }}
                         className="w-8 h-8 rounded-lg bg-zinc-700 hover:bg-zinc-600 flex items-center justify-center"

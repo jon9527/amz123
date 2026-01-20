@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { runSimulation, fmtDate } from './ReplenishmentEngine';
 import { ModuleState, SimulationResult, FinancialEvent, LogisticsCosts } from './ReplenishmentTypes';
 import { ProfitModelService } from '../services/profitModelService';
@@ -488,28 +488,11 @@ const ReplenishmentAdvice: React.FC = () => {
 
 
     const [activeTab, setActiveTab] = useState<'spec' | 'pricing' | 'batch' | 'boss'>('spec');
-    const [logCosts, setLogCosts] = useState<LogisticsCosts>({ sea: 0, air: 0, exp: 0 });
 
-
-
-    const [simResult, setSimResult] = useState<SimulationResult | null>(null);
-    const [selectedEvent, setSelectedEvent] = useState<{ event: FinancialEvent; x: number; y: number } | null>(null);
-    const [hiddenEventTypes, setHiddenEventTypes] = useState<Set<string>>(new Set());
-    const [hiddenChartLines, setHiddenChartLines] = useState<Set<string>>(new Set());
-
-
-    const ganttCanvasRef = useRef<HTMLCanvasElement>(null);
-    const cashCanvasRef = useRef<HTMLCanvasElement>(null);
-    const ganttChartRef = useRef<ChartJS | null>(null);
-    const cashChartRef = useRef<ChartJS | null>(null);
-
-    // ============ AUTO GENERATE BATCHES ON FIRST LOAD ============
-
-
-    // ============ LOGISTICS CALC ============
-    useEffect(() => {
+    // Optimized: Derived state using useMemo instead of Effect + State
+    const logCosts = useMemo<LogisticsCosts>(() => {
         const { boxL, boxW, boxH, boxWgt, pcsPerBox, seaPriceCbm, seaPriceKg, seaUnit, airPriceKg, expPriceKg, seaChannelId, airChannelId, expChannelId } = state;
-        if (pcsPerBox === 0) return;
+        if (pcsPerBox === 0) return { sea: 0, air: 0, exp: 0 };
 
         const calcOne = (type: 'sea' | 'air' | 'exp', manualPrice: number, chanId?: string) => {
             const channel = channels.find(c => c.id === chanId);
@@ -563,15 +546,33 @@ const ReplenishmentAdvice: React.FC = () => {
             }
         };
 
-        setLogCosts({
+        return {
             sea: calcOne('sea', seaPriceCbm, seaChannelId),
             air: calcOne('air', airPriceKg, airChannelId),
             exp: calcOne('exp', expPriceKg, expChannelId),
-        });
+        };
     }, [state.boxL, state.boxW, state.boxH, state.boxWgt, state.pcsPerBox,
     state.seaPriceCbm, state.seaPriceKg, state.seaUnit, state.airPriceKg, state.expPriceKg,
     state.seaChannelId, state.airChannelId, state.expChannelId,
         channels]);
+
+
+
+    const [simResult, setSimResult] = useState<SimulationResult | null>(null);
+    const [selectedEvent, setSelectedEvent] = useState<{ event: FinancialEvent; x: number; y: number } | null>(null);
+    const [hiddenEventTypes, setHiddenEventTypes] = useState<Set<string>>(new Set());
+    const [hiddenChartLines, setHiddenChartLines] = useState<Set<string>>(new Set());
+
+
+    const ganttCanvasRef = useRef<HTMLCanvasElement>(null);
+    const cashCanvasRef = useRef<HTMLCanvasElement>(null);
+    const ganttChartRef = useRef<ChartJS | null>(null);
+    const cashChartRef = useRef<ChartJS | null>(null);
+
+    // ============ AUTO GENERATE BATCHES ON FIRST LOAD ============
+
+
+
 
 
 

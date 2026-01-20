@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { Search, Download, Beaker, Upload, Plus, X } from 'lucide-react';
 import { STORAGE_KEYS } from '../repositories/StorageKeys';
 import { ProductSpec } from '../types';
 import { useProducts } from '../contexts/ProductContext';
@@ -563,15 +564,16 @@ const ProductLibrary: React.FC = () => {
                                 type="text"
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                placeholder="🔍 搜索..."
-                                className="w-full bg-[#18181b] border border-[#27272a] rounded-lg px-3 py-1.5 text-sm text-white placeholder:text-zinc-500 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                placeholder="搜索..."
+                                className="w-full bg-[#18181b] border border-[#27272a] rounded-lg pl-9 pr-3 py-1.5 text-sm text-white placeholder:text-zinc-500 focus:ring-2 focus:ring-blue-500 focus:outline-none"
                             />
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 w-4 h-4" />
                             {searchQuery && (
                                 <button
                                     onClick={() => setSearchQuery('')}
-                                    className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white text-xs"
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white"
                                 >
-                                    ✕
+                                    <X className="w-3 h-3" />
                                 </button>
                             )}
                         </div>
@@ -581,23 +583,26 @@ const ProductLibrary: React.FC = () => {
                         onClick={exportCSV}
                         disabled={products.length === 0}
                     >
-                        📥 导出CSV
+                        <Download className="w-4 h-4 mr-2" />
+                        导出CSV
                     </Button>
                     <Button
                         variant="secondary"
                         onClick={generateTestProducts}
                     >
-                        🧪 生成测试产品
+                        <Beaker className="w-4 h-4 mr-2" />
+                        生成测试产品
                     </Button>
                     <Button
                         variant="secondary"
                         onClick={() => setShowSkuImporter(true)}
                     >
-                        📂 导入服装SKU
+                        <Upload className="w-4 h-4 mr-2" />
+                        导入 SKU
                     </Button>
 
                     <Button onClick={openAddForm}>
-                        <span className="text-lg">+</span> 添加产品
+                        <Plus className="w-4 h-4 mr-1" /> 添加产品
                     </Button>
                 </>
             }

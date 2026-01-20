@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { STORAGE_KEYS } from '../repositories/StorageKeys';
 import { ProductSpec } from '../types';
 import { useProducts } from '../contexts/ProductContext';
 import { getTagColor } from '../utils/tagColors';
@@ -95,7 +96,7 @@ const ProductLibrary: React.FC = () => {
     const [showSkuImporter, setShowSkuImporter] = useState(false);
     const [skuGroups, setSkuGroups] = useState<SkuParentGroup[]>(() => {
         if (typeof window !== 'undefined') {
-            const saved = localStorage.getItem('sku_groups_data');
+            const saved = localStorage.getItem(STORAGE_KEYS.SKU_GROUPS) || localStorage.getItem('sku_groups_data');
             try {
                 return saved ? JSON.parse(saved) : [];
             } catch (e) {
@@ -108,7 +109,7 @@ const ProductLibrary: React.FC = () => {
 
     // 监听 skuGroups 变化并保存到本地存储
     React.useEffect(() => {
-        localStorage.setItem('sku_groups_data', JSON.stringify(skuGroups));
+        localStorage.setItem(STORAGE_KEYS.SKU_GROUPS, JSON.stringify(skuGroups));
     }, [skuGroups]);
 
     type DisplayMode = 'products' | 'standard' | 'apparel' | 'multi' | 'single';
@@ -130,17 +131,7 @@ const ProductLibrary: React.FC = () => {
         return Array.from(tagSet).sort();
     }, [products]);
 
-    // 计算占比显示的辅助函数
-    const formatPercent = (val: number | undefined) => {
-        if (typeof val !== 'number') return '-';
-        return `${(val * 100).toFixed(1)}%`;
-    };
 
-    const getSalesInfoTooltip = (item: SkuItem) => {
-        if (!item.salesInfo) return '';
-        const { colorSales, sizeSales, totalSales } = item.salesInfo;
-        return `Color Sales: ${colorSales}\nSize Sales: ${sizeSales}\nTotal: ${totalSales}`;
-    };
 
     // 搜索、筛选和排序产品列表
     const sortedProducts = useMemo(() => {
@@ -228,7 +219,7 @@ const ProductLibrary: React.FC = () => {
             // 尝试从 skuGroups 中删除
             setSkuGroups(prev => {
                 const updated = prev.filter(g => g.parentAsin !== id);
-                localStorage.setItem('skuGroups', JSON.stringify(updated));
+                localStorage.setItem(STORAGE_KEYS.SKU_GROUPS, JSON.stringify(updated));
                 return updated;
             });
         }
@@ -245,7 +236,7 @@ const ProductLibrary: React.FC = () => {
             const updated = prev.map(g =>
                 g.parentAsin === parentAsin ? { ...g, ...updates } : g
             );
-            localStorage.setItem('skuGroups', JSON.stringify(updated));
+            localStorage.setItem(STORAGE_KEYS.SKU_GROUPS, JSON.stringify(updated));
             return updated;
         });
     };
@@ -301,6 +292,7 @@ const ProductLibrary: React.FC = () => {
             inboundPlacementMode: group.inboundPlacementMode || 'optimized',
             defaultStorageMonth: group.defaultStorageMonth || 'jan_sep',
             defaultInventoryAge: group.defaultInventoryAge || 0,
+            displayType: group.displayType || (group.category === 'apparel' ? 'apparel' : 'standard'),
         });
         setShowForm(true);
     };
@@ -412,7 +404,6 @@ const ProductLibrary: React.FC = () => {
             category: form.category || 'standard',
             fbaFeeManual: form.fbaFeeManual || 0,
             fbaFeeYear: 2026, // Updated to 2026
-            inboundPlacementMode: form.inboundPlacementMode || 'optimized',
             inboundPlacementMode: form.inboundPlacementMode || 'optimized',
             defaultStorageMonth: form.defaultStorageMonth || 'jan_sep',
             displayType: form.displayType || 'standard',
@@ -615,14 +606,14 @@ const ProductLibrary: React.FC = () => {
             <SkuCsvImporter
                 isOpen={showSkuImporter}
                 onClose={() => setShowSkuImporter(false)}
-                onImport={(groups, rawItems) => {
+                onImport={(groups) => {
                     // 累加而非覆盖：合并新旧数据
                     setSkuGroups(prev => {
                         // 根据parentAsin去重或合并
                         const existingAsins = new Set(prev.map(g => g.parentAsin));
                         const newGroups = groups.filter(g => !existingAsins.has(g.parentAsin));
                         const merged = [...prev, ...newGroups];
-                        localStorage.setItem('skuGroups', JSON.stringify(merged));
+                        localStorage.setItem(STORAGE_KEYS.SKU_GROUPS, JSON.stringify(merged));
                         return merged;
                     });
                     // 上传后切换到产品库Tab显示
@@ -1116,19 +1107,24 @@ const ProductLibrary: React.FC = () => {
                                         {/* 类目：4个选项 */}
                                         {/* 产品类型：4个选项 */}
                                         <select
-                                            value={product.displayType || (
-                                                product.category === 'apparel' ? 'apparel' : 'standard'
-                                            )}
+                                            value={product.category || 'standard'}
                                             onChange={(e) => {
-                                                const newType = e.target.value as 'standard' | 'apparel' | 'multi' | 'single';
-                                                updateProduct(product.id, { displayType: newType });
+                                                const newCategory = e.target.value as 'standard' | 'apparel';
+                                                const updates: Partial<ProductSpec> = { category: newCategory };
+
+                                                // Auto-link logic
+                                                if (newCategory === 'apparel') {
+                                                    updates.displayType = 'apparel';
+                                                } else {
+                                                    updates.displayType = 'standard';
+                                                }
+
+                                                updateProduct(product.id, updates);
                                             }}
                                             className="bg-transparent border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-300 hover:border-zinc-500 focus:outline-none focus:border-blue-500 cursor-pointer w-full"
                                         >
                                             <option value="standard">标品</option>
                                             <option value="apparel">服装</option>
-                                            <option value="multi">多变体</option>
-                                            <option value="single">单变体</option>
                                         </select>
                                     </td>
                                     <td className="py-3 px-2" onClick={(e) => e.stopPropagation()}>

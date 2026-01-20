@@ -22,6 +22,7 @@ interface ProductFormData {
     tags: string;
     // FBA Configuration
     category: 'standard' | 'apparel';
+    displayType: 'standard' | 'apparel' | 'multi' | 'single';
     fbaFeeManual: number;
     inboundPlacementMode: 'minimal' | 'partial' | 'optimized';
     defaultStorageMonth: 'jan_sep' | 'oct_dec';
@@ -180,7 +181,14 @@ export const ProductForm: React.FC<ProductFormProps> = ({
                             <div className={labelClass}>产品类目 (影响FBA) *</div>
                             <select
                                 value={form.category}
-                                onChange={(e) => setField('category', e.target.value as 'standard' | 'apparel')}
+                                onChange={(e) => {
+                                    const newCategory = e.target.value as 'standard' | 'apparel';
+                                    const updates: Partial<ProductFormData> = { category: newCategory };
+
+
+
+                                    onFormChange({ ...form, ...updates });
+                                }}
                                 className={inputClass}
                             >
                                 <option value="standard">标准 (Standard)</option>

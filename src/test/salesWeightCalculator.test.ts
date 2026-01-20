@@ -5,8 +5,8 @@ import { SkuParentGroup, SkuItem } from '../types/skuTypes';
 describe('calculateWeightsForGroups', () => {
     // Helper to create basic group
     const createGroup = (
-        variantType: 'multi' | 'single' | 'apparel',
-        productType: 'apparel' | 'standard' | 'simple' = 'apparel'
+        variantType: 'multi' | 'single',
+        productType: 'apparel' | 'standard' = 'apparel'
     ): SkuParentGroup => ({
         parentAsin: 'P1',
         款号: 'K1',
@@ -20,7 +20,7 @@ describe('calculateWeightsForGroups', () => {
         length: 10, width: 10, height: 10, weight: 1,
         boxLength: 10, boxWidth: 10, boxHeight: 10, boxWeight: 1,
         pcsPerBox: 10, unitCost: 10, defaultPrice: 20,
-        tags: '', notes: '', category: 'Apparel',
+        tags: '', notes: '', category: 'apparel',
         fbaFeeManual: 0, inboundPlacementMode: 'optimized',
         defaultStorageMonth: 'jan_sep', defaultInventoryAge: 0,
         variantType,

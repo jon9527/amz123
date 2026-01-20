@@ -153,6 +153,17 @@ export function groupSkuByParent(items: SkuItem[]): SkuParentGroup[] {
         group.productType = classification.productType;
         group.classificationReason = classification.reason;
 
+        // Explicitly set displayType relative to product/variant type
+        if (group.productType === 'apparel') {
+            group.displayType = 'apparel';
+        } else if (group.variantType === 'single') {
+            group.displayType = 'single';
+        } else if (group.variantType === 'multi') {
+            group.displayType = 'multi';
+        } else {
+            group.displayType = 'standard';
+        }
+
         groups.push(group);
     });
 

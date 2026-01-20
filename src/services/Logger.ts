@@ -24,8 +24,10 @@ export interface LogEntry {
     data?: any;
 }
 
-const STORAGE_KEY = 'amz123_logs';
-const SETTINGS_KEY = 'amz123_log_settings';
+import { STORAGE_KEYS } from '../repositories/StorageKeys';
+
+const STORAGE_KEY = STORAGE_KEYS.LOGGER_LOGS;
+const SETTINGS_KEY = STORAGE_KEYS.LOGGER_SETTINGS;
 const MAX_LOGS = 500;
 
 interface LogSettings {

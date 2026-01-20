@@ -5,7 +5,7 @@ import DistributionRow from '../components/DistributionRow';
 import WaterfallChart from '../components/WaterfallChart';
 import { ProfitModelService } from '../services/profitModelService';
 import { ProfitModelInputs, ProfitModelResults, SavedProfitModel } from '../types';
-import { useProducts } from '../contexts/ProductContext';
+
 import { useCombinedProducts } from '../hooks/useCombinedProducts';
 import { useLogistics } from '../contexts/LogisticsContext';
 import { r2, fmtUSD, fmtPct } from '../utils/formatters';
@@ -21,6 +21,7 @@ import {
   cmToInch,
   kgToLb
 } from '../utils/fbaCalculator.utils';
+import { STORAGE_KEYS } from '../repositories/StorageKeys';
 
 import { ProfitHeader } from '../components/profit-calculator/ProfitHeader';
 import { ProfitInputs } from '../components/profit-calculator/ProfitInputs';
@@ -41,7 +42,8 @@ const ProfitCalculator: React.FC = () => {
   // Use the combined hook which merges Context + Imported CSV SKUs
   const products = useCombinedProducts();
   // Legacy context access if needed directly (though hook manages it)
-  const { products: contextProducts } = useProducts();
+  // Legacy context access if needed directly (though hook manages it)
+  // const { products: contextProducts } = useProducts();
   const { channels } = useLogistics();
 
   const [selectedProductId, setSelectedProductId] = useState<string>('');
@@ -57,10 +59,13 @@ const ProfitCalculator: React.FC = () => {
     const cached = localStorage.getItem('exchangeRate');
     return cached ? r2(parseFloat(cached)) : 6.97;
   });
+
+  // ... (imports)
+
   const [isManualExchangeRate, setIsManualExchangeRate] = useState(() => {
     // If cached value differs from live rate, assume it was manually set
     // Note: This logic might need adjustment as live rate changes, but for now simple diff check is ok
-    return !!localStorage.getItem('isManualExchangeRate');
+    return !!(localStorage.getItem(STORAGE_KEYS.IS_MANUAL_EXCHANGE_RATE) || localStorage.getItem('isManualExchangeRate'));
   });
 
   // Fetch Live Rate
@@ -76,10 +81,10 @@ const ProfitCalculator: React.FC = () => {
           // Optional: Auto-update if not manual? 
           // User said: "Default equals live rate".
           // If user hasn't set manual override (which we track via isManualExchangeRate), update it.
-          const isManual = localStorage.getItem('isManualExchangeRate') === 'true';
+          const isManual = (localStorage.getItem(STORAGE_KEYS.IS_MANUAL_EXCHANGE_RATE) || localStorage.getItem('isManualExchangeRate')) === 'true';
           if (!isManual) {
             setExchangeRate(rate);
-            localStorage.setItem('exchangeRate', rate.toString());
+            localStorage.setItem(STORAGE_KEYS.EXCHANGE_RATE, rate.toString());
           }
         }
       } catch (e) {
@@ -92,15 +97,15 @@ const ProfitCalculator: React.FC = () => {
   const handleExchangeRateChange = (val: number) => {
     setExchangeRate(val);
     setIsManualExchangeRate(true);
-    localStorage.setItem('exchangeRate', val.toString());
-    localStorage.setItem('isManualExchangeRate', 'true');
+    localStorage.setItem(STORAGE_KEYS.EXCHANGE_RATE, val.toString());
+    localStorage.setItem(STORAGE_KEYS.IS_MANUAL_EXCHANGE_RATE, 'true');
   };
 
   const handleUseLiveRate = () => {
     setExchangeRate(liveRate);
     setIsManualExchangeRate(false);
-    localStorage.setItem('exchangeRate', liveRate.toString());
-    localStorage.removeItem('isManualExchangeRate');
+    localStorage.setItem(STORAGE_KEYS.EXCHANGE_RATE, liveRate.toString());
+    localStorage.removeItem(STORAGE_KEYS.IS_MANUAL_EXCHANGE_RATE);
   };
   const [shippingUSD, setShippingUSD] = useState(0.9);
   const [fbaFee, setFbaFee] = useState(5.69);

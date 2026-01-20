@@ -1,12 +1,7 @@
 import Papa from 'papaparse';
 import { SkuParentGroup, SkuItem } from '../types/skuTypes';
 
-interface SalesRow {
-    '（父）ASIN': string;
-    '（子）ASIN': string;
-    '已订购商品数量': string;
-    [key: string]: any;
-}
+
 
 /**
  * 根据销售报表计算SKU权重

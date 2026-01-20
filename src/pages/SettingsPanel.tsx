@@ -37,6 +37,8 @@ const SettingsPanel: React.FC = () => {
 
     const handleExport = () => {
         DataService.downloadBackup();
+        Logger.info('DATA', '导出系统数据备份');
+        setLogStats(Logger.getStats());
         showMessage('备份文件已下载', 'success');
     };
 
@@ -53,14 +55,21 @@ const SettingsPanel: React.FC = () => {
 
         if (result.success) {
             setStats(DataService.getStats());
+            Logger.info('DATA', '从备份文件恢复数据', { filename: file.name });
+            setLogStats(Logger.getStats());
             // Reset file input
             if (fileInputRef.current) fileInputRef.current.value = '';
+        } else {
+            Logger.error('DATA', '导入数据失败', { error: result.message });
+            setLogStats(Logger.getStats());
         }
     };
 
     const handleClearData = () => {
         if (confirm('⚠️ 警告：这将清除所有产品数据、利润模型和物流渠道数据。\n\nPIN 设置将保留。确定要继续吗？')) {
             DataService.clearAllData();
+            Logger.warn('DATA', '清除所有业务数据');
+            setLogStats(Logger.getStats());
             setStats({ productCount: 0, modelCount: 0, channelCount: 0 });
             showMessage('数据已清除', 'success');
         }
@@ -68,6 +77,7 @@ const SettingsPanel: React.FC = () => {
 
     const handleResetAll = () => {
         if (confirm('⚠️ 危险操作：这将清除所有数据并重置 PIN。\n\n你需要重新设置 PIN 码。确定要继续吗？')) {
+            Logger.warn('SECURITY', '执行全系统重置');
             localStorage.clear();
             clearPin();
             window.location.reload();
@@ -75,6 +85,7 @@ const SettingsPanel: React.FC = () => {
     };
 
     const handleLock = () => {
+        Logger.info('SECURITY', '手动锁定系统');
         lock();
     };
 
@@ -99,6 +110,8 @@ const SettingsPanel: React.FC = () => {
             setNewPin('');
             setConfirmNewPin('');
             setPinStep('new');
+            Logger.info('SECURITY', '修改 PIN 码成功');
+            setLogStats(Logger.getStats());
             showMessage('PIN 已更新', 'success');
         }
     };
@@ -110,17 +123,21 @@ const SettingsPanel: React.FC = () => {
         desc: string;
         action: React.ReactNode;
     }> = ({ icon, iconColor, title, desc, action }) => (
-        <div className="bg-[#111111] border border-[#27272a] rounded-xl p-4 flex items-center justify-between">
-            <div className="flex items-center gap-4">
-                <div className={`p-3 rounded-xl ${iconColor}`}>
-                    <span className="material-symbols-outlined text-2xl">{icon}</span>
+        <div className="bg-[#111111] border border-[#27272a] rounded-xl p-3 flex items-center justify-between hover:border-zinc-600 transition-colors group h-20">
+            <div className="flex items-center gap-3 overflow-hidden">
+                <div className={`p-2.5 rounded-full bg-opacity-10 ${iconColor.replace('text-', 'bg-').replace('500', '500/10')} text-white shrink-0`}>
+                    <div className={`text-xl ${iconColor.split(' ')[1]}`}>
+                        <span className="material-symbols-outlined">{icon}</span>
+                    </div>
                 </div>
-                <div>
-                    <h3 className="text-white font-bold">{title}</h3>
-                    <p className="text-zinc-500 text-sm">{desc}</p>
+                <div className="flex flex-col min-w-0">
+                    <h3 className="text-zinc-200 font-bold text-sm truncate">{title}</h3>
+                    <p className="text-zinc-500 text-[10px] truncate">{desc}</p>
                 </div>
             </div>
-            {action}
+            <div className="shrink-0 ml-2">
+                {action}
+            </div>
         </div>
     );
 
@@ -134,125 +151,133 @@ const SettingsPanel: React.FC = () => {
         >
 
             {/* Data Stats */}
-            <div className="grid grid-cols-3 gap-4">
-                <div className="bg-[#111111] border border-[#27272a] rounded-xl p-4 text-center">
-                    <div className="text-3xl font-black text-blue-500 font-mono">{stats.productCount}</div>
-                    <div className="text-zinc-500 text-sm font-bold mt-1">产品数量</div>
+            <div className="grid grid-cols-3 gap-3 mb-2">
+                <div className="bg-[#111111] border border-[#27272a] rounded-xl p-3 text-center">
+                    <div className="text-2xl font-black text-blue-500 font-mono">{stats.productCount}</div>
+                    <div className="text-zinc-500 text-xs font-bold mt-0.5">产品数量</div>
                 </div>
-                <div className="bg-[#111111] border border-[#27272a] rounded-xl p-4 text-center">
-                    <div className="text-3xl font-black text-emerald-500 font-mono">{stats.modelCount}</div>
-                    <div className="text-zinc-500 text-sm font-bold mt-1">利润模型</div>
+                <div className="bg-[#111111] border border-[#27272a] rounded-xl p-3 text-center">
+                    <div className="text-2xl font-black text-emerald-500 font-mono">{stats.modelCount}</div>
+                    <div className="text-zinc-500 text-xs font-bold mt-0.5">利润模型</div>
                 </div>
-                <div className="bg-[#111111] border border-[#27272a] rounded-xl p-4 text-center">
-                    <div className="text-3xl font-black text-purple-500 font-mono">{stats.channelCount}</div>
-                    <div className="text-zinc-500 text-sm font-bold mt-1">物流渠道</div>
+                <div className="bg-[#111111] border border-[#27272a] rounded-xl p-3 text-center">
+                    <div className="text-2xl font-black text-purple-500 font-mono">{stats.channelCount}</div>
+                    <div className="text-zinc-500 text-xs font-bold mt-0.5">物流渠道</div>
                 </div>
             </div>
 
             {/* Data Management */}
-            <div className="space-y-3">
-                <h2 className="text-zinc-400 text-xs font-black uppercase tracking-widest">数据管理</h2>
-
-                <SettingCard
-                    icon="download"
-                    iconColor="bg-blue-500/10 text-blue-500"
-                    title="导出数据"
-                    desc="将所有数据备份为 JSON 文件"
-                    action={
-                        <button onClick={handleExport} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg font-bold transition-colors">
-                            导出备份
-                        </button>
-                    }
-                />
-
-                <SettingCard
-                    icon="upload"
-                    iconColor="bg-emerald-500/10 text-emerald-500"
-                    title="导入数据"
-                    desc="从 JSON 备份文件恢复数据"
-                    action={
-                        <>
-                            <input
-                                ref={fileInputRef}
-                                type="file"
-                                accept=".json"
-                                onChange={handleFileSelect}
-                                className="hidden"
-                            />
-                            <button onClick={handleImportClick} className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-lg font-bold transition-colors">
-                                选择文件
+            <div className="space-y-2">
+                <h2 className="text-zinc-400 text-sm font-black uppercase tracking-widest pl-1">数据管理</h2>
+                <div className="grid grid-cols-3 gap-3">
+                    <SettingCard
+                        icon="download"
+                        iconColor="bg-blue-500/10 text-blue-500"
+                        title="导出数据"
+                        desc="所有数据备份为 JSON"
+                        action={
+                            <button onClick={handleExport} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg font-bold text-xs transition-colors flex items-center gap-1.5 shadow-lg shadow-blue-900/20 active:scale-95">
+                                <span className="material-symbols-outlined text-[16px]">download</span>
+                                导出
                             </button>
-                        </>
-                    }
-                />
+                        }
+                    />
 
-                <SettingCard
-                    icon="delete_sweep"
-                    iconColor="bg-orange-500/10 text-orange-500"
-                    title="清除数据"
-                    desc="删除所有产品、模型数据（保留 PIN）"
-                    action={
-                        <button onClick={handleClearData} className="bg-orange-600 hover:bg-orange-700 text-white px-5 py-2.5 rounded-lg font-bold transition-colors">
-                            清除数据
-                        </button>
-                    }
-                />
+                    <SettingCard
+                        icon="upload"
+                        iconColor="bg-emerald-500/10 text-emerald-500"
+                        title="导入数据"
+                        desc="从 JSON 备份恢复"
+                        action={
+                            <>
+                                <input
+                                    ref={fileInputRef}
+                                    type="file"
+                                    accept=".json"
+                                    onChange={handleFileSelect}
+                                    className="hidden"
+                                />
+                                <button onClick={handleImportClick} className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg font-bold text-xs transition-colors flex items-center gap-1.5 shadow-lg shadow-emerald-900/20 active:scale-95">
+                                    <span className="material-symbols-outlined text-[16px]">upload</span>
+                                    导入
+                                </button>
+                            </>
+                        }
+                    />
+
+                    <SettingCard
+                        icon="delete_sweep"
+                        iconColor="bg-orange-500/10 text-orange-500"
+                        title="清除数据"
+                        desc="删除所有业务数据"
+                        action={
+                            <button onClick={handleClearData} className="bg-zinc-800 hover:bg-orange-600 text-zinc-400 hover:text-white px-3 py-1.5 rounded-lg font-bold text-xs transition-colors flex items-center gap-1.5 border border-zinc-700 hover:border-orange-500 active:scale-95">
+                                <span className="material-symbols-outlined text-[16px]">delete</span>
+                                清除
+                            </button>
+                        }
+                    />
+                </div>
             </div>
 
             {/* Security */}
-            <div className="space-y-3">
-                <h2 className="text-zinc-400 text-xs font-black uppercase tracking-widest">安全设置</h2>
+            <div className="space-y-2 mt-4">
+                <h2 className="text-zinc-400 text-sm font-black uppercase tracking-widest pl-1">安全设置</h2>
+                <div className="grid grid-cols-3 gap-3">
+                    <SettingCard
+                        icon="lock"
+                        iconColor="bg-purple-500/10 text-purple-500"
+                        title="立即锁定"
+                        desc="锁定系统需 PIN 解锁"
+                        action={
+                            <button onClick={handleLock} className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-lg font-bold text-xs transition-colors flex items-center gap-1.5 shadow-lg shadow-purple-900/20 active:scale-95">
+                                <span className="material-symbols-outlined text-[16px]">lock</span>
+                                锁定
+                            </button>
+                        }
+                    />
 
-                <SettingCard
-                    icon="lock"
-                    iconColor="bg-purple-500/10 text-purple-500"
-                    title="立即锁定"
-                    desc="锁定系统，需要 PIN 解锁"
-                    action={
-                        <button onClick={handleLock} className="bg-purple-600 hover:bg-purple-700 text-white px-5 py-2.5 rounded-lg font-bold transition-colors">
-                            锁定
-                        </button>
-                    }
-                />
+                    <SettingCard
+                        icon="password"
+                        iconColor="bg-indigo-500/10 text-indigo-500"
+                        title="修改 PIN"
+                        desc="更换解锁密码"
+                        action={
+                            <button onClick={() => setShowChangePinModal(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg font-bold text-xs transition-colors flex items-center gap-1.5 shadow-lg shadow-indigo-900/20 active:scale-95">
+                                <span className="material-symbols-outlined text-[16px]">edit</span>
+                                修改
+                            </button>
+                        }
+                    />
 
-                <SettingCard
-                    icon="password"
-                    iconColor="bg-indigo-500/10 text-indigo-500"
-                    title="修改 PIN"
-                    desc="更换 6 位数解锁密码"
-                    action={
-                        <button onClick={() => setShowChangePinModal(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg font-bold transition-colors">
-                            修改
-                        </button>
-                    }
-                />
-
-                <SettingCard
-                    icon="warning"
-                    iconColor="bg-red-500/10 text-red-500"
-                    title="重置全部"
-                    desc="删除所有数据并重置 PIN"
-                    action={
-                        <button onClick={handleResetAll} className="bg-red-600 hover:bg-red-700 text-white px-5 py-2.5 rounded-lg font-bold transition-colors">
-                            重置
-                        </button>
-                    }
-                />
+                    <SettingCard
+                        icon="warning"
+                        iconColor="bg-red-500/10 text-red-500"
+                        title="重置全部"
+                        desc="删除数据并重置 PIN"
+                        action={
+                            <button onClick={handleResetAll} className="bg-zinc-800 hover:bg-red-600 text-zinc-400 hover:text-white px-3 py-1.5 rounded-lg font-bold text-xs transition-colors flex items-center gap-1.5 border border-zinc-700 hover:border-red-500 active:scale-95">
+                                <span className="material-symbols-outlined text-[16px]">restart_alt</span>
+                                重置
+                            </button>
+                        }
+                    />
+                </div>
             </div>
 
             {/* Log Management */}
-            <div className="space-y-3">
-                <h2 className="text-zinc-400 text-xs font-black uppercase tracking-widest">日志管理</h2>
+            <div className="space-y-2 mt-4">
+                <h2 className="text-zinc-400 text-sm font-black uppercase tracking-widest pl-1">日志管理</h2>
 
-                <div className="bg-[#111111] border border-[#27272a] rounded-xl p-4">
-                    <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center gap-4">
-                            <div className="p-3 rounded-xl bg-cyan-500/10 text-cyan-500">
-                                <span className="material-symbols-outlined text-2xl">terminal</span>
+                <div className="bg-[#111111] border border-[#27272a] rounded-xl p-3">
+                    <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 rounded-lg bg-cyan-500/10 text-cyan-500">
+                                <span className="material-symbols-outlined text-xl">terminal</span>
                             </div>
                             <div>
-                                <h3 className="text-white font-bold">系统日志</h3>
-                                <p className="text-zinc-500 text-sm">记录应用运行状态，方便排查问题</p>
+                                <h3 className="text-white font-bold text-sm">系统日志</h3>
+                                <p className="text-zinc-500 text-xs">记录状态，排查问题</p>
                             </div>
                         </div>
                         <label className="relative inline-flex items-center cursor-pointer">
@@ -266,30 +291,30 @@ const SettingsPanel: React.FC = () => {
                                 }}
                                 className="sr-only peer"
                             />
-                            <div className="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-600"></div>
+                            <div className="w-9 h-5 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-600"></div>
                         </label>
                     </div>
 
                     {/* Log Stats */}
-                    <div className="grid grid-cols-5 gap-2 mb-4">
-                        <div className="bg-zinc-900/50 rounded-lg p-2 text-center">
-                            <div className="text-lg font-black text-white font-mono">{logStats.total}</div>
+                    <div className="grid grid-cols-5 gap-2 mb-3">
+                        <div className="bg-zinc-900/50 rounded-lg p-1.5 text-center">
+                            <div className="text-sm font-black text-white font-mono">{logStats.total}</div>
                             <div className="text-[10px] text-zinc-500 uppercase font-bold">总计</div>
                         </div>
-                        <div className="bg-zinc-900/50 rounded-lg p-2 text-center">
-                            <div className="text-lg font-black text-zinc-400 font-mono">{logStats.byLevel[LogLevel.DEBUG]}</div>
+                        <div className="bg-zinc-900/50 rounded-lg p-1.5 text-center">
+                            <div className="text-sm font-black text-zinc-400 font-mono">{logStats.byLevel[LogLevel.DEBUG]}</div>
                             <div className="text-[10px] text-zinc-500 uppercase font-bold">Debug</div>
                         </div>
-                        <div className="bg-zinc-900/50 rounded-lg p-2 text-center">
-                            <div className="text-lg font-black text-blue-400 font-mono">{logStats.byLevel[LogLevel.INFO]}</div>
+                        <div className="bg-zinc-900/50 rounded-lg p-1.5 text-center">
+                            <div className="text-sm font-black text-blue-400 font-mono">{logStats.byLevel[LogLevel.INFO]}</div>
                             <div className="text-[10px] text-zinc-500 uppercase font-bold">Info</div>
                         </div>
-                        <div className="bg-zinc-900/50 rounded-lg p-2 text-center">
-                            <div className="text-lg font-black text-yellow-400 font-mono">{logStats.byLevel[LogLevel.WARN]}</div>
+                        <div className="bg-zinc-900/50 rounded-lg p-1.5 text-center">
+                            <div className="text-sm font-black text-yellow-400 font-mono">{logStats.byLevel[LogLevel.WARN]}</div>
                             <div className="text-[10px] text-zinc-500 uppercase font-bold">Warn</div>
                         </div>
-                        <div className="bg-zinc-900/50 rounded-lg p-2 text-center">
-                            <div className="text-lg font-black text-red-400 font-mono">{logStats.byLevel[LogLevel.ERROR]}</div>
+                        <div className="bg-zinc-900/50 rounded-lg p-1.5 text-center">
+                            <div className="text-sm font-black text-red-400 font-mono">{logStats.byLevel[LogLevel.ERROR]}</div>
                             <div className="text-[10px] text-zinc-500 uppercase font-bold">Error</div>
                         </div>
                     </div>
@@ -301,9 +326,9 @@ const SettingsPanel: React.FC = () => {
                                 setLogs(Logger.getAll());
                                 setShowLogViewer(true);
                             }}
-                            className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 rounded-lg font-bold text-sm transition-colors flex items-center justify-center gap-2"
+                            className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white px-3 py-1.5 rounded-lg font-bold text-xs transition-colors flex items-center justify-center gap-2"
                         >
-                            <span className="material-symbols-outlined text-[18px]">visibility</span>
+                            <span className="material-symbols-outlined text-[16px]">visibility</span>
                             查看日志
                         </button>
                         <button
@@ -311,9 +336,9 @@ const SettingsPanel: React.FC = () => {
                                 Logger.downloadExport();
                                 showMessage('日志已导出', 'success');
                             }}
-                            className="bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded-lg font-bold text-sm transition-colors flex items-center justify-center gap-2"
+                            className="bg-cyan-600 hover:bg-cyan-700 text-white px-3 py-1.5 rounded-lg font-bold text-xs transition-colors flex items-center justify-center gap-2"
                         >
-                            <span className="material-symbols-outlined text-[18px]">download</span>
+                            <span className="material-symbols-outlined text-[16px]">download</span>
                             导出
                         </button>
                         <button
@@ -324,9 +349,9 @@ const SettingsPanel: React.FC = () => {
                                     showMessage('日志已清除', 'success');
                                 }
                             }}
-                            className="bg-zinc-800 hover:bg-red-600 text-zinc-400 hover:text-white px-4 py-2 rounded-lg font-bold text-sm transition-colors flex items-center justify-center gap-2"
+                            className="bg-zinc-800 hover:bg-red-600 text-zinc-400 hover:text-white px-3 py-1.5 rounded-lg font-bold text-xs transition-colors flex items-center justify-center gap-2"
                         >
-                            <span className="material-symbols-outlined text-[18px]">delete</span>
+                            <span className="material-symbols-outlined text-[16px]">delete</span>
                         </button>
                     </div>
                 </div>

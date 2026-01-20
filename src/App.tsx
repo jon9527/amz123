@@ -106,6 +106,8 @@ const AppContent: React.FC = () => {
   );
 };
 
+import { ErrorBoundary } from './components/ErrorBoundary';
+
 const App: React.FC = () => {
   const [migrationComplete, setMigrationComplete] = useState(false);
 
@@ -140,9 +142,11 @@ const App: React.FC = () => {
   }
 
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </ErrorBoundary>
   );
 };
 

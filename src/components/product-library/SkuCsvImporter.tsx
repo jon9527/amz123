@@ -47,7 +47,6 @@ export const SkuCsvImporter: React.FC<SkuCsvImporterProps> = ({ isOpen, onClose,
                 const missingFields: string[] = [];
 
                 Object.entries(headerMapping).forEach(([key, aliases]) => {
-                    const match = headers.find(h => aliases.includes(h) || aliases.some(a => h.includes(a))); // supports partial match if needed, but exact alias match is safer. 
                     // Let's stick to exact alias match first, or case-insensitive?
                     // The file 30.csv has '（父）ASIN', so we need exact match for that.
                     const exactMatch = headers.find(h => aliases.includes(h));

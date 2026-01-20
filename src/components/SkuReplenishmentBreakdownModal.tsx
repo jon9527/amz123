@@ -10,6 +10,10 @@ interface SkuReplenishmentBreakdownModalProps {
     productId: string;
 }
 
+import { STORAGE_KEYS } from '../repositories/StorageKeys';
+
+// ... (keep surrounding imports if needed, but replace_file_content targets specific block)
+
 export const SkuReplenishmentBreakdownModal: React.FC<SkuReplenishmentBreakdownModalProps> = ({
     isOpen,
     onClose,
@@ -40,7 +44,7 @@ export const SkuReplenishmentBreakdownModal: React.FC<SkuReplenishmentBreakdownM
         if (!isOpen || !productId) return null;
 
         try {
-            const saved = localStorage.getItem('skuGroups');
+            const saved = localStorage.getItem(STORAGE_KEYS.SKU_GROUPS);
             if (saved) {
                 const groups: SkuParentGroup[] = JSON.parse(saved);
                 const targetGroup = groups.find(g => g.parentAsin === productId);

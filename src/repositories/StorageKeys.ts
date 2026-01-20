@@ -37,6 +37,12 @@ export const STORAGE_KEYS = {
     AUTH_PIN: 'amz_auth_pin',
     AUTH_LOCKED: 'amz_auth_locked',
     AUTH_ATTEMPTS: 'amz_auth_attempts',
+
+    // 新增：SKU分组数据
+    SKU_GROUPS: 'amz_sku_groups',
+
+    // 新增：手动汇率标记
+    IS_MANUAL_EXCHANGE_RATE: 'amz_is_manual_exchange_rate',
 } as const;
 
 export type StorageKey = typeof STORAGE_KEYS[keyof typeof STORAGE_KEYS];

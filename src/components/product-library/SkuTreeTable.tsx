@@ -27,7 +27,6 @@ export const SkuTreeTable: React.FC<SkuTreeTableProps> = ({
     expandedColors,
     onToggleParent,
     onToggleColor,
-    onEditGroup,
     onGroupClick,
     displayMode = 'apparel', // 默认为服装模式
 }) => {

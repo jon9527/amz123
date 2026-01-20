@@ -35,6 +35,17 @@ const MIGRATION_MAP: Record<string, string> = {
     // Replenishment State
     'amazon_replenishment_advisor_v1': STORAGE_KEYS.REPLENISHMENT_STATE,
     'replenishment_advice_state': STORAGE_KEYS.REPLENISHMENT_STATE,
+
+    // SKU Groups (Order matters: sku_groups_data is primary)
+    'skuGroups': STORAGE_KEYS.SKU_GROUPS,
+    'sku_groups_data': STORAGE_KEYS.SKU_GROUPS,
+
+    // Manual Exchange Rate
+    'isManualExchangeRate': STORAGE_KEYS.IS_MANUAL_EXCHANGE_RATE,
+
+    // Logger
+    'amz123_logs': STORAGE_KEYS.LOGGER_LOGS,
+    'amz123_log_settings': STORAGE_KEYS.LOGGER_SETTINGS,
 };
 
 // 迁移版本号（用于标记已完成的迁移）
